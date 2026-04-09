@@ -1,9 +1,10 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
-import { PageTransition, MotionGrid, MotionItem, staggerContainer, staggerItem } from '@/components/shared/motion';
-import type { Category, CollectionItem, SortField, ViewMode } from '@/types';
+import { PageTransition, MotionGrid, MotionItem } from '@/components/shared/motion';
+import { staggerContainer, staggerItem } from '@/components/shared/motion-variants';
+import type { ViewMode } from '@/types';
 import type { FilterState } from '@/components/shared';
 import {
   Package,
@@ -12,14 +13,11 @@ import {
   List,
   DollarSign,
   TrendingUp,
-  ArrowUp,
-  ArrowDown,
   ArrowUpDown,
   SortAsc,
   SortDesc,
   Star,
   Trash2,
-  Download,
   MoreHorizontal,
   Eye,
   Pencil,
@@ -28,15 +26,16 @@ import {
   AlignJustify,
   ArrowRightLeft,
   X,
-  BookOpen,
   Check,
 } from 'lucide-react';
 import { getCategoryIcon } from '@/lib/icons';
+import { isItemUnassignedForCategory, libraryMatchesCategory } from '@/lib/libraries';
 
 import {
   PageHeader,
   SearchBar,
   EmptyState,
+  LoadingSkeleton,
   StatCard,
   ConfirmDialog,
   AdvancedFilters,
@@ -73,91 +72,32 @@ import {
   formatCurrency,
   formatDate,
   formatNumber,
-  calculateGainLoss,
 } from '@/lib/utils';
 import { currencyService } from '@/services/currencyService';
 import { useCollectionStore } from '@/store/useCollectionStore';
 import { ItemDetailPanel } from '@/components/shared/ItemDetailPanel';
-
-function getConditionBadgeProps(condition: string) {
-  switch (condition) {
-    case 'Mint':
-      return {
-        variant: 'outline' as const,
-        className: 'border-emerald-500/40 bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
-      };
-    case 'Near Mint':
-      return {
-        variant: 'outline' as const,
-        className: 'border-green-500/40 bg-green-500/20 text-green-700 dark:text-green-400',
-      };
-    case 'Very Good':
-      return {
-        variant: 'outline' as const,
-        className: 'border-teal-500/40 bg-teal-500/20 text-teal-700 dark:text-teal-400',
-      };
-    case 'Good':
-      return {
-        variant: 'outline' as const,
-        className: 'border-blue-500/40 bg-blue-500/20 text-blue-700 dark:text-blue-400',
-      };
-    case 'Fair':
-      return {
-        variant: 'outline' as const,
-        className: 'border-amber-500/40 bg-amber-500/20 text-amber-700 dark:text-amber-400',
-      };
-    case 'Poor':
-      return {
-        variant: 'outline' as const,
-        className: 'border-red-500/40 bg-red-500/20 text-red-700 dark:text-red-400',
-      };
-    default:
-      return { variant: 'secondary' as const };
-  }
-}
-
-function getKeyFields(category: Category, item: CollectionItem) {
-  const skipKeys = new Set([
-    'title', 'condition', 'purchasePrice', 'purchaseCurrency',
-    'currentValue', 'estimatedValue', 'purchaseDate', 'notes',
-  ]);
-  return category.fields
-    .filter((f) => !skipKeys.has(f.key) && item.customFields[f.key] != null && item.customFields[f.key] !== '')
-    .slice(0, 2)
-    .map((f) => ({ label: f.label, value: String(item.customFields[f.key]) }));
-}
-
-function itemValue(item: CollectionItem, displayCurrency: string) {
-  return currencyService.convert(
-    item.purchaseInfo.purchasePrice,
-    item.purchaseInfo.purchaseCurrency,
-    displayCurrency,
-  );
-}
-
-function itemPurchasePrice(item: CollectionItem, displayCurrency: string) {
-  return currencyService.convert(
-    item.purchaseInfo.purchasePrice,
-    item.purchaseInfo.purchaseCurrency,
-    displayCurrency,
-  );
-}
-
-const SORT_OPTIONS: { label: string; value: SortField }[] = [
-  { label: 'Title', value: 'title' },
-  { label: 'Date Added', value: 'createdAt' },
-  { label: 'Last Updated', value: 'updatedAt' },
-  { label: 'Condition', value: 'condition' },
-  { label: 'Publisher', value: 'publisher' },
-];
-
-const CONDITION_ORDER: Record<string, number> = {
-  Mint: 0, 'Near Mint': 1, 'Very Good': 2, Good: 3, Fair: 4, Poor: 5,
-};
+import {
+  filterCollectionItems,
+  getCollectionFilterMeta,
+  getCollectionItemPurchasePrice,
+  getCollectionStats,
+  getConditionBadgeProps,
+  getKeyFields,
+  SORT_OPTIONS,
+} from './collectionDetail-helpers';
 
 export default function CollectionDetail() {
+  const { categorySlug = '' } = useParams<{ categorySlug: string }>();
+
+  return <CollectionDetailContent key={categorySlug || 'unknown'} categorySlug={categorySlug} />;
+}
+
+interface CollectionDetailContentProps {
+  categorySlug: string;
+}
+
+function CollectionDetailContent({ categorySlug }: CollectionDetailContentProps) {
   const navigate = useNavigate();
-  const { categorySlug } = useParams<{ categorySlug: string }>();
 
   const {
     categories,
@@ -165,94 +105,71 @@ export default function CollectionDetail() {
     libraries,
     viewMode,
     setViewMode,
-    searchQuery,
-    setSearchQuery,
     sortField,
     setSortField,
     sortOrder,
     setSortOrder,
     deleteItem,
     deleteItems,
-    getLibrariesByCategory,
     bulkTransferToLibrary,
     openItemDialog,
   } = useCollectionStore();
   const displayCurrency = useCollectionStore((s) => s.displayCurrency);
+  const isRemoteDataLoading = useCollectionStore((s) => s.isRemoteDataLoading);
+  const ownerUserId = useCollectionStore((s) => s.ownerUserId);
 
+  const [searchQuery, setSearchQuery] = useState('');
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
-  const [activeLibraryId, setActiveLibraryId] = useState<string>('all');
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [transferTargetLib, setTransferTargetLib] = useState<string>('');
   const [searchParams, setSearchParams] = useSearchParams();
-  const [detailPanelItemId, setDetailPanelItemId] = useState<string | null>(
-    searchParams.get('detail'),
-  );
-
-  useEffect(() => {
-    const paramId = searchParams.get('detail');
-    if (paramId && paramId !== detailPanelItemId) {
-      setDetailPanelItemId(paramId);
-    }
-  }, [searchParams]);
-
-  useEffect(() => {
-    const libParam = searchParams.get('library');
-    if (libParam) {
-      setActiveLibraryId(libParam);
-    }
-  }, [searchParams]);
-
-  useEffect(() => {
-    setSearchQuery('');
-    setSelectedItems([]);
-    if (!searchParams.get('library')) {
-      setActiveLibraryId('all');
-    }
-  }, [categorySlug]);
+  const activeLibraryId = searchParams.get('library') ?? 'all';
+  const detailPanelItemId = searchParams.get('detail');
 
   const category = useMemo(
     () => categories.find((c) => c.slug === categorySlug),
     [categories, categorySlug],
   );
+  const categoryId = category?.id ?? '';
+  const shouldShowLoadingState =
+    Boolean(ownerUserId) &&
+    isRemoteDataLoading &&
+    categories.length === 0 &&
+    items.length === 0;
 
   const categoryLibraries = useMemo(
-    () => (category ? getLibrariesByCategory(category.id) : []),
-    [category, libraries, getLibrariesByCategory],
+    () => (
+      category
+        ? libraries.filter((library) => libraryMatchesCategory(library, categoryId)).sort((left, right) => left.order - right.order)
+        : []
+    ),
+    [category, categoryId, libraries],
   );
 
   const allCategoryItems = useMemo(
-    () => (category ? items.filter((i) => i.categoryId === category.id && !i.isArchived) : []),
-    [items, category],
+    () => (categoryId ? items.filter((i) => i.categoryId === categoryId && !i.isArchived) : []),
+    [items, categoryId],
   );
 
   const libraryFilteredItems = useMemo(() => {
     if (activeLibraryId === 'all') return allCategoryItems;
-    if (activeLibraryId === 'unassigned') return allCategoryItems.filter((i) => !i.libraryId);
+    if (activeLibraryId === 'unassigned') {
+      return allCategoryItems.filter((item) => isItemUnassignedForCategory(item, categoryId, libraries));
+    }
     return allCategoryItems.filter((i) => i.libraryId === activeLibraryId);
-  }, [allCategoryItems, activeLibraryId]);
+  }, [activeLibraryId, allCategoryItems, categoryId, libraries]);
 
-  const filterMeta = useMemo(() => {
-    let maxP = 0;
-    let maxV = 0;
-    const tagSet = new Set<string>();
-    const currencySet = new Set<string>();
-    libraryFilteredItems.forEach((i) => {
-      const pp = itemPurchasePrice(i, displayCurrency);
-      const cv = itemValue(i, displayCurrency);
-      if (pp > maxP) maxP = pp;
-      if (cv > maxV) maxV = cv;
-      i.tags.forEach((t) => tagSet.add(t));
-      if (i.purchaseInfo?.purchaseCurrency) currencySet.add(i.purchaseInfo.purchaseCurrency);
-    });
-    return {
-      maxPrice: Math.ceil(maxP),
-      maxValue: Math.ceil(maxV),
-      tags: [...tagSet].sort(),
-      currencies: [...currencySet].sort(),
-    };
-  }, [libraryFilteredItems, displayCurrency]);
+  const unassignedCount = useMemo(
+    () => allCategoryItems.filter((item) => isItemUnassignedForCategory(item, categoryId, libraries)).length,
+    [allCategoryItems, categoryId, libraries],
+  );
+
+  const filterMeta = useMemo(
+    () => getCollectionFilterMeta(libraryFilteredItems, displayCurrency),
+    [libraryFilteredItems, displayCurrency],
+  );
 
   const [advFilters, setAdvFilters] = useState<FilterState>(() => ({
     ...DEFAULT_FILTERS,
@@ -260,142 +177,23 @@ export default function CollectionDetail() {
     valueRange: [0, filterMeta.maxValue],
   }));
 
-  useEffect(() => {
-    setAdvFilters({
-      ...DEFAULT_FILTERS,
-      priceRange: [0, filterMeta.maxPrice],
-      valueRange: [0, filterMeta.maxValue],
-    });
-  }, [categorySlug]); // eslint-disable-line react-hooks/exhaustive-deps
+  const filteredItems = useMemo(
+    () => filterCollectionItems({
+      items: libraryFilteredItems,
+      searchQuery,
+      advFilters,
+      filterMeta,
+      sortField,
+      sortOrder,
+      displayCurrency,
+    }),
+    [libraryFilteredItems, searchQuery, advFilters, filterMeta, sortField, sortOrder, displayCurrency],
+  );
 
-  const filteredItems = useMemo(() => {
-    let result = libraryFilteredItems;
-
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter((item) => {
-        if (item.title.toLowerCase().includes(q)) return true;
-        if (item.description.toLowerCase().includes(q)) return true;
-        if (item.tags.some((t) => t.toLowerCase().includes(q))) return true;
-        if (item.condition.toLowerCase().includes(q)) return true;
-        if (item.notes && item.notes.toLowerCase().includes(q)) return true;
-        if (item.customFields) {
-          for (const val of Object.values(item.customFields)) {
-            if (val != null && String(val).toLowerCase().includes(q)) return true;
-          }
-        }
-        return false;
-      });
-    }
-
-    // Advanced filters
-    if (advFilters.conditions.length > 0) {
-      result = result.filter((item) => advFilters.conditions.includes(item.condition));
-    }
-
-    if (advFilters.priceRange[0] > 0 || (advFilters.priceRange[1] > 0 && advFilters.priceRange[1] < filterMeta.maxPrice)) {
-      result = result.filter((item) => {
-        const p = itemPurchasePrice(item, displayCurrency);
-        return p >= advFilters.priceRange[0] && p <= advFilters.priceRange[1];
-      });
-    }
-
-    if (advFilters.valueRange[0] > 0 || (advFilters.valueRange[1] > 0 && advFilters.valueRange[1] < filterMeta.maxValue)) {
-      result = result.filter((item) => {
-        const v = itemValue(item, displayCurrency);
-        return v >= advFilters.valueRange[0] && v <= advFilters.valueRange[1];
-      });
-    }
-
-    if (advFilters.dateFrom) {
-      const from = new Date(advFilters.dateFrom).getTime();
-      result = result.filter((item) => new Date(item.createdAt).getTime() >= from);
-    }
-    if (advFilters.dateTo) {
-      const to = new Date(advFilters.dateTo).getTime() + 86400000;
-      result = result.filter((item) => new Date(item.createdAt).getTime() <= to);
-    }
-
-    if (advFilters.tags.length > 0) {
-      result = result.filter((item) => advFilters.tags.some((t) => item.tags.includes(t)));
-    }
-
-    if (advFilters.favoritesOnly) {
-      result = result.filter((item) => item.isFavorite);
-    }
-
-    if (advFilters.hasImages === true) {
-      result = result.filter((item) => item.images.length > 0);
-    } else if (advFilters.hasImages === false) {
-      result = result.filter((item) => item.images.length === 0);
-    }
-
-    if (advFilters.currencies.length > 0) {
-      result = result.filter((item) => advFilters.currencies.includes(item.purchaseInfo?.purchaseCurrency));
-    }
-
-    if (advFilters.readStatus === 'read') {
-      result = result.filter((item) => item.isRead);
-    } else if (advFilters.readStatus === 'unread') {
-      result = result.filter((item) => !item.isRead);
-    }
-
-    for (const [key, selectedValues] of Object.entries(advFilters.customSelects)) {
-      if (selectedValues.length > 0) {
-        result = result.filter((item) => {
-          const val = item.customFields?.[key];
-          return typeof val === 'string' && selectedValues.includes(val);
-        });
-      }
-    }
-
-    for (const [key, val] of Object.entries(advFilters.customBooleans)) {
-      if (val !== null) {
-        result = result.filter((item) => {
-          const fieldVal = item.customFields?.[key];
-          return val ? !!fieldVal : !fieldVal;
-        });
-      }
-    }
-
-    return [...result].sort((a, b) => {
-      let cmp = 0;
-      switch (sortField) {
-        case 'title':
-          cmp = a.title.localeCompare(b.title);
-          break;
-        case 'createdAt':
-          cmp = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-          break;
-        case 'updatedAt':
-          cmp = new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime();
-          break;
-        case 'purchasePrice':
-          cmp = itemPurchasePrice(a, displayCurrency) - itemPurchasePrice(b, displayCurrency);
-          break;
-        case 'currentValue':
-          cmp = itemValue(a, displayCurrency) - itemValue(b, displayCurrency);
-          break;
-        case 'condition':
-          cmp = (CONDITION_ORDER[a.condition] ?? 99) - (CONDITION_ORDER[b.condition] ?? 99);
-          break;
-        case 'publisher':
-          cmp = String(a.customFields?.publisher ?? '').localeCompare(String(b.customFields?.publisher ?? ''));
-          break;
-      }
-      return sortOrder === 'asc' ? cmp : -cmp;
-    });
-  }, [libraryFilteredItems, searchQuery, advFilters, filterMeta, sortField, sortOrder, displayCurrency]);
-
-  const stats = useMemo(() => {
-    const totalValue = libraryFilteredItems.reduce((sum, i) => sum + itemValue(i, displayCurrency), 0);
-    const avgValue = libraryFilteredItems.length > 0 ? totalValue / libraryFilteredItems.length : 0;
-    const highestValue = libraryFilteredItems.reduce(
-      (max, i) => Math.max(max, itemValue(i, displayCurrency)),
-      0,
-    );
-    return { count: libraryFilteredItems.length, totalValue, avgValue, highestValue };
-  }, [libraryFilteredItems, displayCurrency]);
+  const stats = useMemo(
+    () => getCollectionStats(libraryFilteredItems, displayCurrency),
+    [libraryFilteredItems, displayCurrency],
+  );
 
   const toggleSelectItem = useCallback((id: string) => {
     setSelectedItems((prev) =>
@@ -436,6 +234,30 @@ export default function CollectionDetail() {
     setTransferTargetLib('');
   }, [selectedItems, transferTargetLib, bulkTransferToLibrary]);
 
+  const updateSearchParam = useCallback((key: string, value: string | null) => {
+    const nextParams = new URLSearchParams(searchParams);
+
+    if (value == null || value === '') {
+      nextParams.delete(key);
+    } else {
+      nextParams.set(key, value);
+    }
+
+    setSearchParams(nextParams, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  if (shouldShowLoadingState) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="Loading Collection"
+          breadcrumbs={[{ label: 'Collections', href: '/collections' }]}
+        />
+        <LoadingSkeleton variant="detail" />
+      </div>
+    );
+  }
+
   if (!category) {
     return (
       <div className="space-y-6">
@@ -468,10 +290,6 @@ export default function CollectionDetail() {
       key={categorySlug}
     >
       {filteredItems.map((item) => {
-        const gainLoss = calculateGainLoss(
-          itemPurchasePrice(item, displayCurrency),
-          itemValue(item, displayCurrency),
-        );
         const keyFields = getKeyFields(category, item);
         const condBadge = getConditionBadgeProps(item.condition);
         const isSelected = selectedItems.includes(item.id);
@@ -485,7 +303,7 @@ export default function CollectionDetail() {
                 'hover:shadow-xl hover:shadow-primary/5',
                 isSelected && 'ring-2 ring-primary',
               )}
-              onClick={() => setDetailPanelItemId(item.id)}
+              onClick={() => updateSearchParam('detail', item.id)}
             >
               <div className="flex items-center gap-1.5 border-b px-2.5 py-1.5" onClick={(e) => e.stopPropagation()}>
                 <Checkbox
@@ -561,7 +379,7 @@ export default function CollectionDetail() {
               'hover:shadow-lg',
               isSelected && 'ring-2 ring-primary',
             )}
-            onClick={() => setDetailPanelItemId(item.id)}
+            onClick={() => updateSearchParam('detail', item.id)}
           >
             <div className={cn(isBookCategory ? 'aspect-[2/3]' : 'aspect-square', 'bg-muted')}>
               {item.images.length > 0 ? (
@@ -602,7 +420,7 @@ export default function CollectionDetail() {
                 'flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors hover:bg-muted/50',
                 isSelected && 'bg-primary/5',
               )}
-              onClick={() => setDetailPanelItemId(item.id)}
+              onClick={() => updateSearchParam('detail', item.id)}
             >
               <div onClick={(e) => e.stopPropagation()}>
                 <Checkbox
@@ -618,7 +436,7 @@ export default function CollectionDetail() {
                 </span>
               )}
               <span className="text-xs font-medium shrink-0">
-                {formatCurrency(itemPurchasePrice(item, displayCurrency), displayCurrency)}
+                {formatCurrency(getCollectionItemPurchasePrice(item, displayCurrency), displayCurrency)}
               </span>
             </div>
           );
@@ -657,7 +475,7 @@ export default function CollectionDetail() {
                     'border-b transition-colors hover:bg-muted/30 cursor-pointer',
                     isSelected && 'bg-primary/5',
                   )}
-                      onClick={() => setDetailPanelItemId(item.id)}
+                      onClick={() => updateSearchParam('detail', item.id)}
                     >
                       <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                         <Checkbox checked={isSelected} onCheckedChange={() => toggleSelectItem(item.id)} />
@@ -680,7 +498,7 @@ export default function CollectionDetail() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => setDetailPanelItemId(item.id)}>
+                        <DropdownMenuItem onClick={() => updateSearchParam('detail', item.id)}>
                           <Eye className="mr-2 size-4" /> View
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => openItemDialog(item.categoryId, item)}>
@@ -749,7 +567,7 @@ export default function CollectionDetail() {
         <div className="-mx-3 overflow-x-auto px-3 sm:mx-0 sm:px-0">
           <div className="flex items-center gap-1 rounded-lg border bg-muted/30 p-1 w-max min-w-full sm:w-auto">
           <button
-            onClick={() => { setActiveLibraryId('all'); setSelectedItems([]); setSearchParams((p) => { p.set('library', 'all'); return p; }, { replace: true }); }}
+            onClick={() => { setSelectedItems([]); updateSearchParam('library', 'all'); }}
             className={cn(
               'flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition-colors sm:gap-2 sm:px-4 sm:py-2 sm:text-sm',
               activeLibraryId === 'all' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
@@ -763,7 +581,7 @@ export default function CollectionDetail() {
             return (
               <button
                 key={lib.id}
-                onClick={() => { setActiveLibraryId(lib.id); setSelectedItems([]); setSearchParams((p) => { p.set('library', lib.id); return p; }, { replace: true }); }}
+                onClick={() => { setSelectedItems([]); updateSearchParam('library', lib.id); }}
                 className={cn(
                   'flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition-colors sm:gap-2 sm:px-4 sm:py-2 sm:text-sm',
                   activeLibraryId === lib.id ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
@@ -775,7 +593,7 @@ export default function CollectionDetail() {
             );
           })}
           <button
-            onClick={() => { setActiveLibraryId('unassigned'); setSelectedItems([]); setSearchParams((p) => { p.set('library', 'unassigned'); return p; }, { replace: true }); }}
+            onClick={() => { setSelectedItems([]); updateSearchParam('library', 'unassigned'); }}
             className={cn(
               'flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition-colors sm:gap-2 sm:px-4 sm:py-2 sm:text-sm',
               activeLibraryId === 'unassigned' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
@@ -783,7 +601,7 @@ export default function CollectionDetail() {
           >
             Unassigned
             <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
-              {allCategoryItems.filter((i) => !i.libraryId).length}
+              {unassignedCount}
             </Badge>
           </button>
           </div>
@@ -791,11 +609,17 @@ export default function CollectionDetail() {
       )}
 
       {/* Stats */}
-      <MotionGrid className="grid gap-3 sm:gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 200px), 1fr))' }} variants={staggerContainer} initial="hidden" animate="visible" key={`stats-${categorySlug}`}>
-        <MotionItem variants={staggerItem}><StatCard title="Items" value={formatNumber(stats.count)} icon={Package} /></MotionItem>
-        <MotionItem variants={staggerItem}><StatCard title="Total Value" value={formatCurrency(stats.totalValue, displayCurrency)} icon={DollarSign} /></MotionItem>
-        <MotionItem variants={staggerItem}><StatCard title="Average Value" value={formatCurrency(stats.avgValue, displayCurrency)} icon={TrendingUp} /></MotionItem>
-        <MotionItem variants={staggerItem}><StatCard title="Highest Value" value={formatCurrency(stats.highestValue, displayCurrency)} icon={Star} /></MotionItem>
+      <MotionGrid
+        className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4"
+        variants={staggerContainer}
+        initial="hidden"
+        animate="visible"
+        key={`stats-${categorySlug}`}
+      >
+        <MotionItem className="h-full" variants={staggerItem}><StatCard title="Items" value={formatNumber(stats.count)} icon={Package} /></MotionItem>
+        <MotionItem className="h-full" variants={staggerItem}><StatCard title="Total Value" value={formatCurrency(stats.totalValue, displayCurrency)} icon={DollarSign} /></MotionItem>
+        <MotionItem className="h-full" variants={staggerItem}><StatCard title="Average Value" value={formatCurrency(stats.avgValue, displayCurrency)} icon={TrendingUp} /></MotionItem>
+        <MotionItem className="h-full" variants={staggerItem}><StatCard title="Highest Value" value={formatCurrency(stats.highestValue, displayCurrency)} icon={Star} /></MotionItem>
       </MotionGrid>
 
       {/* Filter / Sort Bar */}
@@ -887,15 +711,19 @@ export default function CollectionDetail() {
         libraryFilteredItems.length === 0 ? (
           <EmptyState
             icon={Package}
+            eyebrow="Collection"
             title="No items yet"
-            description="Start adding items to your collection"
+            description="This collection is ready, but it does not contain any items yet. Add your first item to start tracking value, notes, and history here."
             action={{ label: 'Add First Item', onClick: () => category && openItemDialog(category.id) }}
+            secondaryAction={{ label: 'Browse All Collections', onClick: () => navigate('/collections') }}
+            hint="Items added here inherit this category automatically, and you can move them between libraries later."
           />
         ) : (
           <EmptyState
             icon={Package}
+            eyebrow="Collection"
             title="No matching items"
-            description="Try adjusting your search or filters"
+            description="Items exist in this collection, but none match the current search, library selection, or advanced filters."
             action={{
               label: 'Clear Filters',
               onClick: () => {
@@ -903,6 +731,8 @@ export default function CollectionDetail() {
                 setAdvFilters({ ...DEFAULT_FILTERS, priceRange: [0, filterMeta.maxPrice], valueRange: [0, filterMeta.maxValue] });
               },
             }}
+            secondaryAction={{ label: 'View All Collections', onClick: () => navigate('/collections') }}
+            hint="Clearing the search first is usually the fastest way to confirm whether the library filter is narrowing the list too much."
           />
         )
       ) : viewMode === 'grid' ? renderGridView()
@@ -959,8 +789,7 @@ export default function CollectionDetail() {
       <ItemDetailPanel
         itemId={detailPanelItemId}
         onClose={() => {
-          setDetailPanelItemId(null);
-          setSearchParams((p) => { p.delete('detail'); return p; }, { replace: true });
+          updateSearchParam('detail', null);
         }}
       />
     )}

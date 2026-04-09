@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { useForm, Controller, useFieldArray } from 'react-hook-form';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useForm, Controller, useFieldArray, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
@@ -14,7 +14,6 @@ import {
   ChevronUp,
   Save,
   X,
-  Package,
 } from 'lucide-react';
 
 import { PageHeader } from '@/components/shared';
@@ -39,7 +38,8 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { cn, generateId, slugify } from '@/lib/utils';
-import { CATEGORY_ICONS, ICON_NAMES, getCategoryIcon } from '@/lib/icons';
+import { getAdminBreadcrumbs, withAdminSource } from '@/lib/adminNavigation';
+import { ICON_NAMES, getCategoryIcon } from '@/lib/icons';
 import { useCollectionStore } from '@/store/useCollectionStore';
 
 const FIELD_TYPE_OPTIONS: { value: FieldType; label: string }[] = [
@@ -87,19 +87,21 @@ type CategoryFormValues = z.infer<typeof categoryFormSchema>;
 export default function AdminCategoryForm() {
   const navigate = useNavigate();
   const { categoryId } = useParams<{ categoryId: string }>();
+  const [searchParams] = useSearchParams();
   const isEdit = Boolean(categoryId);
+  const search = searchParams.toString();
+  const searchSuffix = search ? `?${search}` : '';
+  const categoriesPath = withAdminSource('/admin/categories', searchSuffix);
 
   const { getCategoryById, addCategory, updateCategory } = useCollectionStore();
   const existingCategory = categoryId ? getCategoryById(categoryId) : undefined;
 
   const [expandedFields, setExpandedFields] = useState<Set<number>>(new Set());
-  const [optionsInputs, setOptionsInputs] = useState<Record<number, string>>({});
 
   const {
     register,
     control,
     handleSubmit,
-    watch,
     setValue,
     formState: { errors, isSubmitting },
   } = useForm<CategoryFormValues>({
@@ -118,8 +120,8 @@ export default function AdminCategoryForm() {
     name: 'fields',
   });
 
-  const watchName = watch('name');
-  const watchFields = watch('fields');
+  const watchName = useWatch({ control, name: 'name' });
+  const watchFields = useWatch({ control, name: 'fields' });
 
   useEffect(() => {
     if (existingCategory) {
@@ -128,14 +130,6 @@ export default function AdminCategoryForm() {
       setValue('icon', existingCategory.icon);
       setValue('description', existingCategory.description);
       setValue('fields', existingCategory.fields);
-
-      const initialOptions: Record<number, string> = {};
-      existingCategory.fields.forEach((f, idx) => {
-        if (f.options && f.options.length > 0) {
-          initialOptions[idx] = f.options.join(', ');
-        }
-      });
-      setOptionsInputs(initialOptions);
     }
   }, [existingCategory, setValue]);
 
@@ -183,19 +177,9 @@ export default function AdminCategoryForm() {
       });
       return next;
     });
-    setOptionsInputs((prev) => {
-      const next: Record<number, string> = {};
-      Object.entries(prev).forEach(([k, v]) => {
-        const key = Number(k);
-        if (key < index) next[key] = v;
-        else if (key > index) next[key - 1] = v;
-      });
-      return next;
-    });
   };
 
   const handleOptionsChange = (index: number, value: string) => {
-    setOptionsInputs((prev) => ({ ...prev, [index]: value }));
     const parsed = value
       .split(',')
       .map((s) => s.trim())
@@ -226,7 +210,7 @@ export default function AdminCategoryForm() {
       toast.success('Category created successfully');
     }
 
-    navigate('/admin/categories');
+    navigate(categoriesPath);
   };
 
   if (isEdit && !existingCategory) {
@@ -234,15 +218,12 @@ export default function AdminCategoryForm() {
       <div className="space-y-6">
         <PageHeader
           title="Category Not Found"
-          breadcrumbs={[
-            { label: 'Admin', href: '/admin' },
-            { label: 'Categories', href: '/admin/categories' },
-          ]}
+          breadcrumbs={getAdminBreadcrumbs(searchSuffix, [{ label: 'Categories', href: categoriesPath }])}
         />
         <p className="text-muted-foreground">
           The category you're trying to edit doesn't exist.
         </p>
-        <Button variant="outline" onClick={() => navigate('/admin/categories')}>
+        <Button variant="outline" onClick={() => navigate(categoriesPath)}>
           Back to Categories
         </Button>
       </div>
@@ -255,11 +236,10 @@ export default function AdminCategoryForm() {
       <PageHeader
         title={isEdit ? 'Edit Category' : 'New Category'}
         description={isEdit ? 'Update category details and custom fields' : 'Create a new collection category with custom fields'}
-        breadcrumbs={[
-          { label: 'Admin', href: '/admin' },
-          { label: 'Categories', href: '/admin/categories' },
+        breadcrumbs={getAdminBreadcrumbs(searchSuffix, [
+          { label: 'Categories', href: categoriesPath },
           { label: isEdit ? 'Edit' : 'New' },
-        ]}
+        ])}
       />
 
       {/* Basic Info */}
@@ -547,7 +527,7 @@ export default function AdminCategoryForm() {
                                 </Label>
                                 <Input
                                   placeholder="Option 1, Option 2, Option 3"
-                                  value={optionsInputs[index] ?? ''}
+                                  value={watchFields?.[index]?.options?.join(', ') ?? ''}
                                   onChange={(e) => handleOptionsChange(index, e.target.value)}
                                 />
                                 {currentOptions.length > 0 && (
@@ -598,7 +578,7 @@ export default function AdminCategoryForm() {
             <Button
               type="button"
               variant="outline"
-              onClick={() => navigate('/admin/categories')}
+              onClick={() => navigate(categoriesPath)}
             >
               <X className="size-4" />
               Cancel

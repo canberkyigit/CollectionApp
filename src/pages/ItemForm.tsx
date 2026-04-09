@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm, Controller, useWatch } from 'react-hook-form';
+import type { Control, FieldErrors } from 'react-hook-form';
 import { toast } from 'sonner';
 import {
   Save, Plus, X, Upload, ArrowLeft, HelpCircle, ImagePlus, Trash2, Star,
@@ -12,7 +13,6 @@ import type { CategoryField, CollectionItem } from '@/types';
 
 import { useCollectionStore } from '@/store/useCollectionStore';
 import { useAuthStore } from '@/store/useAuthStore';
-import { storageService } from '@/services/storageService';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { PageTransition } from '@/components/shared/motion';
 import { Button } from '@/components/ui/button';
@@ -40,37 +40,26 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { cn, generateId } from '@/lib/utils';
+import { cn } from '@/lib/utils';
+import {
+  ITEM_FORM_CONDITIONS,
+  ITEM_FORM_CURRENCIES,
+  ITEM_FORM_HIDDEN_CUSTOM_KEYS,
+  buildCurrencyEquivalents,
+  buildPurchaseRatesMap,
+  getEquivalentForDisplay,
+  getHistoricalPurchaseRates,
+  getPurchaseExchangeRateToUsd,
+  itemToFormValues,
+  normalizeCustomFields,
+  persistItemImages,
+  resolveCurrentValuationInput,
+  type ItemFormValues,
+} from '@/lib/itemForm';
+import { canManageCatalog } from '@/lib/permissions';
 import { currencyService } from '@/services/currencyService';
 import { bookSearchService, type BookSearchResult } from '@/services/bookSearchService';
 import { BarcodeScannerDialog } from '@/components/shared/BarcodeScannerDialog';
-
-const CONDITIONS = ['Mint', 'Near Mint', 'Very Good', 'Good', 'Fair', 'Poor'] as const;
-const CURRENCIES = ['USD', 'EUR', 'TRY', 'GBP', 'JPY', 'CHF'] as const;
-
-interface FormValues {
-  title: string;
-  description?: string;
-  condition: string;
-  location?: string;
-  tags?: string;
-  customFields: Record<string, unknown>;
-  purchaseDate?: string;
-  purchasePrice?: number;
-  purchaseCurrency: string;
-  purchaseLocation?: string;
-  exchangeRate?: number;
-  currentValue?: number;
-  currentValueCurrency: string;
-  targetYear: number;
-  targetValue?: number;
-  notes?: string;
-  libraryId?: string;
-  quantity?: number;
-  eurRate?: number;
-  usdRate?: number;
-  gbpRate?: number;
-}
 
 function DynamicFieldRenderer({
   field,
@@ -78,8 +67,8 @@ function DynamicFieldRenderer({
   errors,
 }: {
   field: CategoryField;
-  control: any;
-  errors: any;
+  control: Control<ItemFormValues>;
+  errors: FieldErrors<ItemFormValues>;
 }) {
   const fieldError = errors?.customFields?.[field.key];
 
@@ -149,7 +138,7 @@ function DynamicFieldRenderer({
               placeholder={field.placeholder}
               className={cn(fieldError && 'border-destructive')}
               {...f}
-              value={f.value ?? ''}
+              value={(f.value as number | string | undefined) ?? ''}
               onChange={(e) => f.onChange(e.target.value === '' ? undefined : Number(e.target.value))}
             />
           )}
@@ -260,7 +249,7 @@ function DynamicFieldRenderer({
                 placeholder={field.placeholder ?? '0.00'}
                 className={cn('pl-7', fieldError && 'border-destructive')}
                 {...f}
-                value={f.value ?? ''}
+                value={(f.value as number | string | undefined) ?? ''}
                 onChange={(e) =>
                   f.onChange(e.target.value === '' ? undefined : Number(e.target.value))
                 }
@@ -367,53 +356,6 @@ function DynamicFieldRenderer({
   }
 }
 
-function itemToFormValues(
-  item: CollectionItem,
-  fields: CategoryField[],
-): FormValues {
-  const customFieldValues: Record<string, unknown> = {};
-  for (const field of fields) {
-    const raw = item.customFields[field.key];
-    if (field.type === 'boolean') {
-      customFieldValues[field.key] = !!raw;
-    } else if (field.type === 'multi-select' || field.type === 'tags') {
-      customFieldValues[field.key] = Array.isArray(raw) ? raw.join(', ') : (raw ?? '');
-    } else {
-      customFieldValues[field.key] = raw ?? '';
-    }
-  }
-
-  const equivs = item.purchaseInfo.currencyEquivalents || [];
-  const eurEq = equivs.find((e) => e.currency === 'EUR');
-  const usdEq = equivs.find((e) => e.currency === 'USD');
-  const gbpEq = equivs.find((e) => e.currency === 'GBP');
-
-  return {
-    title: item.title,
-    description: item.description,
-    condition: item.condition,
-    location: item.location ?? '',
-    tags: item.tags.join(', '),
-    customFields: customFieldValues as any,
-    purchaseDate: item.purchaseInfo.purchasedAt
-      ? item.purchaseInfo.purchasedAt.slice(0, 10)
-      : '',
-    purchasePrice: item.purchaseInfo.purchasePrice,
-    purchaseCurrency: item.purchaseInfo.purchaseCurrency,
-    purchaseLocation: item.purchaseInfo.purchaseLocation ?? '',
-    exchangeRate: item.purchaseInfo.exchangeRateAtPurchase,
-    currentValue: item.valuationInfo.currentEstimatedValue,
-    currentValueCurrency: item.valuationInfo.currentValueCurrency,
-    targetYear: item.valuationInfo.targetYearProjection ?? 2030,
-    targetValue: item.valuationInfo.targetEstimatedValue,
-    notes: item.notes,
-    libraryId: item.libraryId ?? '',
-    quantity: item.quantity ?? 1,
-    eurRate: eurEq?.rate,
-    usdRate: usdEq?.rate,
-    gbpRate: gbpEq?.rate,
-  };
-}
 
 function BookSearchDialog({
   open,
@@ -453,8 +395,8 @@ function BookSearchDialog({
     try {
       const data = await bookSearchService.search(q, 12);
       setResults(data);
-    } catch (err: any) {
-      if (err.name === 'AbortError' || err.code === 20 || String(err.message).includes('abort')) return;
+    } catch (error: unknown) {
+      if (isAbortLike(error)) return;
       toast.error('Search failed. Please try again.');
     } finally {
       setLoading(false);
@@ -606,15 +548,19 @@ function BookSearchDialog({
   );
 }
 
+function isAbortLike(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return error.name === 'AbortError' || String(error.message).includes('abort');
+}
+
 export default function ItemForm() {
   const { itemId } = useParams<{ itemId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+  const user = useAuthStore((state) => state.user);
 
   const {
     categories,
-    items,
-    libraries,
     getCategoryById,
     getCategoryBySlug,
     getItemById,
@@ -626,6 +572,8 @@ export default function ItemForm() {
 
   const isEditMode = !!itemId;
   const existingItem = isEditMode ? getItemById(itemId) : undefined;
+  const canCreateCategory = canManageCatalog(user?.role ?? 'viewer');
+  const currentUserId = user?.uid && user.uid !== 'offline' ? user.uid : null;
 
   const category = useMemo(() => {
     if (existingItem) return getCategoryById(existingItem.categoryId);
@@ -633,24 +581,19 @@ export default function ItemForm() {
     return slug ? getCategoryBySlug(slug) : undefined;
   }, [existingItem, searchParams, getCategoryById, getCategoryBySlug]);
 
-  const HIDDEN_CUSTOM_KEYS = new Set([
-    'purchaseDate', 'purchasePrice', 'purchaseCurrency', 'currentValue', 'isFirstEdition',
-    'condition', 'notes',
-  ]);
-
   const sortedFields = useMemo(
     () => [...(category?.fields ?? [])]
-      .filter((f) => !HIDDEN_CUSTOM_KEYS.has(f.key))
+      .filter((f) => !ITEM_FORM_HIDDEN_CUSTOM_KEYS.has(f.key))
       .sort((a, b) => a.order - b.order),
     [category],
   );
 
   const categoryLibraries = useMemo(
     () => (category ? getLibrariesByCategory(category.id) : []),
-    [category, libraries, getLibrariesByCategory],
+    [category, getLibrariesByCategory],
   );
 
-  const defaultValues = useMemo<FormValues>(() => {
+  const defaultValues = useMemo<ItemFormValues>(() => {
     if (existingItem && category) {
       return itemToFormValues(existingItem, sortedFields);
     }
@@ -672,14 +615,14 @@ export default function ItemForm() {
       condition: '',
       location: '',
       tags: '',
-      customFields: customDefaults as any,
+      customFields: customDefaults,
       purchaseDate: '',
       purchasePrice: undefined,
       purchaseCurrency: 'TRY',
       purchaseLocation: '',
       exchangeRate: undefined,
       currentValue: undefined,
-      currentValueCurrency: 'TRY',
+      currentValueCurrency: '',
       targetYear: 2030,
       targetValue: undefined,
       notes: '',
@@ -695,11 +638,10 @@ export default function ItemForm() {
     register,
     handleSubmit,
     control,
-    watch,
     setValue,
     reset,
-    formState: { errors, isSubmitting, isDirty },
-  } = useForm<FormValues>({
+    formState: { errors, isSubmitting },
+  } = useForm<ItemFormValues>({
     defaultValues,
   });
 
@@ -708,21 +650,21 @@ export default function ItemForm() {
   }, [defaultValues, reset]);
 
   const [hasInteracted, setHasInteracted] = useState(false);
-  const formSubmittedRef = useRef(false);
+  const [isFormSubmitted, setIsFormSubmitted] = useState(false);
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
   const pendingNavRef = useRef<(() => void) | null>(null);
 
   const requestLeave = useCallback((onConfirm: () => void) => {
-    if (!hasInteracted || formSubmittedRef.current) {
+    if (!hasInteracted || isFormSubmitted) {
       onConfirm();
       return;
     }
     pendingNavRef.current = onConfirm;
     setLeaveDialogOpen(true);
-  }, [hasInteracted]);
+  }, [hasInteracted, isFormSubmitted]);
 
   const confirmLeave = useCallback(() => {
-    formSubmittedRef.current = true;
+    setIsFormSubmitted(true);
     setLeaveDialogOpen(false);
     pendingNavRef.current?.();
     pendingNavRef.current = null;
@@ -745,7 +687,7 @@ export default function ItemForm() {
   useEffect(() => {
     if (!hasInteracted) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (formSubmittedRef.current) return;
+      if (isFormSubmitted) return;
       const isReload =
         e.key === 'F5' ||
         ((e.ctrlKey || e.metaKey) && e.key === 'r');
@@ -756,12 +698,12 @@ export default function ItemForm() {
     };
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [hasInteracted]);
+  }, [hasInteracted, isFormSubmitted]);
 
   useEffect(() => {
     if (!hasInteracted) return;
     const onPopState = () => {
-      if (formSubmittedRef.current) return;
+      if (isFormSubmitted) return;
       window.history.pushState(null, '', window.location.href);
       pendingNavRef.current = () => navigate(-1);
       setLeaveDialogOpen(true);
@@ -769,12 +711,12 @@ export default function ItemForm() {
     window.history.pushState(null, '', window.location.href);
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [hasInteracted, navigate]);
+  }, [hasInteracted, navigate, isFormSubmitted]);
 
   useEffect(() => {
     if (!hasInteracted) return;
     const onClick = (e: MouseEvent) => {
-      if (formSubmittedRef.current) return;
+      if (isFormSubmitted) return;
       const anchor = (e.target as HTMLElement).closest('a[href]') as HTMLAnchorElement | null;
       if (!anchor) return;
       const href = anchor.getAttribute('href');
@@ -786,51 +728,59 @@ export default function ItemForm() {
     };
     document.addEventListener('click', onClick, true);
     return () => document.removeEventListener('click', onClick, true);
-  }, [hasInteracted, navigate]);
+  }, [hasInteracted, navigate, isFormSubmitted]);
 
   const handleGoBack = useCallback(() => {
     requestLeave(() => navigate(-1));
   }, [requestLeave, navigate]);
 
-  const purchaseCurrency = watch('purchaseCurrency');
-  const customTitle = watch('customFields.title');
+  const purchaseCurrency = useWatch({ control, name: 'purchaseCurrency' });
+  const customTitle = useWatch({ control, name: 'customFields.title' });
   useEffect(() => {
     if (typeof customTitle === 'string' && customTitle) {
       setValue('title', customTitle);
     }
   }, [customTitle, setValue]);
 
-  const tagsValue = watch('tags');
+  const tagsValue = useWatch({ control, name: 'tags' });
   const tagsList = tagsValue
     ? tagsValue.split(',').map((s) => s.trim()).filter(Boolean)
     : [];
 
-  const purchaseDate = watch('purchaseDate');
-  const purchasePriceVal = watch('purchasePrice');
-  const gbpRateVal = watch('gbpRate');
-  const usdRateVal = watch('usdRate');
-  const eurRateVal = watch('eurRate');
+  const purchaseDate = useWatch({ control, name: 'purchaseDate' });
+  const purchasePriceVal = useWatch({ control, name: 'purchasePrice' });
+  const gbpRateVal = useWatch({ control, name: 'gbpRate' });
+  const usdRateVal = useWatch({ control, name: 'usdRate' });
+  const eurRateVal = useWatch({ control, name: 'eurRate' });
   const [fetchingRates, setFetchingRates] = useState(false);
 
   useEffect(() => {
-    if (purchaseCurrency && purchaseCurrency !== 'USD') {
-      const rate = currencyService.getRate(purchaseCurrency, 'USD');
-      setValue('exchangeRate', rate);
-    } else {
-      setValue('exchangeRate', 1);
-    }
-  }, [purchaseCurrency, setValue]);
+    const ratesMap = buildPurchaseRatesMap({
+      gbpRate: gbpRateVal,
+      usdRate: usdRateVal,
+      eurRate: eurRateVal,
+    });
+    setValue('exchangeRate', getPurchaseExchangeRateToUsd(purchaseCurrency, ratesMap));
+  }, [purchaseCurrency, gbpRateVal, usdRateVal, eurRateVal, setValue]);
 
   useEffect(() => {
-    if (!purchaseDate) return;
+    if (!purchaseDate) {
+      setValue('gbpRate', undefined);
+      setValue('usdRate', undefined);
+      setValue('eurRate', undefined);
+      return;
+    }
     let cancelled = false;
     (async () => {
       setFetchingRates(true);
-      const rates = await currencyService.getHistoricalRates(purchaseDate, 'TRY');
-      if (cancelled || !rates) { setFetchingRates(false); return; }
-      if (rates.GBP) setValue('gbpRate', Number((1 / rates.GBP).toFixed(4)));
-      if (rates.USD) setValue('usdRate', Number((1 / rates.USD).toFixed(4)));
-      if (rates.EUR) setValue('eurRate', Number((1 / rates.EUR).toFixed(4)));
+      const rates = await getHistoricalPurchaseRates(purchaseDate);
+      if (cancelled) {
+        setFetchingRates(false);
+        return;
+      }
+      setValue('gbpRate', rates?.gbpRate);
+      setValue('usdRate', rates?.usdRate);
+      setValue('eurRate', rates?.eurRate);
       setFetchingRates(false);
     })();
     return () => { cancelled = true; };
@@ -874,8 +824,11 @@ export default function ItemForm() {
   );
 
   useEffect(() => {
-    setItemImages(existingItem?.images ?? []);
-    setCoverIndex(0);
+    const frame = window.requestAnimationFrame(() => {
+      setItemImages(existingItem?.images ?? []);
+      setCoverIndex(0);
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [existingItem]);
 
   const compressImage = useCallback((file: File): Promise<string> => {
@@ -952,7 +905,7 @@ export default function ItemForm() {
   }, []);
 
   const onSubmit = useCallback(
-    async (data: FormValues, addAnother = false) => {
+    async (data: ItemFormValues, addAnother = false) => {
       if (!category) return;
 
       const missing: string[] = [];
@@ -976,18 +929,7 @@ export default function ItemForm() {
       }
 
       try {
-      const customFields: Record<string, unknown> = {};
-      for (const field of sortedFields) {
-        const val = (data.customFields as Record<string, unknown>)[field.key];
-        if (field.type === 'tags' || field.type === 'multi-select') {
-          customFields[field.key] =
-            typeof val === 'string'
-              ? val.split(',').map((s) => s.trim()).filter(Boolean)
-              : val;
-        } else {
-          customFields[field.key] = val;
-        }
-      }
+      const customFields = normalizeCustomFields(sortedFields, data.customFields);
 
       const tags = data.tags
         ? data.tags.split(',').map((s) => s.trim()).filter(Boolean)
@@ -995,29 +937,27 @@ export default function ItemForm() {
 
       const now = new Date().toISOString();
       const purchaseDate = data.purchaseDate || now;
-      const exchangeRate = Number(data.exchangeRate) || 1;
 
       const orderedImages = coverIndex === 0 ? itemImages : [itemImages[coverIndex], ...itemImages.filter((_, i) => i !== coverIndex)];
-      const finalImages = orderedImages;
+      const finalImages = await persistItemImages(
+        currentUserId,
+        orderedImages,
+        existingItem?.images ?? [],
+      );
 
-      const currencyEquivalents: { currency: string; rate: number; value: number }[] = [];
       const purchaseAmt = Number(data.purchasePrice) || 0;
-      const pc = data.purchaseCurrency;
-      const ratesMap: Record<string, number> = {
-        TRY: 1,
-        GBP: Number(data.gbpRate) || 0,
-        USD: Number(data.usdRate) || 0,
-        EUR: Number(data.eurRate) || 0,
-      };
-      const pcTlRate = ratesMap[pc] || 1;
-      const amtInTRY = pc === 'TRY' ? purchaseAmt : purchaseAmt * pcTlRate;
-
-      for (const cur of ['EUR', 'USD', 'GBP'] as const) {
-        const tlRate = ratesMap[cur];
-        if (tlRate > 0 && amtInTRY > 0) {
-          currencyEquivalents.push({ currency: cur, rate: tlRate, value: amtInTRY / tlRate });
-        }
-      }
+      const ratesMap = buildPurchaseRatesMap(data);
+      const exchangeRate = getPurchaseExchangeRateToUsd(data.purchaseCurrency, ratesMap);
+      const currencyEquivalents = buildCurrencyEquivalents(
+        purchaseAmt,
+        data.purchaseCurrency,
+        ratesMap,
+      );
+      const resolvedCurrentValuation = resolveCurrentValuationInput(
+        data,
+        purchaseAmt,
+        existingItem,
+      );
 
       const itemData: Omit<CollectionItem, 'id' | 'createdAt' | 'updatedAt'> = {
         categoryId: category.id,
@@ -1038,16 +978,20 @@ export default function ItemForm() {
           currencyEquivalents,
         },
         valuationInfo: {
-          currentEstimatedValue: existingItem?.valuationInfo.currentEstimatedValue ?? purchaseAmt,
-          currentValueCurrency: existingItem?.valuationInfo.currentValueCurrency ?? data.purchaseCurrency,
-          currentExchangeRate: currencyService.getRate(existingItem?.valuationInfo.currentValueCurrency ?? data.purchaseCurrency, 'USD'),
+          currentEstimatedValue: resolvedCurrentValuation.currentEstimatedValue,
+          currentValueCurrency: resolvedCurrentValuation.currentValueCurrency,
+          currentExchangeRate: resolvedCurrentValuation.currentExchangeRate,
           targetYearProjection: data.targetYear,
           targetEstimatedValue: data.targetValue ? Number(data.targetValue) || 0 : undefined,
           valueHistory: existingItem?.valuationInfo.valueHistory ?? [
-            { date: now.slice(0, 10), value: purchaseAmt, currency: data.purchaseCurrency },
+            {
+              date: now.slice(0, 10),
+              value: resolvedCurrentValuation.currentEstimatedValue,
+              currency: resolvedCurrentValuation.currentValueCurrency,
+            },
           ],
         },
-        contributorId: existingItem?.contributorId ?? 'contrib-1',
+        contributorId: existingItem?.contributorId ?? currentUserId ?? 'offline',
         condition: data.condition,
         location: data.location || undefined,
         isRead: existingItem?.isRead ?? false,
@@ -1056,7 +1000,7 @@ export default function ItemForm() {
         lendingHistory: existingItem?.lendingHistory ?? [],
       };
 
-      formSubmittedRef.current = true;
+      setIsFormSubmitted(true);
       setHasInteracted(false);
 
       if (isEditMode && existingItem) {
@@ -1067,7 +1011,7 @@ export default function ItemForm() {
         const newItem = addItem(itemData);
         toast.success('Item added successfully');
         if (addAnother) {
-          formSubmittedRef.current = false;
+          setIsFormSubmitted(false);
           reset(defaultValues);
           window.scrollTo({ top: 0, behavior: 'smooth' });
         } else {
@@ -1091,6 +1035,7 @@ export default function ItemForm() {
       defaultValues,
       itemImages,
       coverIndex,
+      currentUserId,
     ],
   );
 
@@ -1173,12 +1118,14 @@ export default function ItemForm() {
                 Create a category first to start adding items
               </p>
             </div>
-            <Button variant="outline" asChild>
-              <Link to="/admin/categories/new">
-                <Plus className="mr-2 size-4" />
-                Create Category
-              </Link>
-            </Button>
+            {canCreateCategory && (
+              <Button variant="outline" asChild>
+                <Link to="/admin/categories/new">
+                  <Plus className="mr-2 size-4" />
+                  Create Category
+                </Link>
+              </Button>
+            )}
           </div>
         )}
       </div>
@@ -1190,7 +1137,7 @@ export default function ItemForm() {
     <PageTransition>
     <form
       onSubmit={handleSubmit(
-        (data) => onSubmit(data as FormValues),
+        (data) => onSubmit(data as ItemFormValues),
         () => toast.error('Please fill in all required fields'),
       )}
       onChange={() => { if (!hasInteracted) setHasInteracted(true); }}
@@ -1444,7 +1391,7 @@ export default function ItemForm() {
                         <SelectValue placeholder="Select condition" />
                       </SelectTrigger>
                       <SelectContent>
-                        {CONDITIONS.map((c) => (
+                        {ITEM_FORM_CONDITIONS.map((c) => (
                           <SelectItem key={c} value={c}>
                             {c}
                           </SelectItem>
@@ -1572,7 +1519,7 @@ export default function ItemForm() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {CURRENCIES.map((c) => (
+                      {ITEM_FORM_CURRENCIES.map((c) => (
                         <SelectItem key={c} value={c}>
                           {currencyService.getCurrencySymbol(c)} {c}
                         </SelectItem>
@@ -1609,16 +1556,19 @@ export default function ItemForm() {
               {([['GBP', 'gbpRate', gbpRateVal, '£'] as const, ['USD', 'usdRate', usdRateVal, '$'] as const, ['EUR', 'eurRate', eurRateVal, '€'] as const]).map(([cur, key, rateVal, symbol]) => {
                 const rate = Number(rateVal) || 0;
                 const price = Number(purchasePriceVal) || 0;
-                const ratesMap: Record<string, number> = { TRY: 1, GBP: Number(gbpRateVal) || 0, USD: Number(usdRateVal) || 0, EUR: Number(eurRateVal) || 0 };
-                const pcRate = ratesMap[purchaseCurrency] || 1;
-                const priceInTRY = purchaseCurrency === 'TRY' ? price : price * pcRate;
-                const equivalent = rate > 0 && priceInTRY > 0 ? (priceInTRY / rate).toFixed(2) : '—';
+                const ratesMap = buildPurchaseRatesMap({
+                  gbpRate: gbpRateVal,
+                  usdRate: usdRateVal,
+                  eurRate: eurRateVal,
+                });
+                const equivalentValue = getEquivalentForDisplay(price, purchaseCurrency, cur, ratesMap);
+                const equivalent = equivalentValue !== null ? equivalentValue.toFixed(2) : '—';
                 return (
                   <div key={cur} className="space-y-2 rounded-lg border bg-muted/30 p-3">
                     <Label htmlFor={key} className="text-xs">
                       1 {cur} = {rate > 0 ? <span className="font-semibold">{rate.toFixed(2)} TL</span> : <span className="text-muted-foreground">? TL</span>}
                     </Label>
-                    <input type="hidden" {...register(key as any)} />
+                    <input type="hidden" {...register(key)} />
                     <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2 text-sm">
                       <span className="text-muted-foreground">{symbol}</span>
                       <span className="font-semibold">{equivalent}</span>
@@ -1663,7 +1613,7 @@ export default function ItemForm() {
                 variant="outline"
                 disabled={isSubmitting}
                 onClick={handleSubmit(
-                  (data) => onSubmit(data as FormValues, true),
+                  (data) => onSubmit(data as ItemFormValues, true),
                   () => toast.error('Please fill in all required fields'),
                 )}
               >

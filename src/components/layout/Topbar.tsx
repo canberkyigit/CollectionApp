@@ -6,6 +6,7 @@ import {
   Sun,
   Moon,
   Bell,
+  Settings,
   LogOut,
   User,
   ChevronDown,
@@ -25,6 +26,9 @@ import {
   CheckCircle2,
   Clock,
   X,
+  RefreshCw,
+  WifiOff,
+  AlertCircle,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -53,7 +57,8 @@ import {
 } from '@/components/ui/tooltip';
 import { useCollectionStore } from '@/store/useCollectionStore';
 import { useAuthStore } from '@/store/useAuthStore';
-import { currencyService } from '@/services/currencyService';
+import { useSyncStore } from '@/store/useSyncStore';
+import { collectionSyncService } from '@/services/collectionSyncService';
 import type { ActivityAction } from '@/types';
 
 const actionMeta: Record<ActivityAction, { icon: LucideIcon; color: string; label: string }> = {
@@ -83,6 +88,17 @@ function timeAgo(ts: string): string {
   const days = Math.floor(hrs / 24);
   if (days < 7) return `${days}d ago`;
   return new Date(ts).toLocaleDateString();
+}
+
+function formatSyncTimestamp(timestamp: string | null): string {
+  if (!timestamp) return 'No successful sync yet';
+
+  return new Date(timestamp).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 function SearchDropdown({
@@ -133,7 +149,7 @@ function SearchDropdown({
   }
 
   return (
-    <div className="absolute left-0 right-0 top-full z-50 mt-1.5 overflow-hidden rounded-xl border border-border bg-card shadow-xl">
+    <div className="surface-3 absolute left-0 right-0 top-full z-50 mt-1.5 overflow-hidden rounded-2xl border">
       {matchedItems.length > 0 && (
         <>
           <div className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -198,14 +214,21 @@ const Topbar = () => {
   const toggleSidebar = useCollectionStore((s) => s.toggleSidebar);
   const theme = useCollectionStore((s) => s.theme);
   const toggleTheme = useCollectionStore((s) => s.toggleTheme);
-  const displayCurrency = useCollectionStore((s) => s.displayCurrency);
-  const setDisplayCurrency = useCollectionStore((s) => s.setDisplayCurrency);
   const searchQuery = useCollectionStore((s) => s.searchQuery);
   const setSearchQuery = useCollectionStore((s) => s.setSearchQuery);
   const activityLog = useCollectionStore((s) => s.activityLog);
   const navigate = useNavigate();
   const authUser = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+  const syncStatus = useSyncStore((s) => s.status);
+  const pendingSyncCount = useSyncStore((s) => s.pendingCount);
+  const queuedSyncCount = useSyncStore((s) => s.queuedCount);
+  const runningSyncCount = useSyncStore((s) => s.runningCount);
+  const failedSyncCount = useSyncStore((s) => s.failedCount);
+  const lastSyncError = useSyncStore((s) => s.lastError);
+  const lastSuccessfulSyncAt = useSyncStore((s) => s.lastSuccessfulSyncAt);
+  const lastFailureAt = useSyncStore((s) => s.lastFailureAt);
+  const syncMutations = useSyncStore((s) => s.mutations);
 
   const userName = authUser?.displayName || 'User';
   const userEmail = authUser?.email || '';
@@ -235,9 +258,78 @@ const Topbar = () => {
 
   const showDesktopDropdown = searchFocused && searchQuery.length >= 2;
   const showMobileDropdown = mobileSearchFocused && searchQuery.length >= 2;
+  const failedMutation = useMemo(
+    () => syncMutations.find((mutation) => mutation.status === 'failed'),
+    [syncMutations],
+  );
+  const syncMeta = useMemo(() => {
+    if (syncStatus === 'offline') {
+      const hasQueuedOfflineWork = pendingSyncCount > 0;
+      return {
+        icon: WifiOff,
+        iconClassName: 'text-amber-500',
+        label: hasQueuedOfflineWork ? `${pendingSyncCount} Offline` : 'Offline',
+        pillClassName: 'border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-400',
+        description: hasQueuedOfflineWork
+          ? `${pendingSyncCount} queued change${pendingSyncCount > 1 ? 's are' : ' is'} waiting for connectivity.`
+          : 'Changes stay local until the connection returns.',
+        action: hasQueuedOfflineWork
+          ? `Last healthy sync: ${formatSyncTimestamp(lastSuccessfulSyncAt)}.`
+          : 'Connection restores automatically and pending changes will retry.',
+      };
+    }
+
+    if (failedSyncCount > 0 || syncStatus === 'error') {
+      const issueCount = failedSyncCount || 1;
+      return {
+        icon: AlertCircle,
+        iconClassName: 'text-destructive',
+        label: issueCount > 1 ? `${issueCount} Sync Issues` : 'Sync Issue',
+        pillClassName: 'border-destructive/20 bg-destructive/10 text-destructive',
+        description:
+          failedMutation?.errorMessage
+          ?? lastSyncError
+          ?? 'Some changes could not be written to Firestore.',
+        action: `Retry the pending queue now. Last failure: ${formatSyncTimestamp(lastFailureAt)}.`,
+      };
+    }
+
+    if (runningSyncCount > 0 || queuedSyncCount > 0 || pendingSyncCount > 0) {
+      const activeCount = runningSyncCount + queuedSyncCount;
+      return {
+        icon: runningSyncCount > 0 ? RefreshCw : Clock,
+        iconClassName: runningSyncCount > 0 ? 'animate-spin text-primary' : 'text-primary',
+        label: `${activeCount} In Queue`,
+        pillClassName: 'border-primary/20 bg-primary/10 text-primary',
+        description: runningSyncCount > 0
+          ? `${runningSyncCount} running, ${queuedSyncCount} queued for Firestore sync.`
+          : `${queuedSyncCount} change${queuedSyncCount > 1 ? 's are' : ' is'} queued for Firestore sync.`,
+        action: `Last healthy sync: ${formatSyncTimestamp(lastSuccessfulSyncAt)}.`,
+      };
+    }
+
+    return {
+      icon: CheckCircle2,
+      iconClassName: 'text-muted-foreground/80',
+      label: 'Synced',
+      pillClassName: 'border-border/70 bg-background/45 text-muted-foreground backdrop-blur-sm hover:bg-background/65',
+      description: 'Local changes and Firestore are currently in sync.',
+      action: `Last successful sync: ${formatSyncTimestamp(lastSuccessfulSyncAt)}.`,
+    };
+  }, [
+    failedMutation?.errorMessage,
+    failedSyncCount,
+    lastFailureAt,
+    lastSuccessfulSyncAt,
+    lastSyncError,
+    pendingSyncCount,
+    queuedSyncCount,
+    runningSyncCount,
+    syncStatus,
+  ]);
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-1.5 border-b border-border bg-card/80 px-2 backdrop-blur-xl sm:h-16 sm:gap-3 sm:px-4 md:px-6">
+    <header className="surface-chrome sticky top-0 z-30 flex h-14 shrink-0 items-center gap-1.5 border-b px-2 sm:h-16 sm:gap-3 sm:px-4 md:px-6">
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
@@ -294,7 +386,38 @@ const Topbar = () => {
       <div className="ml-auto flex items-center gap-1 md:ml-0">
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon" onClick={toggleTheme}>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                if (syncStatus === 'error' || failedSyncCount > 0 || pendingSyncCount > 0) {
+                  void collectionSyncService.retryPending();
+                }
+              }}
+              className={cn(
+                'relative gap-2 rounded-full px-2 sm:w-auto sm:justify-start sm:border sm:px-3',
+                syncMeta.pillClassName,
+              )}
+            >
+              <syncMeta.icon className={cn('h-5 w-5 shrink-0', syncMeta.iconClassName)} />
+              <span className="hidden text-xs font-semibold sm:inline">{syncMeta.label}</span>
+              {pendingSyncCount > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 flex size-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
+                  {pendingSyncCount > 9 ? '9+' : pendingSyncCount}
+                </span>
+              )}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="max-w-xs space-y-1.5">
+            <p className="text-xs font-semibold text-primary-foreground">{syncMeta.label}</p>
+            <p className="text-xs leading-relaxed text-primary-foreground/90">{syncMeta.description}</p>
+            <p className="text-[11px] leading-relaxed text-primary-foreground/75">{syncMeta.action}</p>
+          </TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle theme">
               <Sun
                 className={cn(
                   'h-5 w-5 transition-all',
@@ -316,35 +439,29 @@ const Topbar = () => {
           <TooltipContent side="bottom">Toggle theme</TooltipContent>
         </Tooltip>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="text-sm font-bold">
-              {currencyService.getCurrencySymbol(displayCurrency)}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Open settings"
+              onClick={() => navigate('/settings')}
+            >
+              <Settings className="h-5 w-5" />
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="max-h-80 min-w-0 overflow-y-auto">
-            {currencyService.getSupportedCurrencies().map((c) => (
-              <DropdownMenuItem
-                key={c}
-                onClick={() => setDisplayCurrency(c)}
-                className={cn('gap-2', displayCurrency === c && 'bg-primary/10 text-primary font-medium')}
-              >
-                <span className="w-6 shrink-0 text-center text-xs font-semibold">{currencyService.getCurrencySymbol(c)}</span>
-                {c}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Settings</TooltipContent>
+        </Tooltip>
 
         <Popover open={notifOpen} onOpenChange={setNotifOpen}>
           <Tooltip>
             <TooltipTrigger asChild>
               <PopoverTrigger asChild>
-                <Button variant="ghost" size="icon" className="relative">
+                <Button variant="ghost" size="icon" className="relative" aria-label="Open notifications">
                   <Bell className="h-5 w-5" />
                   {unreadCount > 0 && (
-                    <span className="absolute -right-0.5 -top-0.5 flex size-4 items-center justify-center rounded-full bg-destructive">
-                      <span className="text-[9px] font-bold leading-none text-destructive-foreground">
+                    <span className="absolute -right-0.5 -top-0.5 flex size-4 items-center justify-center rounded-full bg-primary shadow-sm ring-2 ring-background">
+                      <span className="text-[9px] font-bold leading-none text-primary-foreground">
                         {unreadCount > 99 ? '99' : unreadCount}
                       </span>
                     </span>
@@ -375,9 +492,25 @@ const Topbar = () => {
 
             <div className="max-h-[min(400px,60vh)] overflow-y-auto">
               {notifications.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <Bell className="mb-2 size-8 text-muted-foreground/30" />
-                  <p className="text-sm text-muted-foreground">No notifications yet</p>
+                <div className="flex flex-col items-center justify-center px-6 py-12 text-center">
+                  <div className="flex size-12 items-center justify-center rounded-2xl bg-muted/40">
+                    <Bell className="size-6 text-primary/70" />
+                  </div>
+                  <p className="mt-4 text-sm font-medium">No notifications yet</p>
+                  <p className="mt-1 max-w-xs text-xs leading-5 text-muted-foreground">
+                    New item activity, wishlist updates, and collection reminders will show up here.
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-4"
+                    onClick={() => {
+                      navigate('/activity');
+                      setNotifOpen(false);
+                    }}
+                  >
+                    Open Activity Log
+                  </Button>
                 </div>
               ) : (
                 <div className="divide-y">
@@ -459,6 +592,7 @@ const Topbar = () => {
             <Button
               variant="ghost"
               className="gap-2 rounded-full px-2"
+              aria-label="Open account menu"
             >
               <Avatar className="h-8 w-8">
                 <AvatarImage src={authUser?.photoURL ?? ''} alt={userName} />
@@ -503,7 +637,7 @@ const Topbar = () => {
 
       {/* Mobile search overlay */}
       {mobileSearchOpen && (
-        <div className="absolute inset-x-0 top-full z-40 border-b border-border bg-card p-3 md:hidden">
+        <div className="surface-3 absolute inset-x-0 top-full z-40 border-b p-3 md:hidden">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input

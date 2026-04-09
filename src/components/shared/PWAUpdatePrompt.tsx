@@ -1,8 +1,9 @@
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { RefreshCw, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { isDesktopApp } from '@/lib/runtime';
 
-export function PWAUpdatePrompt() {
+function BrowserPWAUpdatePrompt() {
   const {
     needRefresh: [needRefresh, setNeedRefresh],
     updateServiceWorker,
@@ -37,4 +38,9 @@ export function PWAUpdatePrompt() {
       </div>
     </div>
   );
+}
+
+export function PWAUpdatePrompt() {
+  if (isDesktopApp()) return null;
+  return <BrowserPWAUpdatePrompt />;
 }

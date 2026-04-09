@@ -1,5 +1,4 @@
 import { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Package, Search, Trash2, FolderInput, Tag, Star, StarOff, Filter, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { PageHeader, ConfirmDialog } from '@/components/shared';
@@ -11,14 +10,17 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { getAdminBreadcrumbs } from '@/lib/adminNavigation';
 import { cn, formatCurrency } from '@/lib/utils';
 import { currencyService } from '@/services/currencyService';
 import { useCollectionStore } from '@/store/useCollectionStore';
+import { useSearchParams } from 'react-router-dom';
 
 const CONDITIONS = ['Mint', 'Near Mint', 'Very Good', 'Good', 'Fair', 'Poor'] as const;
 
 export default function AdminBulkActions() {
-  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const search = searchParams.toString();
   const displayCurrency = useCollectionStore((s) => s.displayCurrency);
   const {
     items,
@@ -124,10 +126,7 @@ export default function AdminBulkActions() {
       <PageHeader
         title="Bulk Actions"
         description="Manage multiple items at once"
-        breadcrumbs={[
-          { label: 'Admin', href: '/admin' },
-          { label: 'Bulk Actions' },
-        ]}
+        breadcrumbs={getAdminBreadcrumbs(search ? `?${search}` : '', [{ label: 'Bulk Actions' }])}
       />
 
       {/* Filters */}

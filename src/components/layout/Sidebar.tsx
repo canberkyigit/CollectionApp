@@ -1,12 +1,11 @@
 import { useMemo, useState, useEffect } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Layers,
   LayoutDashboard,
   FolderOpen,
   Users,
-  Settings,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
@@ -16,20 +15,21 @@ import {
   Star,
   Send,
   Clock,
-  Download,
   Library,
   BookOpen,
   Inbox,
   Search,
 } from 'lucide-react';
 import { getCategoryIcon } from '@/lib/icons';
+import { isItemUnassignedForCategory, libraryMatchesCategory } from '@/lib/libraries';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useCollectionStore } from '@/store/useCollectionStore';
+import { useAuthStore } from '@/store/useAuthStore';
 
-const navItems = [
+const baseNavItems = [
   { label: 'Collections', icon: FolderOpen, path: '/collections' },
   { label: 'Statistics', icon: LayoutDashboard, path: '/dashboard' },
   { label: 'Favorites', icon: Star, path: '/favorites' },
@@ -37,34 +37,84 @@ const navItems = [
   { label: 'Lending', icon: Send, path: '/lending' },
   { label: 'Contributors', icon: Users, path: '/contributors' },
   { label: 'Activity', icon: Clock, path: '/activity' },
-  { label: 'Admin', icon: Settings, path: '/admin' },
 ];
 
 import type { CollectionItem } from '@/types';
+
+function getDisplayRole(role?: string) {
+  if (!role) return 'Workspace';
+  return role.charAt(0).toUpperCase() + role.slice(1);
+}
+
+function getPrimaryNavClass(isActive: boolean) {
+  return cn(
+    'group relative flex w-full items-center gap-2.5 rounded-2xl border px-3 py-2.5 text-sm font-medium transition-all duration-200',
+    isActive
+      ? 'surface-brand border-primary/25 text-surface-brand-foreground'
+      : 'border-transparent text-sidebar-foreground/85 hover:surface-1 hover:-translate-y-px hover:text-foreground',
+  );
+}
+
+function getSecondaryNavClass(isActive: boolean) {
+  return cn(
+    'group flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-sm transition-all duration-200',
+    isActive
+      ? 'surface-2 border-primary/20 text-primary shadow-[inset_0_1px_0_rgb(255_255_255_/_0.05)]'
+      : 'border-transparent text-sidebar-foreground/80 hover:surface-1 hover:text-foreground',
+  );
+}
+
+function getTreeNavClass(isActive: boolean) {
+  return cn(
+    'group flex w-full items-center gap-2 rounded-xl border px-2.5 py-2 text-[13px] transition-all duration-200',
+    isActive
+      ? 'surface-2 border-primary/18 text-primary'
+      : 'border-transparent text-sidebar-foreground/78 hover:surface-1 hover:text-foreground',
+  );
+}
 
 function SidebarItemList({
   items: listItems,
   catPath,
   navigate,
+  libraryParam,
+  activeItemId,
 }: {
   items: CollectionItem[];
   catPath: string;
   navigate: (path: string) => void;
+  libraryParam?: string;
+  activeItemId?: string | null;
 }) {
   if (listItems.length === 0) {
     return (
       <p className="px-3 py-1.5 text-xs text-muted-foreground/60 italic">No items</p>
     );
   }
+
+  const buildDetailPath = (itemId: string) => {
+    const params = new URLSearchParams();
+    if (libraryParam) {
+      params.set('library', libraryParam);
+    }
+    params.set('detail', itemId);
+    return `${catPath}?${params.toString()}`;
+  };
+
   return (
-    <div className="ml-3 space-y-px border-l border-border/50 py-0.5 pl-2">
+    <div className="ml-3 space-y-1 border-l border-border/60 py-1 pl-3">
       {listItems.map((item) => (
         <button
           key={item.id}
-          onClick={() => navigate(`${catPath}?detail=${item.id}`)}
-          className="flex w-full items-start gap-1.5 rounded px-1.5 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+          onClick={() => navigate(buildDetailPath(item.id))}
+          className={cn(
+            'group flex w-full items-start gap-2 rounded-lg border border-transparent px-2 py-1.5 text-xs transition-all duration-200',
+            activeItemId === item.id
+              ? 'surface-2 border-primary/15 text-primary'
+              : 'text-sidebar-foreground/70 hover:surface-1 hover:text-foreground',
+          )}
         >
-          <BookOpen className="size-3 shrink-0 mt-0.5 opacity-50" />
+          <BookOpen className="mt-0.5 size-3 shrink-0 opacity-50 transition-transform duration-200 group-hover:translate-x-0.5" />
           <span className="text-left leading-snug">{item.title}</span>
         </button>
       ))}
@@ -73,57 +123,32 @@ function SidebarItemList({
 }
 
 const Sidebar = () => {
+  const currentUser = useAuthStore((state) => state.user);
   const sidebarOpen = useCollectionStore((s) => s.sidebarOpen);
   const menuCollectionStyle = useCollectionStore((s) => s.menuCollectionStyle) ?? 'style1';
   const categories = useCollectionStore((s) => s.categories);
-  const items = useCollectionStore((s) => s.items);
   const getItemsByCategory = useCollectionStore((s) => s.getItemsByCategory);
   const reorderCategories = useCollectionStore((s) => s.reorderCategories);
   const location = useLocation();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [reorderMode, setReorderMode] = useState(false);
   const [expandedCatId, setExpandedCatId] = useState<string | null>(null);
   const [expandedLibId, setExpandedLibId] = useState<string | null>(null);
 
-  // Style 2 drill-in state
-  const [drillCatId, setDrillCatId] = useState<string | null>(null);
-  const [drillLibId, setDrillLibId] = useState<string | null>(null);
   const [groupByField, setGroupByField] = useState<string>('title');
   const [drillGroupValue, setDrillGroupValue] = useState<string | null>(null);
   const [sidebarSearch, setSidebarSearch] = useState('');
+  const activeDetailItemId = searchParams.get('detail');
 
   const libraries = useCollectionStore((s) => s.libraries);
+  const navItems = useMemo(() => baseNavItems, []);
 
   useEffect(() => {
     if (window.matchMedia('(max-width: 767px)').matches && useCollectionStore.getState().sidebarOpen) {
       useCollectionStore.setState({ sidebarOpen: false });
     }
   }, [location.pathname]);
-
-  // Reset drill-in state when switching to Style 1
-  useEffect(() => {
-    if (menuCollectionStyle === 'style1') {
-      setDrillCatId(null);
-      setDrillLibId(null);
-    }
-  }, [menuCollectionStyle]);
-
-  // Auto-drill into category when URL matches and Style 2 is active
-  useEffect(() => {
-    if (menuCollectionStyle !== 'style2') return;
-    const match = location.pathname.match(/^\/collections\/([^/]+)$/);
-    if (match) {
-      const slug = match[1];
-      const cat = categories.find((c) => c.slug === slug);
-      if (cat) {
-        const hasLibs = libraries.some((l) => l.categoryId === cat.id);
-        if (hasLibs && drillCatId !== cat.id) {
-          setDrillCatId(cat.id);
-          setDrillLibId(null);
-        }
-      }
-    }
-  }, [location.pathname, menuCollectionStyle, categories, libraries]);
 
   const categoryStats = useMemo(
     () =>
@@ -134,9 +159,9 @@ const Sidebar = () => {
           return {
             ...cat,
             count: catItems.length,
-            unassignedCount: catItems.filter((i) => !i.libraryId).length,
+            unassignedCount: catItems.filter((item) => isItemUnassignedForCategory(item, cat.id, libraries)).length,
             libraries: libraries
-              .filter((l) => l.categoryId === cat.id)
+              .filter((library) => libraryMatchesCategory(library, cat.id))
               .sort((a, b) => a.order - b.order)
               .map((lib) => ({
                 ...lib,
@@ -144,7 +169,7 @@ const Sidebar = () => {
               })),
           };
         }),
-    [categories, items, libraries, getItemsByCategory],
+    [categories, libraries, getItemsByCategory],
   );
 
   const handleMove = (index: number, direction: 'up' | 'down') => {
@@ -154,6 +179,30 @@ const Sidebar = () => {
     [ids[index], ids[swapIdx]] = [ids[swapIdx], ids[index]];
     reorderCategories(ids);
   };
+
+  const activeDrillCatId = useMemo(() => {
+    if (menuCollectionStyle !== 'style2') return null;
+    const match = location.pathname.match(/^\/collections\/([^/]+)$/);
+    if (!match) return null;
+    const slug = match[1];
+    const category = categories.find((entry) => entry.slug === slug);
+    if (!category) return null;
+    const hasLibraries = libraries.some((entry) => libraryMatchesCategory(entry, category.id));
+    return hasLibraries ? category.id : null;
+  }, [menuCollectionStyle, location.pathname, categories, libraries]);
+
+  const activeDrillLibId = useMemo(() => {
+    if (!activeDrillCatId) return null;
+    const libraryParam = searchParams.get('library');
+    if (!libraryParam) return null;
+    if (libraryParam === 'all') return '_all';
+    if (libraryParam === 'unassigned') return '_unassigned';
+    return libraryParam;
+  }, [activeDrillCatId, searchParams]);
+  const activeLibraryParam = useMemo(() => {
+    if (!location.pathname.startsWith('/collections/')) return null;
+    return searchParams.get('library') ?? 'all';
+  }, [location.pathname, searchParams]);
 
   const isMobileSidebar = typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches;
 
@@ -174,40 +223,52 @@ const Sidebar = () => {
     </AnimatePresence>
     <aside
       className={cn(
-        'flex h-full flex-col bg-sidebar border-r border-border transition-all duration-300 ease-in-out',
+        'flex h-full flex-col border-r border-border/70 bg-sidebar/95 shadow-[18px_0_40px_rgb(0_0_0_/_0.08)] backdrop-blur-xl transition-all duration-300 ease-in-out',
         'fixed inset-y-0 left-0 z-50 md:relative md:z-auto',
         sidebarOpen ? 'w-64' : 'w-0 overflow-hidden',
       )}
     >
-      <div className="flex h-16 shrink-0 items-center gap-3 border-b border-border px-6">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/15">
-          <Layers className="h-5 w-5 text-primary" />
-        </div>
-        <div className="flex flex-col">
-          <span className="text-base font-bold tracking-tight text-foreground">
-            CollectVault
-          </span>
-          <span className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
-            Premium
-          </span>
+      <div className="relative flex h-16 items-center overflow-hidden border-b border-border/70 px-4">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(99,102,241,0.18),transparent_42%),linear-gradient(180deg,rgba(255,255,255,0.03),transparent)]" />
+        <div className="relative flex w-full items-center gap-3">
+          <div className="surface-brand flex h-9 w-9 items-center justify-center rounded-2xl border border-primary/25">
+            <Layers className="h-4.5 w-4.5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <span className="block text-[15px] font-semibold leading-tight tracking-tight text-foreground">
+              CollectVault
+            </span>
+            <div className="mt-0.5 flex items-center gap-1.5">
+              <span className="text-[9px] font-semibold uppercase tracking-[0.22em] text-sidebar-foreground/65">
+                Collector OS
+              </span>
+              <Badge
+                variant="secondary"
+                className="h-5 rounded-full border border-border/60 bg-background/55 px-2 text-[10px] font-medium text-sidebar-foreground"
+              >
+                {getDisplayRole(currentUser?.role)}
+              </Badge>
+            </div>
+          </div>
         </div>
       </div>
 
       <ScrollArea className="flex-1 px-3 py-4">
         {/* ── Drill-in: Library items view (Style 2 only) ── */}
-        {menuCollectionStyle === 'style2' && drillCatId && drillLibId ? (() => {
-          const cat = categoryStats.find((c) => c.id === drillCatId);
+        {menuCollectionStyle === 'style2' && activeDrillCatId && activeDrillLibId ? (() => {
+          const cat = categoryStats.find((c) => c.id === activeDrillCatId);
           if (!cat) return null;
           const catPath = `/collections/${cat.slug}`;
-          const isAll = drillLibId === '_all';
-          const isUnassigned = drillLibId === '_unassigned';
-          const lib = cat.libraries.find((l) => l.id === drillLibId);
+          const isAll = activeDrillLibId === '_all';
+          const isUnassigned = activeDrillLibId === '_unassigned';
+          const libraryParam = isAll ? 'all' : isUnassigned ? 'unassigned' : activeDrillLibId;
+          const lib = cat.libraries.find((l) => l.id === activeDrillLibId);
           const label = isAll ? 'All' : isUnassigned ? 'Unassigned' : lib?.name ?? '';
           const drillItems = isAll
             ? getItemsByCategory(cat.id)
             : isUnassigned
-              ? getItemsByCategory(cat.id).filter((i) => !i.libraryId)
-              : getItemsByCategory(cat.id).filter((i) => i.libraryId === drillLibId);
+              ? getItemsByCategory(cat.id).filter((item) => isItemUnassignedForCategory(item, cat.id, libraries))
+              : getItemsByCategory(cat.id).filter((i) => i.libraryId === activeDrillLibId);
 
           const textFields = (cat.fields ?? []).filter(
             (f) => (f.type === 'text' || f.type === 'select') && f.key !== 'title',
@@ -256,24 +317,24 @@ const Sidebar = () => {
                   if (showGroupItems) {
                     setDrillGroupValue(null);
                   } else {
-                    setDrillLibId(null);
+                    navigate(catPath);
                     setGroupByField('none');
                     setDrillGroupValue(null);
                     setSidebarSearch('');
                   }
                 }}
-                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors mb-2"
+                className="mb-3 flex w-full items-center gap-2 rounded-2xl border border-transparent px-3 py-2.5 text-sm font-medium text-sidebar-foreground/80 transition-all duration-200 hover:surface-1 hover:text-foreground"
               >
                 <ChevronLeft className="size-4" />
                 <span>{showGroupItems ? groupField.label : cat.name}</span>
               </button>
 
               {/* Header: label */}
-              <div className="mb-2 px-3 flex items-center gap-2">
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <div className="mb-3 flex items-center gap-2 px-3">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-sidebar-foreground/60">
                   {showGroupItems ? drillGroupValue : label}
                 </span>
-                <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+                <Badge variant="secondary" className="h-5 rounded-full border border-border/60 bg-background/55 px-1.5 text-[10px]">
                   {showGroupItems ? groupItems.length : searchFiltered.length}
                 </Badge>
               </div>
@@ -284,7 +345,7 @@ const Sidebar = () => {
                   <select
                     value={groupByField}
                     onChange={(e) => { setGroupByField(e.target.value); setDrillGroupValue(null); }}
-                    className="h-7 w-full rounded-md border border-border bg-background px-2 text-xs text-muted-foreground outline-none focus:ring-1 focus:ring-ring"
+                    className="surface-1 h-8 w-full rounded-xl border px-3 text-xs text-sidebar-foreground outline-none focus:ring-1 focus:ring-ring"
                   >
                     <option value="title">Title</option>
                     {textFields.map((f) => (
@@ -297,13 +358,13 @@ const Sidebar = () => {
               {/* Search */}
               {!showGroupItems && (
                 <div className="relative mb-2 px-3">
-                  <Search className="absolute left-5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
+                  <Search className="absolute left-5 top-1/2 size-3.5 -translate-y-1/2 text-sidebar-foreground/55" />
                   <input
                     type="text"
                     value={sidebarSearch}
                     onChange={(e) => setSidebarSearch(e.target.value)}
                     placeholder="Search..."
-                    className="h-8 w-full rounded-md border border-border bg-background pl-7 pr-2 text-xs outline-none placeholder:text-muted-foreground/50 focus:ring-1 focus:ring-ring"
+                    className="surface-1 h-9 w-full rounded-xl border pl-8 pr-3 text-xs outline-none placeholder:text-sidebar-foreground/50 focus:ring-1 focus:ring-ring"
                   />
                 </div>
               )}
@@ -317,10 +378,15 @@ const Sidebar = () => {
                     groupItems.map((item) => (
                       <button
                         key={item.id}
-                        onClick={() => navigate(`${catPath}?detail=${item.id}`)}
-                        className="flex w-full items-start gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                        onClick={() => navigate(`${catPath}?library=${libraryParam}&detail=${item.id}`)}
+                        className={cn(
+                          'group flex w-full items-start gap-2 rounded-xl border px-3 py-2.5 text-sm transition-all duration-200',
+                          activeDetailItemId === item.id
+                            ? 'surface-2 border-primary/18 text-primary'
+                            : 'border-transparent text-sidebar-foreground/80 hover:surface-1 hover:text-foreground',
+                        )}
                       >
-                        <BookOpen className="size-3.5 shrink-0 mt-0.5 opacity-50" />
+                        <BookOpen className="mt-0.5 size-3.5 shrink-0 opacity-50 transition-transform duration-200 group-hover:translate-x-0.5" />
                         <span className="text-left leading-snug">{item.title}</span>
                       </button>
                     ))
@@ -333,11 +399,11 @@ const Sidebar = () => {
                       <button
                         key={g.key}
                         onClick={() => setDrillGroupValue(g.key)}
-                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                        className="flex w-full items-center gap-2 rounded-xl border border-transparent px-3 py-2.5 text-sm text-sidebar-foreground/80 transition-all duration-200 hover:surface-1 hover:text-foreground"
                       >
                         <Layers className="size-3.5 shrink-0 opacity-50" />
                         <span className="flex-1 text-left leading-snug">{g.label}</span>
-                        <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">{g.count}</Badge>
+                        <Badge variant="secondary" className="h-5 rounded-full border border-border/60 bg-background/55 px-1.5 text-[10px]">{g.count}</Badge>
                       </button>
                     ))
                   )
@@ -349,10 +415,15 @@ const Sidebar = () => {
                   searchFiltered.map((item) => (
                     <button
                       key={item.id}
-                      onClick={() => navigate(`${catPath}?detail=${item.id}`)}
-                      className="flex w-full items-start gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                      onClick={() => navigate(`${catPath}?library=${libraryParam}&detail=${item.id}`)}
+                      className={cn(
+                        'group flex w-full items-start gap-2 rounded-xl border px-3 py-2.5 text-sm transition-all duration-200',
+                        activeDetailItemId === item.id
+                          ? 'surface-2 border-primary/18 text-primary'
+                          : 'border-transparent text-sidebar-foreground/80 hover:surface-1 hover:text-foreground',
+                      )}
                     >
-                      <BookOpen className="size-3.5 shrink-0 mt-0.5 opacity-50" />
+                      <BookOpen className="mt-0.5 size-3.5 shrink-0 opacity-50 transition-transform duration-200 group-hover:translate-x-0.5" />
                       <span className="text-left leading-snug">{item.title}</span>
                     </button>
                   ))
@@ -363,8 +434,8 @@ const Sidebar = () => {
         })()
 
         /* ── Style 2 Drill-in: Libraries view (Style 2 only) ── */
-        : menuCollectionStyle === 'style2' && drillCatId ? (() => {
-          const cat = categoryStats.find((c) => c.id === drillCatId);
+        : menuCollectionStyle === 'style2' && activeDrillCatId ? (() => {
+          const cat = categoryStats.find((c) => c.id === activeDrillCatId);
           if (!cat) return null;
           const catPath = `/collections/${cat.slug}`;
           const CatIcon = getCategoryIcon(cat.icon);
@@ -372,48 +443,65 @@ const Sidebar = () => {
           return (
             <>
               <button
-                onClick={() => { setDrillCatId(null); setDrillLibId(null); }}
-                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors mb-2"
+                onClick={() => navigate('/collections')}
+                className="mb-3 flex w-full items-center gap-2 rounded-2xl border border-transparent px-3 py-2.5 text-sm font-medium text-sidebar-foreground/80 transition-all duration-200 hover:surface-1 hover:text-foreground"
               >
                 <ChevronLeft className="size-4" />
                 <span>Collections</span>
               </button>
 
-              <div className="mb-2 flex items-center gap-2 px-3">
-                <CatIcon className="size-4 text-primary" />
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <div className="mb-3 flex items-center gap-2 px-3">
+                <div className="flex size-8 items-center justify-center rounded-xl bg-primary/12 text-primary">
+                  <CatIcon className="size-4" />
+                </div>
+                <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-sidebar-foreground/60">
                   {cat.name}
                 </span>
-                <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">{cat.count}</Badge>
+                <Badge variant="secondary" className="h-5 rounded-full border border-border/60 bg-background/55 px-1.5 text-[10px]">{cat.count}</Badge>
               </div>
 
               <nav className="space-y-0.5">
                 <button
-                  onClick={() => { setDrillLibId('_all'); navigate(`${catPath}?library=all`); }}
-                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                  onClick={() => navigate(`${catPath}?library=all`)}
+                  className={getSecondaryNavClass(activeLibraryParam === 'all')}
                 >
-                  <FolderOpen className="size-4 shrink-0" />
+                  <span className={cn(
+                    'flex size-8 shrink-0 items-center justify-center rounded-xl transition-colors',
+                    activeLibraryParam === 'all' ? 'bg-white/12 text-current' : 'bg-primary/10 text-primary',
+                  )}>
+                    <FolderOpen className="size-4 shrink-0" />
+                  </span>
                   <span className="flex-1 text-left">All</span>
-                  <Badge variant="secondary" className="h-5 min-w-[1.25rem] justify-center px-1.5 text-[10px]">{cat.count}</Badge>
+                  <Badge variant="secondary" className="h-5 min-w-[1.25rem] justify-center rounded-full border border-border/60 bg-background/55 px-1.5 text-[10px]">{cat.count}</Badge>
                 </button>
                 {cat.libraries.map((lib) => (
                   <button
                     key={lib.id}
-                    onClick={() => { setDrillLibId(lib.id); navigate(`${catPath}?library=${lib.id}`); }}
-                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                    onClick={() => navigate(`${catPath}?library=${lib.id}`)}
+                    className={getSecondaryNavClass(activeLibraryParam === lib.id)}
                   >
-                    <Library className="size-4 shrink-0" />
+                    <span className={cn(
+                      'flex size-8 shrink-0 items-center justify-center rounded-xl transition-colors',
+                      activeLibraryParam === lib.id ? 'bg-white/12 text-current' : 'bg-primary/10 text-primary',
+                    )}>
+                      <Library className="size-4 shrink-0" />
+                    </span>
                     <span className="flex-1 text-left truncate">{lib.name}</span>
-                    <Badge variant="secondary" className="h-5 min-w-[1.25rem] justify-center px-1.5 text-[10px]">{lib.count}</Badge>
+                    <Badge variant="secondary" className="h-5 min-w-[1.25rem] justify-center rounded-full border border-border/60 bg-background/55 px-1.5 text-[10px]">{lib.count}</Badge>
                   </button>
                 ))}
                 <button
-                  onClick={() => { setDrillLibId('_unassigned'); navigate(`${catPath}?library=unassigned`); }}
-                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                  onClick={() => navigate(`${catPath}?library=unassigned`)}
+                  className={getSecondaryNavClass(activeLibraryParam === 'unassigned')}
                 >
-                  <Inbox className="size-4 shrink-0" />
+                  <span className={cn(
+                    'flex size-8 shrink-0 items-center justify-center rounded-xl transition-colors',
+                    activeLibraryParam === 'unassigned' ? 'bg-white/12 text-current' : 'bg-primary/10 text-primary',
+                  )}>
+                    <Inbox className="size-4 shrink-0" />
+                  </span>
                   <span className="flex-1 text-left">Unassigned</span>
-                  <Badge variant="secondary" className="h-5 min-w-[1.25rem] justify-center px-1.5 text-[10px]">{cat.unassignedCount}</Badge>
+                  <Badge variant="secondary" className="h-5 min-w-[1.25rem] justify-center rounded-full border border-border/60 bg-background/55 px-1.5 text-[10px]">{cat.unassignedCount}</Badge>
                 </button>
               </nav>
             </>
@@ -423,7 +511,7 @@ const Sidebar = () => {
         /* ── Default: Top nav + Collections list (Style 1 tree or Style 2 flat) ── */
         : (
           <>
-            <nav className="space-y-1">
+            <nav className="space-y-0.5">
               {navItems.map((item) => {
                 const isActive =
                   location.pathname === item.path ||
@@ -433,17 +521,14 @@ const Sidebar = () => {
                   <button
                     key={item.path}
                     onClick={() => navigate(item.path)}
-                    className={cn(
-                      'group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-                      isActive
-                        ? 'bg-primary/10 text-primary'
-                        : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-                    )}
+                    className={getPrimaryNavClass(isActive)}
                   >
-                    {isActive && (
-                      <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-full bg-primary" />
-                    )}
-                    <Icon className="h-4 w-4 shrink-0" />
+                    <span className={cn(
+                      'flex size-8 shrink-0 items-center justify-center rounded-xl transition-colors',
+                      isActive ? 'bg-white/12 text-current' : 'bg-primary/10 text-primary',
+                    )}>
+                      <Icon className="h-4 w-4 shrink-0" />
+                    </span>
                     <span className="truncate">{item.label}</span>
                     {isActive && (
                       <ChevronRight className="ml-auto h-3.5 w-3.5 opacity-60" />
@@ -453,10 +538,10 @@ const Sidebar = () => {
               })}
             </nav>
 
-            <Separator className="my-4" />
+            <Separator className="my-4 opacity-60" />
 
             <div className="mb-2 flex items-center justify-between px-3">
-              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sidebar-foreground/60">
                 Collections
               </span>
               <div className="flex items-center gap-1">
@@ -464,8 +549,8 @@ const Sidebar = () => {
                   <button
                     onClick={() => setReorderMode((v) => !v)}
                     className={cn(
-                      'flex h-5 items-center gap-1 rounded px-1.5 text-[10px] font-medium transition-colors',
-                      reorderMode ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground',
+                      'flex h-6 items-center gap-1 rounded-full border px-2 text-[10px] font-medium transition-colors',
+                      reorderMode ? 'border-primary/20 bg-primary/10 text-primary' : 'border-transparent text-sidebar-foreground/65 hover:border-border/70 hover:text-foreground',
                     )}
                     title={reorderMode ? 'Done reordering' : 'Reorder categories'}
                   >
@@ -473,7 +558,7 @@ const Sidebar = () => {
                     {reorderMode ? 'Done' : ''}
                   </button>
                 )}
-                <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+                <Badge variant="secondary" className="h-5 rounded-full border border-border/60 bg-background/55 px-1.5 text-[10px]">
                   {categories.length}
                 </Badge>
               </div>
@@ -490,19 +575,18 @@ const Sidebar = () => {
                   return (
                     <button
                       key={cat.id}
-                      onClick={() => {
-                        navigate(catPath);
-                        if (hasLibraries) { setDrillCatId(cat.id); setDrillLibId(null); }
-                      }}
-                      className={cn(
-                        'group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
-                        isActive ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-                      )}
+                      onClick={() => navigate(catPath)}
+                      className={getSecondaryNavClass(isActive)}
                     >
-                      <Icon className="h-4 w-4 shrink-0" />
+                      <span className={cn(
+                        'flex size-8 shrink-0 items-center justify-center rounded-xl transition-colors',
+                        isActive ? 'bg-primary/12 text-current' : 'bg-primary/10 text-primary',
+                      )}>
+                        <Icon className="h-4 w-4 shrink-0" />
+                      </span>
                       <span className="flex-1 truncate text-left">{cat.name}</span>
                       {hasLibraries && <ChevronRight className="size-3.5 opacity-40" />}
-                      <Badge variant="secondary" className="h-5 min-w-[1.25rem] justify-center px-1.5 text-[10px]">{cat.count}</Badge>
+                      <Badge variant="secondary" className="h-5 min-w-[1.25rem] justify-center rounded-full border border-border/60 bg-background/55 px-1.5 text-[10px]">{cat.count}</Badge>
                     </button>
                   );
                 }
@@ -513,8 +597,8 @@ const Sidebar = () => {
                     <div className="flex items-center gap-0.5">
                       {reorderMode && (
                         <div className="flex shrink-0 flex-col">
-                          <button onClick={() => handleMove(idx, 'up')} disabled={idx === 0} className="flex size-4 items-center justify-center rounded text-muted-foreground/50 transition-colors hover:text-foreground disabled:opacity-20"><ChevronUp className="size-3" /></button>
-                          <button onClick={() => handleMove(idx, 'down')} disabled={idx === categoryStats.length - 1} className="flex size-4 items-center justify-center rounded text-muted-foreground/50 transition-colors hover:text-foreground disabled:opacity-20"><ChevronDown className="size-3" /></button>
+                          <button onClick={() => handleMove(idx, 'up')} disabled={idx === 0} className="flex size-4 items-center justify-center rounded text-sidebar-foreground/45 transition-colors hover:text-foreground disabled:opacity-20"><ChevronUp className="size-3" /></button>
+                          <button onClick={() => handleMove(idx, 'down')} disabled={idx === categoryStats.length - 1} className="flex size-4 items-center justify-center rounded text-sidebar-foreground/45 transition-colors hover:text-foreground disabled:opacity-20"><ChevronDown className="size-3" /></button>
                         </div>
                       )}
                       <button
@@ -523,14 +607,16 @@ const Sidebar = () => {
                           else { navigate(catPath); if (hasLibraries) setExpandedCatId(cat.id); else setExpandedCatId(null); }
                           setExpandedLibId(null);
                         }}
-                        className={cn(
-                          'group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
-                          isActive ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-                        )}
+                        className={getSecondaryNavClass(isActive)}
                       >
-                        <Icon className="h-4 w-4 shrink-0" />
+                        <span className={cn(
+                          'flex size-8 shrink-0 items-center justify-center rounded-xl transition-colors',
+                          isActive ? 'bg-primary/12 text-current' : 'bg-primary/10 text-primary',
+                        )}>
+                          <Icon className="h-4 w-4 shrink-0" />
+                        </span>
                         <span className="flex-1 truncate text-left">{cat.name}</span>
-                        <Badge variant="secondary" className="h-5 min-w-[1.25rem] justify-center px-1.5 text-[10px]">{cat.count}</Badge>
+                        <Badge variant="secondary" className="h-5 min-w-[1.25rem] justify-center rounded-full border border-border/60 bg-background/55 px-1.5 text-[10px]">{cat.count}</Badge>
                       </button>
                     </div>
                     {isExpanded && (() => {
@@ -538,18 +624,24 @@ const Sidebar = () => {
                       const allExpanded = expandedLibId === '_all_' + cat.id;
                       const unassignedExpanded = expandedLibId === '_unassigned_' + cat.id;
                       return (
-                        <div className="ml-9 space-y-0.5 border-l border-border py-1 pl-2">
+                        <div className="ml-10 space-y-1 border-l border-border/60 py-1 pl-3">
                           <div>
                             <button
                               onClick={() => setExpandedLibId(allExpanded ? null : '_all_' + cat.id)}
-                              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                              className={getTreeNavClass(isActive && activeLibraryParam === 'all')}
                             >
                               <FolderOpen className="size-3.5 shrink-0" />
                               <span className="flex-1 truncate text-left">All</span>
-                              <Badge variant="secondary" className="h-4 px-1 text-[10px]">{cat.count}</Badge>
+                              <Badge variant="secondary" className="h-4 rounded-full border border-border/60 bg-background/55 px-1 text-[10px]">{cat.count}</Badge>
                             </button>
                             {allExpanded && (
-                              <SidebarItemList items={catItems} catPath={catPath} navigate={navigate} />
+                              <SidebarItemList
+                                items={catItems}
+                                catPath={catPath}
+                                navigate={navigate}
+                                libraryParam="all"
+                                activeItemId={activeDetailItemId}
+                              />
                             )}
                           </div>
                           {cat.libraries.map((lib) => {
@@ -559,14 +651,20 @@ const Sidebar = () => {
                               <div key={lib.id}>
                                 <button
                                   onClick={() => setExpandedLibId(libExpanded ? null : lib.id)}
-                                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                                  className={getTreeNavClass(isActive && activeLibraryParam === lib.id)}
                                 >
                                   <Library className="size-3.5 shrink-0" />
                                   <span className="flex-1 truncate text-left">{lib.name}</span>
-                                  <Badge variant="secondary" className="h-4 px-1 text-[10px]">{lib.count}</Badge>
+                                  <Badge variant="secondary" className="h-4 rounded-full border border-border/60 bg-background/55 px-1 text-[10px]">{lib.count}</Badge>
                                 </button>
                                 {libExpanded && (
-                                  <SidebarItemList items={libItems} catPath={catPath} navigate={navigate} />
+                                  <SidebarItemList
+                                    items={libItems}
+                                    catPath={catPath}
+                                    navigate={navigate}
+                                    libraryParam={lib.id}
+                                    activeItemId={activeDetailItemId}
+                                  />
                                 )}
                               </div>
                             );
@@ -574,14 +672,20 @@ const Sidebar = () => {
                           <div>
                             <button
                               onClick={() => setExpandedLibId(unassignedExpanded ? null : '_unassigned_' + cat.id)}
-                              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                              className={getTreeNavClass(isActive && activeLibraryParam === 'unassigned')}
                             >
                               <Inbox className="size-3.5 shrink-0" />
                               <span className="flex-1 truncate text-left">Unassigned</span>
-                              <Badge variant="secondary" className="h-4 px-1 text-[10px]">{cat.unassignedCount}</Badge>
+                              <Badge variant="secondary" className="h-4 rounded-full border border-border/60 bg-background/55 px-1 text-[10px]">{cat.unassignedCount}</Badge>
                             </button>
                             {unassignedExpanded && (
-                              <SidebarItemList items={catItems.filter((i) => !i.libraryId)} catPath={catPath} navigate={navigate} />
+                              <SidebarItemList
+                                items={catItems.filter((item) => isItemUnassignedForCategory(item, cat.id, libraries))}
+                                catPath={catPath}
+                                navigate={navigate}
+                                libraryParam="unassigned"
+                                activeItemId={activeDetailItemId}
+                              />
                             )}
                           </div>
                         </div>
@@ -595,34 +699,6 @@ const Sidebar = () => {
         )}
       </ScrollArea>
 
-      <Separator />
-
-      <div className="shrink-0 space-y-0.5 p-3">
-        <button
-          onClick={() => navigate('/export')}
-          className={cn(
-            'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
-            location.pathname === '/export'
-              ? 'bg-primary/10 text-primary'
-              : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-          )}
-        >
-          <Download className="h-4 w-4 shrink-0" />
-          <span>Import / Export</span>
-        </button>
-        <button
-          onClick={() => navigate('/settings')}
-          className={cn(
-            'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
-            location.pathname === '/settings'
-              ? 'bg-primary/10 text-primary'
-              : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-          )}
-        >
-          <Settings className="h-4 w-4 shrink-0" />
-          <span>Settings</span>
-        </button>
-      </div>
     </aside>
     </>
   );

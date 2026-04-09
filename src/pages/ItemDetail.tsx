@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { createElement, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 
 import { PageTransition } from '@/components/shared/motion';
@@ -18,7 +18,6 @@ import {
   TrendingUp,
   DollarSign,
   Clock,
-  Hash,
   Save,
   FileText,
   ArrowLeft,
@@ -43,7 +42,7 @@ import {
 } from 'recharts';
 import { toast } from 'sonner';
 
-import { PageHeader, ConfirmDialog, EmptyState } from '@/components/shared';
+import { PageHeader, ConfirmDialog, EmptyState, LoadingSkeleton } from '@/components/shared';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -61,42 +60,51 @@ import {
   formatCurrency,
   formatDate,
   formatRelativeDate,
-  calculateGainLoss,
 } from '@/lib/utils';
 import { currencyService } from '@/services/currencyService';
 import { useCollectionStore } from '@/store/useCollectionStore';
+import {
+  buildItemChartData,
+  getConditionBadgeProps,
+  getItemDetailStats,
+  getVisibleCustomFields,
+} from './itemDetail-helpers';
 
-function getConditionBadgeProps(condition: string) {
-  switch (condition) {
-    case 'Mint':
-    case 'Near Mint':
-      return { variant: 'success' as const };
-    case 'Very Good':
-    case 'Good':
-      return {
-        variant: 'outline' as const,
-        className: 'border-blue-500/30 bg-blue-500/15 text-blue-700 dark:text-blue-400',
-      };
-    case 'Fair':
-      return { variant: 'warning' as const };
-    case 'Poor':
-      return { variant: 'destructive' as const };
-    default:
-      return { variant: 'secondary' as const };
-  }
+type ItemConditionBadge = ReturnType<typeof getConditionBadgeProps>;
+
+function CategoryIconDisplay({
+  iconName,
+  className,
+}: {
+  iconName: string;
+  className?: string;
+}) {
+  return createElement(getCategoryIcon(iconName), { className });
 }
 
-const ChartTooltip = ({ active, payload, label, displayCurrency }: any) => {
+type ChartTooltipProps = {
+  active?: boolean;
+  payload?: Array<{ value?: number }>;
+  label?: string;
+  displayCurrency: string;
+};
+
+function ChartTooltip({
+  active,
+  payload,
+  label,
+  displayCurrency,
+}: ChartTooltipProps) {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-card border border-border rounded-lg px-3 py-2 shadow-xl">
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="text-sm font-semibold text-foreground">
-        {formatCurrency(payload[0].value, displayCurrency)}
+        {formatCurrency(payload[0].value ?? 0, displayCurrency)}
       </p>
     </div>
   );
-};
+}
 
 function ImageGallery({
   images,
@@ -108,7 +116,7 @@ function ImageGallery({
   images: string[];
   title: string;
   condition: string;
-  condBadge: { variant: string; className?: string };
+  condBadge: ItemConditionBadge;
   FallbackIcon: LucideIcon;
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
@@ -142,7 +150,7 @@ function ImageGallery({
         )}
 
         <div className="absolute right-3 top-3">
-          <Badge {...(condBadge as any)} className={cn('text-sm px-3 py-1', condBadge.className)}>
+          <Badge variant={condBadge.variant} className={cn('text-sm px-3 py-1', condBadge.className)}>
             {condition}
           </Badge>
         </div>
@@ -202,6 +210,8 @@ export default function ItemDetail() {
   const navigate = useNavigate();
 
   const displayCurrency = useCollectionStore((s) => s.displayCurrency);
+  const isRemoteDataLoading = useCollectionStore((s) => s.isRemoteDataLoading);
+  const ownerUserId = useCollectionStore((s) => s.ownerUserId);
   const {
     getItemById,
     getCategoryById,
@@ -217,51 +227,27 @@ export default function ItemDetail() {
   const item = getItemById(itemId ?? '');
   const category = item ? getCategoryById(item.categoryId) : undefined;
   const contributor = item ? getContributorById(item.contributorId) : undefined;
+  const shouldShowLoadingState =
+    Boolean(ownerUserId) &&
+    isRemoteDataLoading &&
+    !item &&
+    !category;
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [notes, setNotes] = useState(item?.notes ?? '');
   const [isSavingNotes, setIsSavingNotes] = useState(false);
 
-  const gainLoss = useMemo(() => {
-    if (!item) return { diff: 0, percentage: 0, isPositive: true };
-    const purchaseDisplay = currencyService.convert(
-      item.purchaseInfo.purchasePrice,
-      item.purchaseInfo.purchaseCurrency,
-      displayCurrency,
+  if (shouldShowLoadingState) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="Loading Item"
+          breadcrumbs={[{ label: 'Collections', href: '/collections' }]}
+        />
+        <LoadingSkeleton variant="detail" />
+      </div>
     );
-    const currentDisplay = currencyService.convert(
-      item.purchaseInfo.purchasePrice,
-      item.purchaseInfo.purchaseCurrency,
-      displayCurrency,
-    );
-    return calculateGainLoss(purchaseDisplay, currentDisplay);
-  }, [item, displayCurrency]);
-
-  const chartData = useMemo(() => {
-    if (!item) return [];
-    return item.valuationInfo.valueHistory.map((entry) => ({
-      date: formatDate(entry.date),
-      value: currencyService.convert(entry.value, entry.currency, displayCurrency),
-    }));
-  }, [item, displayCurrency]);
-
-  const currentValueUSD = useMemo(() => {
-    if (!item) return 0;
-    return currencyService.convert(
-      item.purchaseInfo.purchasePrice,
-      item.purchaseInfo.purchaseCurrency,
-      'USD',
-    );
-  }, [item]);
-
-  const currentValueDisplay = useMemo(() => {
-    if (!item) return 0;
-    return currencyService.convert(
-      item.purchaseInfo.purchasePrice,
-      item.purchaseInfo.purchaseCurrency,
-      displayCurrency,
-    );
-  }, [item, displayCurrency]);
+  }
 
   if (!item || !category) {
     return (
@@ -280,8 +266,21 @@ export default function ItemDetail() {
     );
   }
 
-  const CategoryIcon = getCategoryIcon(category.icon);
   const condBadge = getConditionBadgeProps(item.condition);
+  const chartData = buildItemChartData(item, displayCurrency);
+  const {
+    gainLoss,
+    currentValueDisplay,
+    currentValueCurrency,
+    currentValueUSD,
+    currentExchangeRate,
+    purchaseValueDisplay,
+  } = getItemDetailStats(item, displayCurrency);
+  const visibleCustomFields = getVisibleCustomFields(category, item);
+  const hasActiveLoan = item.lendingHistory.some((record) => !record.actualReturnDate);
+  const latestMaintenance = item.maintenanceLog
+    .slice()
+    .sort((left, right) => new Date(right.date).getTime() - new Date(left.date).getTime())[0];
 
   const handleDelete = () => {
     deleteItem(item.id);
@@ -296,10 +295,8 @@ export default function ItemDetail() {
   const handleSaveNotes = () => {
     setIsSavingNotes(true);
     updateItem(item.id, { notes });
-    setTimeout(() => {
-      setIsSavingNotes(false);
-      toast.success('Notes saved successfully');
-    }, 300);
+    setIsSavingNotes(false);
+    toast.success('Notes saved successfully');
   };
 
   const renderFieldValue = (fieldType: string, value: unknown) => {
@@ -369,6 +366,92 @@ export default function ItemDetail() {
         </Button>
       </PageHeader>
 
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Card className="surface-2 border-border/70">
+          <CardContent className="space-y-2 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              Current Value
+            </p>
+            <p className="text-2xl font-bold tracking-tight">
+              {formatCurrency(currentValueDisplay, displayCurrency)}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              live valuation summary
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="surface-2 border-border/70">
+          <CardContent className="space-y-2 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              Purchase Basis
+            </p>
+            <p className="text-2xl font-bold tracking-tight">
+              {formatCurrency(purchaseValueDisplay, displayCurrency)}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {formatDate(item.purchaseInfo.purchasedAt)}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="surface-2 border-border/70">
+          <CardContent className="space-y-2 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              Performance
+            </p>
+            <div className="flex items-center gap-2">
+              <Badge
+                variant={gainLoss.isPositive ? 'success' : 'destructive'}
+                className="gap-1"
+              >
+                {gainLoss.isPositive ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" />}
+                {Math.abs(gainLoss.percentage).toFixed(1)}%
+              </Badge>
+              <span
+                className={cn(
+                  'text-lg font-semibold',
+                  gainLoss.isPositive
+                    ? 'text-green-600 dark:text-green-400'
+                    : 'text-red-600 dark:text-red-400',
+                )}
+              >
+                {gainLoss.isPositive ? '+' : ''}
+                {formatCurrency(gainLoss.diff, displayCurrency)}
+              </span>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              compared to purchase value
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="surface-2 border-border/70">
+          <CardContent className="space-y-2 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              Status
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={condBadge.variant} className={cn(condBadge.className)}>
+                {item.condition}
+              </Badge>
+              {item.isFavorite && (
+                <Badge className="bg-amber-500 text-white">
+                  <Star className="mr-1 size-3 fill-white" />
+                  Starred
+                </Badge>
+              )}
+              {hasActiveLoan && (
+                <Badge variant="warning">On Loan</Badge>
+              )}
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {latestMaintenance ? `last maintenance ${formatRelativeDate(latestMaintenance.date)}` : 'no recent maintenance'}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Left Column */}
         <div className="space-y-6 lg:col-span-2">
@@ -378,12 +461,12 @@ export default function ItemDetail() {
             title={item.title}
             condition={item.condition}
             condBadge={condBadge}
-            FallbackIcon={CategoryIcon}
+            FallbackIcon={getCategoryIcon(category.icon)}
           />
 
           {/* Tabs */}
           <Tabs defaultValue="details">
-            <TabsList className="w-full justify-start">
+            <TabsList className="flex h-auto w-full justify-start gap-1 overflow-x-auto rounded-xl p-1">
               <TabsTrigger value="details">Details</TabsTrigger>
               <TabsTrigger value="custom-fields">Custom Fields</TabsTrigger>
               <TabsTrigger value="maintenance">
@@ -405,14 +488,55 @@ export default function ItemDetail() {
 
             {/* Details Tab */}
             <TabsContent value="details">
-              <Card>
+              <Card className="surface-2 border-border/70">
                 <CardHeader>
-                  <CardTitle>Description</CardTitle>
+                  <CardTitle>Overview</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  <p className="leading-relaxed text-muted-foreground">
-                    {item.description || 'No description provided.'}
-                  </p>
+                  <div className="rounded-2xl border border-border/65 bg-background/45 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                      Description
+                    </p>
+                    <p className="mt-3 leading-relaxed text-muted-foreground">
+                      {item.description || 'No description provided.'}
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                    <div className="rounded-2xl border border-border/65 bg-background/45 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                        Purchase Currency
+                      </p>
+                      <p className="mt-2 text-lg font-semibold">
+                        {item.purchaseInfo.purchaseCurrency}
+                      </p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        bought for {formatCurrency(item.purchaseInfo.purchasePrice, item.purchaseInfo.purchaseCurrency)}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-border/65 bg-background/45 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                        Current Currency
+                      </p>
+                      <p className="mt-2 text-lg font-semibold">
+                        {currentValueCurrency}
+                      </p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        1 {currentValueCurrency} = {(Number(currentExchangeRate) || 0).toFixed(4)} USD
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-border/65 bg-background/45 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                        Activity
+                      </p>
+                      <p className="mt-2 text-lg font-semibold">
+                        {item.maintenanceLog.length + item.lendingHistory.length}
+                      </p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        maintenance and lending records
+                      </p>
+                    </div>
+                  </div>
 
                   <Separator />
 
@@ -423,7 +547,7 @@ export default function ItemDetail() {
                       </div>
                       <div>
                         <p className="text-sm font-medium">Condition</p>
-                        <Badge {...condBadge} className={cn('mt-1', condBadge.className)}>
+                        <Badge variant={condBadge.variant} className={cn('mt-1', condBadge.className)}>
                           {item.condition}
                         </Badge>
                       </div>
@@ -431,7 +555,7 @@ export default function ItemDetail() {
 
                     <div className="flex items-start gap-3">
                       <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-                        <CategoryIcon className="size-4 text-primary" />
+                        <CategoryIconDisplay iconName={category.icon} className="size-4 text-primary" />
                       </div>
                       <div>
                         <p className="text-sm font-medium">Category</p>
@@ -516,21 +640,14 @@ export default function ItemDetail() {
 
             {/* Custom Fields Tab */}
             <TabsContent value="custom-fields">
-              <Card>
+              <Card className="surface-2 border-border/70">
                 <CardHeader>
                   <CardTitle>Custom Fields</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {category.fields.length > 0 ? (
+                  {visibleCustomFields.length > 0 ? (
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                      {category.fields
-                        .filter((f) => {
-                          if (f.key === 'notes' || f.type === 'rich-notes' || f.key === 'title' || f.key === 'condition' || f.key === 'quantity') return false;
-                          if (f.type === 'boolean') return true;
-                          const v = item.customFields[f.key];
-                          return v != null && v !== '';
-                        })
-                        .map((field) => (
+                      {visibleCustomFields.map((field) => (
                         <div
                           key={field.id}
                           className="rounded-lg border bg-muted/30 p-3"
@@ -555,7 +672,7 @@ export default function ItemDetail() {
 
             {/* Maintenance Tab */}
             <TabsContent value="maintenance">
-              <Card>
+              <Card className="surface-2 border-border/70">
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <CardTitle className="flex items-center gap-2">
@@ -658,7 +775,7 @@ export default function ItemDetail() {
 
             {/* Lending Tab */}
             <TabsContent value="lending">
-              <Card>
+              <Card className="surface-2 border-border/70">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Send className="size-4" />
@@ -731,7 +848,7 @@ export default function ItemDetail() {
 
             {/* Notes Tab */}
             <TabsContent value="notes">
-              <Card>
+              <Card className="surface-2 border-border/70">
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <CardTitle className="flex items-center gap-2">
@@ -767,7 +884,7 @@ export default function ItemDetail() {
 
           {/* Value History Chart */}
           {chartData.length > 1 && (
-            <Card>
+            <Card className="surface-2 border-border/70">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <TrendingUp className="size-4" />
@@ -911,7 +1028,7 @@ export default function ItemDetail() {
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">Exchange Rate</span>
                     <span className="text-xs font-mono text-muted-foreground">
-                      1 {item.valuationInfo.currentValueCurrency} = {(Number(item.valuationInfo.currentExchangeRate) || 0).toFixed(4)} USD
+                      1 {currentValueCurrency} = {(Number(currentExchangeRate) || 0).toFixed(4)} USD
                     </span>
                   </div>
                 </div>
@@ -937,7 +1054,7 @@ export default function ItemDetail() {
                           {formatCurrency(
                             currencyService.convert(
                               item.valuationInfo.targetEstimatedValue,
-                              item.valuationInfo.currentValueCurrency,
+                              currentValueCurrency,
                               displayCurrency,
                             ),
                             displayCurrency,
@@ -951,7 +1068,7 @@ export default function ItemDetail() {
                             currentValueDisplay > 0
                               ? ((currencyService.convert(
                                   item.valuationInfo.targetEstimatedValue,
-                                  item.valuationInfo.currentValueCurrency,
+                                  currentValueCurrency,
                                   displayCurrency,
                                 ) /
                                   currentValueDisplay -
@@ -981,7 +1098,7 @@ export default function ItemDetail() {
 
           {/* Contributor Card */}
           {contributor && (
-            <Card>
+            <Card className="surface-2 border-border/70">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">Contributor</CardTitle>
               </CardHeader>
@@ -1005,7 +1122,7 @@ export default function ItemDetail() {
           )}
 
           {/* Metadata Card */}
-          <Card>
+          <Card className="surface-2 border-border/70">
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 <Clock className="size-4" />

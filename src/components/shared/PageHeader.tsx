@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 
 import { ChevronRight } from 'lucide-react';
 
@@ -32,12 +33,12 @@ export function PageHeader({
             <span key={crumb.label} className="flex items-center gap-1">
               {index > 0 && <ChevronRight className="size-3 sm:size-3.5" />}
               {crumb.href ? (
-                <a
-                  href={crumb.href}
+                <Link
+                  to={crumb.href}
                   className="transition-colors hover:text-foreground"
                 >
                   {crumb.label}
-                </a>
+                </Link>
               ) : (
                 <span className="text-foreground">{crumb.label}</span>
               )}

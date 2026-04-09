@@ -5,5 +5,5 @@ export { PageHeader } from './PageHeader';
 export { LoadingSkeleton } from './LoadingSkeleton';
 export { ConfirmDialog } from './ConfirmDialog';
 export { AdvancedFilters } from './AdvancedFilters';
-export type { FilterState } from './AdvancedFilters';
-export { DEFAULT_FILTERS } from './AdvancedFilters';
+export type { FilterState } from './advancedFilters.types';
+export { DEFAULT_FILTERS } from './advancedFilters.types';

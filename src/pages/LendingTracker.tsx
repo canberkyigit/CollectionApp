@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 import type { LendingRecord } from '@/types';
 import {
@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { PageHeader, EmptyState, StatCard } from '@/components/shared';
+import { PageHeader, EmptyState, LoadingSkeleton, StatCard } from '@/components/shared';
 import { PageTransition } from '@/components/shared/motion';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -42,6 +42,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { cn, formatDate } from '@/lib/utils';
 import { useCollectionStore } from '@/store/useCollectionStore';
+import { selectIsColdLoading } from '@/store/collectionStore.selectors';
 
 interface ActiveLoan {
   itemId: string;
@@ -78,13 +79,19 @@ function conditionBadgeProps(condition: LendingRecord['condition']) {
 }
 
 export default function LendingTracker() {
+  const navigate = useNavigate();
   const {
     items,
-    getLentItems,
     addLendingRecord,
     returnLendingRecord,
     getCategoryById,
+    ownerUserId,
+    isRemoteDataLoading,
   } = useCollectionStore();
+  const shouldShowLoadingState = selectIsColdLoading(
+    { ownerUserId, isRemoteDataLoading },
+    [items.length],
+  );
 
   const [lendDialogOpen, setLendDialogOpen] = useState(false);
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
@@ -107,9 +114,11 @@ export default function LendingTracker() {
   const today = new Date().toISOString().slice(0, 10);
 
   const activeLoans = useMemo<ActiveLoan[]>(() => {
-    const lentItems = getLentItems();
     const loans: ActiveLoan[] = [];
-    for (const item of lentItems) {
+    for (const item of items) {
+      if (!item.lendingHistory.some((record) => !record.actualReturnDate)) {
+        continue;
+      }
       const cat = getCategoryById(item.categoryId);
       for (const record of item.lendingHistory) {
         if (!record.actualReturnDate) {
@@ -127,7 +136,7 @@ export default function LendingTracker() {
         new Date(a.record.expectedReturnDate).getTime() -
         new Date(b.record.expectedReturnDate).getTime(),
     );
-  }, [items, getLentItems, getCategoryById]);
+  }, [items, getCategoryById]);
 
   const historyRecords = useMemo(() => {
     const records: (ActiveLoan & { duration: number })[] = [];
@@ -218,6 +227,14 @@ export default function LendingTracker() {
         </Button>
       </PageHeader>
 
+      {shouldShowLoadingState ? (
+        <div className="space-y-4">
+          <LoadingSkeleton variant="list" count={3} />
+          <LoadingSkeleton variant="list" count={4} />
+        </div>
+      ) : (
+        <>
+
       {/* Stats */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard
@@ -264,12 +281,15 @@ export default function LendingTracker() {
           {activeLoans.length === 0 ? (
             <EmptyState
               icon={Package}
+              eyebrow="Lending"
               title="No active loans"
               description="All your items are safely at home. Use the Lend Item button to track a new loan."
               action={{
                 label: 'Lend an Item',
                 onClick: () => setLendDialogOpen(true),
               }}
+              secondaryAction={{ label: 'Browse Collections', onClick: () => navigate('/collections') }}
+              hint="Loan records help you keep borrower details, due dates, and return condition in one place."
             />
           ) : (
             <div className="grid gap-4">
@@ -375,8 +395,15 @@ export default function LendingTracker() {
           {historyRecords.length === 0 ? (
             <EmptyState
               icon={CheckCircle}
+              eyebrow="Lending"
               title="No lending history"
               description="Completed loans will appear here once items are returned."
+              action={{ label: 'Browse Collections', onClick: () => navigate('/collections') }}
+              secondaryAction={{
+                label: 'Track a Loan',
+                onClick: () => setLendDialogOpen(true),
+              }}
+              hint="Once an item is marked returned, it moves from Active Loans into this history tab automatically."
             />
           ) : (
             <div className="grid gap-4">
@@ -433,6 +460,8 @@ export default function LendingTracker() {
           )}
         </TabsContent>
       </Tabs>
+        </>
+      )}
 
       {/* Lend Item Dialog */}
       <Dialog open={lendDialogOpen} onOpenChange={setLendDialogOpen}>

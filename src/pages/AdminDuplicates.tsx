@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, Eye, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { PageTransition } from '@/components/shared/motion';
@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
+import { getAdminBreadcrumbs } from '@/lib/adminNavigation';
 import { useCollectionStore } from '@/store/useCollectionStore';
 import { formatDate } from '@/lib/utils';
 
@@ -19,9 +20,15 @@ interface DuplicateGroup {
 
 export default function AdminDuplicates() {
   const navigate = useNavigate();
-  const { items, categories, deleteItem, getCategoryById } = useCollectionStore();
+  const [searchParams] = useSearchParams();
+  const search = searchParams.toString();
+  const { items, categories, deleteItem } = useCollectionStore();
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const categoryNameById = useMemo(
+    () => new Map(categories.map((category) => [category.id, category.name])),
+    [categories],
+  );
 
   const duplicateGroups = useMemo<DuplicateGroup[]>(() => {
     const groups: DuplicateGroup[] = [];
@@ -36,8 +43,7 @@ export default function AdminDuplicates() {
     }
 
     for (const [catId, catItems] of byCat) {
-      const category = getCategoryById(catId);
-      const catName = category?.name ?? catId;
+      const catName = categoryNameById.get(catId) ?? catId;
 
       // Title duplicates
       const byTitle = new Map<string, typeof catItems>();
@@ -76,7 +82,7 @@ export default function AdminDuplicates() {
     }
 
     return groups;
-  }, [items, categories]);
+  }, [items, categoryNameById]);
 
   const toggleExpand = (key: string) => {
     setExpandedKeys((prev) => {
@@ -93,7 +99,7 @@ export default function AdminDuplicates() {
         <PageHeader
           title="Duplicate Detection"
           description="Items that may be duplicates based on title or ISBN"
-          breadcrumbs={[{ label: 'Admin', href: '/admin' }, { label: 'Duplicates' }]}
+          breadcrumbs={getAdminBreadcrumbs(search ? `?${search}` : '', [{ label: 'Duplicates' }])}
         />
 
         {duplicateGroups.length === 0 ? (

@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import {
   Pencil,
@@ -35,12 +35,16 @@ import {
   formatCurrency,
   formatDate,
   formatRelativeDate,
-  calculateGainLoss,
 } from '@/lib/utils';
-import { currencyService } from '@/services/currencyService';
 import { QRCodeSVG } from 'qrcode.react';
 import { useCollectionStore } from '@/store/useCollectionStore';
 import { ConfirmDialog } from '@/components/shared';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
+import {
+  getItemNotes,
+  getValuationSummary,
+} from '@/components/shared/itemDetailPanelHelpers';
+import type { Category, CollectionItem } from '@/types';
 
 function getConditionBadgeProps(condition: string) {
   switch (condition) {
@@ -76,6 +80,50 @@ export function ItemDetailPanel({ itemId, onClose }: Props) {
     openItemDialog,
   } = useCollectionStore();
 
+  const item = itemId ? getItemById(itemId) : undefined;
+  const category = item ? getCategoryById(item.categoryId) : undefined;
+
+  if (!item || !category) return null;
+
+  return (
+    <ItemDetailPanelContent
+      key={item.id}
+      item={item}
+      category={category}
+      displayCurrency={displayCurrency}
+      onClose={onClose}
+      toggleFavorite={toggleFavorite}
+      toggleRead={toggleRead}
+      deleteItem={deleteItem}
+      updateItem={updateItem}
+      openItemDialog={openItemDialog}
+    />
+  );
+}
+
+interface ItemDetailPanelContentProps {
+  item: CollectionItem;
+  category: Category;
+  displayCurrency: string;
+  onClose: () => void;
+  toggleFavorite: (id: string) => void;
+  toggleRead: (id: string) => void;
+  deleteItem: (id: string) => void;
+  updateItem: (id: string, updates: Partial<CollectionItem>) => void;
+  openItemDialog: (categoryId: string, item?: CollectionItem) => void;
+}
+
+function ItemDetailPanelContent({
+  item,
+  category,
+  displayCurrency,
+  onClose,
+  toggleFavorite,
+  toggleRead,
+  deleteItem,
+  updateItem,
+  openItemDialog,
+}: ItemDetailPanelContentProps) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [activeImage, setActiveImage] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -84,23 +132,12 @@ export function ItemDetailPanel({ itemId, onClose }: Props) {
   const startX = useRef(0);
   const startWidth = useRef(0);
   const qrContainerRef = useRef<HTMLDivElement>(null);
-  const [notesValue, setNotesValue] = useState('');
+  const [notesValue, setNotesValue] = useState(() => getItemNotes(item));
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [isSavingNotes, setIsSavingNotes] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
-
-  useEffect(() => {
-    const mq = window.matchMedia('(max-width: 767px)');
-    setIsMobile(mq.matches);
-    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
-  }, []);
-
-  useEffect(() => {
-    setActiveImage(0);
-    setIsEditingNotes(false);
-  }, [itemId]);
+  const [valCurrency, setValCurrency] = useState(displayCurrency);
+  const isMobile = useMediaQuery('(max-width: 767px)');
+  const { currentValuation, purchaseDateValuation, gainLoss } = getValuationSummary(item, valCurrency);
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -129,54 +166,13 @@ export function ItemDetailPanel({ itemId, onClose }: Props) {
     [width],
   );
 
-  const item = itemId ? getItemById(itemId) : undefined;
-  const category = item ? getCategoryById(item.categoryId) : undefined;
-  const [valCurrency, setValCurrency] = useState(displayCurrency);
-
-  const currentValuation = useMemo(() => {
-    if (!item) return 0;
-    return currencyService.convert(item.purchaseInfo.purchasePrice, item.purchaseInfo.purchaseCurrency, valCurrency);
-  }, [item, valCurrency]);
-
-  const purchaseDateValuation = useMemo(() => {
-    if (!item) return 0;
-    const equivs = item.purchaseInfo.currencyEquivalents || [];
-    const vcEquiv = equivs.find((e) => e.currency === valCurrency);
-    if (vcEquiv && vcEquiv.rate > 0) {
-      const pcRate = equivs.find((e) => e.currency === item.purchaseInfo.purchaseCurrency)?.rate ?? 1;
-      const amtInTL = item.purchaseInfo.purchaseCurrency === 'TRY'
-        ? item.purchaseInfo.purchasePrice
-        : item.purchaseInfo.purchasePrice * pcRate;
-      return amtInTL / vcEquiv.rate;
-    }
-    if (valCurrency === 'TRY') {
-      const pcRate = equivs.find((e) => e.currency === item.purchaseInfo.purchaseCurrency)?.rate ?? 0;
-      if (pcRate > 0) return item.purchaseInfo.purchasePrice * pcRate;
-    }
-    return currencyService.convert(item.purchaseInfo.purchasePrice, item.purchaseInfo.purchaseCurrency, valCurrency);
-  }, [item, valCurrency]);
-
-  const gainLoss = useMemo(() => {
-    if (!item) return { diff: 0, percentage: 0, isPositive: true };
-    return calculateGainLoss(purchaseDateValuation, currentValuation);
-  }, [item, purchaseDateValuation, currentValuation]);
-
   const handleDelete = () => {
-    if (item) {
-      deleteItem(item.id);
-      toast.success('Item archived');
-      onClose();
-    }
+    deleteItem(item.id);
+    toast.success('Item archived');
+    onClose();
   };
 
-  useEffect(() => {
-    if (item) {
-      setNotesValue(item.notes ?? (item.customFields?.notes as string) ?? '');
-    }
-  }, [item?.id]);
-
-  const handleSaveNotes = useCallback(() => {
-    if (!item) return;
+  function handleSaveNotes() {
     setIsSavingNotes(true);
     updateItem(item.id, {
       notes: notesValue,
@@ -185,9 +181,7 @@ export function ItemDetailPanel({ itemId, onClose }: Props) {
     setIsSavingNotes(false);
     setIsEditingNotes(false);
     toast.success('Notes saved');
-  }, [item, notesValue, updateItem]);
-
-  if (!item || !category) return null;
+  }
 
   const condBadge = getConditionBadgeProps(item.condition);
   const isBookCategory = category.id === 'cat-books';
@@ -475,7 +469,7 @@ export function ItemDetailPanel({ itemId, onClose }: Props) {
                         className="h-6 text-[10px] px-2"
                         onClick={() => {
                           setIsEditingNotes(false);
-                          setNotesValue(item.notes ?? (item.customFields?.notes as string) ?? '');
+                          setNotesValue(getItemNotes(item));
                         }}
                       >
                         Cancel
