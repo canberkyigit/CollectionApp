@@ -1,4 +1,5 @@
 import type { Category, CollectionItem } from '@/types';
+import { getItemCurrentValueCurrency, getItemGainLoss } from '@/lib/valuation';
 
 function escapeCSV(value: string): string {
   if (value.includes(',') || value.includes('"') || value.includes('\n')) {
@@ -7,10 +8,10 @@ function escapeCSV(value: string): string {
   return value;
 }
 
-function formatGainLoss(purchase: number, current: number): string {
-  if (purchase === 0) return 'N/A';
-  const pct = ((current - purchase) / purchase) * 100;
-  return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
+function formatGainLoss(item: CollectionItem): string {
+  const gainLoss = getItemGainLoss(item, 'USD');
+  if (item.purchaseInfo.purchasePrice === 0) return 'N/A';
+  return `${gainLoss.percentage >= 0 ? '+' : ''}${gainLoss.percentage.toFixed(1)}%`;
 }
 
 function toCSVRow(values: string[]): string {
@@ -55,6 +56,7 @@ export const exportService = {
 
     const rows = items.map((item) => {
       const cat = categoryMap.get(item.categoryId);
+      const currentValueCurrency = getItemCurrentValueCurrency(item);
       return [
         item.id,
         item.title,
@@ -66,8 +68,8 @@ export const exportService = {
         String(item.purchaseInfo.purchasePrice),
         item.purchaseInfo.purchaseCurrency,
         String(item.valuationInfo.currentEstimatedValue),
-        item.valuationInfo.currentValueCurrency,
-        formatGainLoss(item.purchaseInfo.purchasePrice, item.valuationInfo.currentEstimatedValue),
+        currentValueCurrency,
+        formatGainLoss(item),
         item.tags.join('; '),
         item.notes,
         item.isFavorite ? 'Yes' : 'No',
@@ -97,25 +99,28 @@ export const exportService = {
       ...customFields.map((f) => f.label),
     ];
 
-    const rows = items.map((item) => [
-      item.id,
-      item.title,
-      item.description,
-      item.condition,
-      item.location ?? '',
-      item.purchaseInfo.purchasedAt,
-      String(item.purchaseInfo.purchasePrice),
-      item.purchaseInfo.purchaseCurrency,
-      String(item.valuationInfo.currentEstimatedValue),
-      item.valuationInfo.currentValueCurrency,
-      formatGainLoss(item.purchaseInfo.purchasePrice, item.valuationInfo.currentEstimatedValue),
-      item.tags.join('; '),
-      item.notes,
-      item.isFavorite ? 'Yes' : 'No',
-      item.createdAt,
-      item.updatedAt,
-      ...customFields.map((f) => String(item.customFields[f.key] ?? '')),
-    ]);
+    const rows = items.map((item) => {
+      const currentValueCurrency = getItemCurrentValueCurrency(item);
+      return [
+        item.id,
+        item.title,
+        item.description,
+        item.condition,
+        item.location ?? '',
+        item.purchaseInfo.purchasedAt,
+        String(item.purchaseInfo.purchasePrice),
+        item.purchaseInfo.purchaseCurrency,
+        String(item.valuationInfo.currentEstimatedValue),
+        currentValueCurrency,
+        formatGainLoss(item),
+        item.tags.join('; '),
+        item.notes,
+        item.isFavorite ? 'Yes' : 'No',
+        item.createdAt,
+        item.updatedAt,
+        ...customFields.map((f) => String(item.customFields[f.key] ?? '')),
+      ];
+    });
 
     const csv = [toCSVRow(headers), ...rows.map(toCSVRow)].join('\n');
     const name = filename ?? `${category.slug}-export-${Date.now()}.csv`;

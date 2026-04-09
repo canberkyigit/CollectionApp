@@ -85,7 +85,7 @@ export default defineConfig({
             },
           },
           {
-            urlPattern: /^https:\/\/api\.frankfurter\.app\/.*/i,
+            urlPattern: /^https:\/\/api\.frankfurter\.dev\/v1\/.*/i,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'currency-api-cache',
@@ -101,6 +101,35 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+    },
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined;
+          if (id.includes('firebase')) return 'vendor-firebase';
+          if (id.includes('recharts')) return 'vendor-charts';
+          if (id.includes('@radix-ui')) return 'vendor-radix';
+          if (id.includes('framer-motion')) return 'vendor-motion';
+          if (id.includes('html5-qrcode')) return 'vendor-scanner';
+          if (id.includes('lucide-react')) return 'vendor-icons';
+          if (id.includes('react-router')) return 'vendor-router';
+          if (id.includes('react-hook-form') || id.includes('@hookform') || id.includes('zod')) return 'vendor-forms';
+          if (id.includes('qrcode.react')) return 'vendor-qrcode';
+          if (id.includes('sonner')) return 'vendor-feedback';
+          if (
+            id.includes('zustand')
+            || id.includes('date-fns')
+            || id.includes('clsx')
+            || id.includes('tailwind-merge')
+            || id.includes('class-variance-authority')
+          ) {
+            return 'vendor-utils';
+          }
+          return 'vendor';
+        },
+      },
     },
   },
 })

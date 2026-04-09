@@ -118,7 +118,8 @@ export interface CollectionItem {
 export interface Library {
   id: string;
   name: string;
-  categoryId: string;
+  categoryIds?: string[];
+  categoryId?: string;
   order: number;
   createdAt: string;
   updatedAt: string;

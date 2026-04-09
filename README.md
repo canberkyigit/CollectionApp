@@ -20,7 +20,7 @@ A full-featured Progressive Web App (PWA) for managing personal collections of a
 ### Financial Tracking
 - Track purchase price and current valuation for each item
 - Value history with charts showing appreciation/depreciation over time
-- Multi-currency support (USD, EUR, TRY, GBP, JPY, CHF) with real-time conversion via [Frankfurter API](https://www.frankfurter.app/)
+- Multi-currency support (USD, EUR, TRY, GBP, JPY, CHF) with real-time conversion via [Frankfurter API](https://www.frankfurter.dev/)
 - Automatic ROI and gain/loss calculations
 
 ### Dashboard & Analytics
@@ -30,7 +30,7 @@ A full-featured Progressive Web App (PWA) for managing personal collections of a
 - Activity feed and recent items at a glance
 
 ### Collaboration
-- Multi-user support with role-based access (admin, editor, viewer)
+- Multi-user support with role-aware access controls (admin, editor, viewer)
 - Activity log with full audit trail of all changes
 - Contributor management
 
@@ -58,6 +58,12 @@ A full-featured Progressive Web App (PWA) for managing personal collections of a
 | Charts | Recharts |
 | PWA | Vite PWA + Workbox |
 | Testing | Vitest + Testing Library |
+
+## Data & Security
+
+- Firestore data is scoped per user under `users/{uid}/...`
+- Firebase Storage access rules live in [`storage.rules`](./storage.rules)
+- Firestore rules are configured through [`firebase.json`](./firebase.json)
 
 ## Getting Started
 
@@ -104,6 +110,29 @@ npm run build
 npm run preview
 ```
 
+### Desktop App
+
+Develop the Electron desktop app directly from this repo:
+
+```bash
+npm run desktop:install
+npm run desktop:dev
+```
+
+Build the installer artifacts:
+
+```bash
+npm run desktop:dist:universal
+```
+
+Before shipping an update, bump the version in this `package.json`. The desktop wrapper automatically syncs to it.
+
+Enable desktop auto-update by building with a feed URL:
+
+```bash
+COLLECTVAULT_UPDATE_URL=https://your-domain.com/collectvault npm run desktop:dist:universal
+```
+
 ### Testing
 
 ```bash
@@ -118,17 +147,17 @@ npm run test:ui       # Vitest UI
 ```
 src/
 ├── components/
-│   ├── ui/            # Radix UI / Shadcn base components
-│   ├── layout/        # AppLayout, Sidebar, Topbar
-│   ├── shared/        # Reusable components (search, filters, modals)
-│   └── dashboard/     # Dashboard widget components
-├── pages/             # Route-level page components
-│   └── Admin/         # Admin panel pages
-├── services/          # Firebase, auth, export, currency, book search
-├── store/             # Zustand global state (auth, collections)
-├── types/             # TypeScript type definitions
-├── lib/               # Utilities and icon mappings
-└── hooks/             # Custom React hooks
+│   ├── ui/            # Base UI primitives
+│   ├── layout/        # App shell pieces
+│   ├── shared/        # Shared screens, dialogs, cards, motion helpers
+│   └── dashboard/     # Dashboard customization UI
+├── data/              # Starter/demo data used for offline mode
+├── lib/               # Utilities, icons, valuation and contributor helpers
+├── pages/             # Route-level screens
+├── services/          # Firebase, auth, CSV/export, currency, storage
+├── store/             # Zustand stores and persistence
+├── test/              # Test setup and helpers
+└── types/             # TypeScript domain models
 ```
 
 ## License

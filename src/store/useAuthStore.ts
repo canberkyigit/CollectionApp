@@ -2,6 +2,12 @@ import { create } from 'zustand';
 import type { AuthUser } from '@/services/authService';
 import { authService } from '@/services/authService';
 import { isFirebaseConfigured } from '@/services/firebase';
+import {
+  setCurrentCollectionActor,
+  setFirebaseUserId,
+  useCollectionStore,
+} from '@/store/useCollectionStore';
+import { useSyncStore } from '@/store/useSyncStore';
 
 interface AuthState {
   user: AuthUser | null;
@@ -19,6 +25,16 @@ interface AuthState {
   updateUserProfile: (displayName?: string, photoURL?: string) => Promise<void>;
   changePassword: (newPassword: string) => Promise<void>;
   clearError: () => void;
+}
+
+type AuthErrorLike = {
+  code?: string;
+  message?: string;
+};
+
+function getAuthErrorMessage(error: unknown, fallback: string): string {
+  const err = error as AuthErrorLike;
+  return err.message || fallback;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -50,13 +66,14 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       const user = await authService.loginWithEmail(email, password);
       set({ user, isAuthenticated: true, isLoading: false });
-    } catch (err: any) {
+    } catch (error: unknown) {
+      const err = error as AuthErrorLike;
       const msg = err.code === 'auth/invalid-credential' ? 'Invalid email or password'
         : err.code === 'auth/user-not-found' ? 'No account with this email'
         : err.code === 'auth/too-many-requests' ? 'Too many attempts, try again later'
-        : err.message || 'Login failed';
+        : getAuthErrorMessage(error, 'Login failed');
       set({ error: msg, isLoading: false });
-      throw err;
+      throw error;
     }
   },
 
@@ -65,12 +82,13 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       const user = await authService.registerWithEmail(email, password, displayName);
       set({ user, isAuthenticated: true, isLoading: false });
-    } catch (err: any) {
+    } catch (error: unknown) {
+      const err = error as AuthErrorLike;
       const msg = err.code === 'auth/email-already-in-use' ? 'Email already in use'
         : err.code === 'auth/weak-password' ? 'Password must be at least 6 characters'
-        : err.message || 'Registration failed';
+        : getAuthErrorMessage(error, 'Registration failed');
       set({ error: msg, isLoading: false });
-      throw err;
+      throw error;
     }
   },
 
@@ -79,19 +97,20 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       const user = await authService.loginWithGoogle();
       set({ user, isAuthenticated: true, isLoading: false });
-    } catch (err: any) {
+    } catch (error: unknown) {
+      const err = error as AuthErrorLike;
       if (err.code !== 'auth/popup-closed-by-user') {
-        set({ error: err.message || 'Google login failed', isLoading: false });
+        set({ error: getAuthErrorMessage(error, 'Google login failed'), isLoading: false });
       } else {
         set({ isLoading: false });
       }
-      throw err;
+      throw error;
     }
   },
 
   loginOffline: () => {
     set({
-      user: { uid: 'offline', email: 'offline@local', displayName: 'Local User', photoURL: null },
+      user: { uid: 'offline', email: 'offline@local', displayName: 'Local User', photoURL: null, role: 'admin' },
       isAuthenticated: true,
       isLoading: false,
     });
@@ -99,12 +118,18 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   logout: async () => {
     await authService.logout();
+    setFirebaseUserId(null);
+    setCurrentCollectionActor(null);
+    useCollectionStore.getState().resetForUser(null, 'empty');
+    useSyncStore.getState().reset();
     set({ user: null, isAuthenticated: false });
   },
 
   updateUserProfile: async (displayName, photoURL) => {
     const updated = await authService.updateUserProfile(displayName, photoURL);
-    set({ user: updated });
+    set((state) => ({
+      user: state.user ? { ...updated, role: state.user.role } : updated,
+    }));
   },
 
   changePassword: async (newPassword) => {

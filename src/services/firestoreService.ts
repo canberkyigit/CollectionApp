@@ -9,6 +9,8 @@ import {
   query,
   orderBy,
   limit,
+  onSnapshot,
+  type Unsubscribe,
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from './firebase';
 import type {
@@ -19,7 +21,9 @@ import type {
   Contributor,
   Library,
   DashboardWidgetConfig,
+  ContributorRole,
 } from '@/types';
+import { normalizeLibrary } from '@/lib/libraries';
 
 function userPath(userId: string) {
   return `users/${userId}`;
@@ -43,17 +47,17 @@ async function commitInChunks(ops: ((b: ReturnType<typeof writeBatch>) => void)[
   }
 }
 
-function stripUndefined(obj: any): any {
-  if (obj === null || obj === undefined) return null;
-  if (Array.isArray(obj)) return obj.map(stripUndefined);
+function stripUndefined<T>(obj: T): T {
+  if (obj === null || obj === undefined) return null as T;
+  if (Array.isArray(obj)) return obj.map((entry) => stripUndefined(entry)) as T;
   if (typeof obj === 'object' && !(obj instanceof Date)) {
-    const result: any = {};
-    for (const [key, val] of Object.entries(obj)) {
+    const result: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(obj as Record<string, unknown>)) {
       if (val !== undefined) {
         result[key] = stripUndefined(val);
       }
     }
-    return result;
+    return result as T;
   }
   return obj;
 }
@@ -66,6 +70,20 @@ export interface UserSettings {
   dashboardWidgets: DashboardWidgetConfig[];
   readNotificationIds: string[];
   notifications: { valueChangeAlerts: boolean; newItemReminders: boolean; collectionMilestones: boolean };
+}
+
+export interface UserProfileDoc extends Partial<UserSettings> {
+  role?: ContributorRole;
+}
+
+export interface FirestoreSnapshot {
+  categories: Category[];
+  items: CollectionItem[];
+  libraries: Library[];
+  wishlist: WishlistItem[];
+  activityLog: ActivityLogEntry[];
+  contributors: Contributor[];
+  settings: UserSettings | null;
 }
 
 export const firestoreService = {
@@ -104,11 +122,11 @@ export const firestoreService = {
   // ── Libraries ──
   async getLibraries(userId: string): Promise<Library[]> {
     const snap = await getDocs(subCol(userId, 'libraries'));
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Library);
+    return snap.docs.map((d) => normalizeLibrary({ id: d.id, ...d.data() } as Library));
   },
 
   async saveLibrary(userId: string, library: Library): Promise<void> {
-    await setDoc(subDoc(userId, 'libraries', library.id), stripUndefined(library));
+    await setDoc(subDoc(userId, 'libraries', library.id), stripUndefined(normalizeLibrary(library)));
   },
 
   async deleteLibrary(userId: string, libraryId: string): Promise<void> {
@@ -180,6 +198,69 @@ export const firestoreService = {
     await deleteDoc(subDoc(userId, 'contributors', contributorId));
   },
 
+  subscribeAll(
+    userId: string,
+    onData: (snapshot: FirestoreSnapshot) => void,
+    onError?: (error: unknown) => void,
+  ): Unsubscribe {
+    const snapshot: FirestoreSnapshot = {
+      categories: [],
+      items: [],
+      libraries: [],
+      wishlist: [],
+      activityLog: [],
+      contributors: [],
+      settings: null,
+    };
+
+    const emit = () => {
+      onData({
+        categories: snapshot.categories,
+        items: snapshot.items,
+        libraries: snapshot.libraries,
+        wishlist: snapshot.wishlist,
+        activityLog: snapshot.activityLog,
+        contributors: snapshot.contributors,
+        settings: snapshot.settings,
+      });
+    };
+
+    const unsubs: Unsubscribe[] = [
+      onSnapshot(query(subCol(userId, 'categories'), orderBy('order')), (snap) => {
+        snapshot.categories = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }) as Category);
+        emit();
+      }, onError),
+      onSnapshot(subCol(userId, 'items'), (snap) => {
+        snapshot.items = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }) as CollectionItem);
+        emit();
+      }, onError),
+      onSnapshot(query(subCol(userId, 'libraries'), orderBy('order')), (snap) => {
+        snapshot.libraries = snap.docs.map((docSnap) => normalizeLibrary({ id: docSnap.id, ...docSnap.data() } as Library));
+        emit();
+      }, onError),
+      onSnapshot(subCol(userId, 'wishlist'), (snap) => {
+        snapshot.wishlist = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }) as WishlistItem);
+        emit();
+      }, onError),
+      onSnapshot(query(subCol(userId, 'activityLog'), orderBy('timestamp', 'desc'), limit(100)), (snap) => {
+        snapshot.activityLog = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }) as ActivityLogEntry);
+        emit();
+      }, onError),
+      onSnapshot(subCol(userId, 'contributors'), (snap) => {
+        snapshot.contributors = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }) as Contributor);
+        emit();
+      }, onError),
+      onSnapshot(doc(db, 'users', userId), (snap) => {
+        snapshot.settings = snap.exists() ? (snap.data() as UserSettings) : null;
+        emit();
+      }, onError),
+    ];
+
+    return () => {
+      unsubs.forEach((unsubscribe) => unsubscribe());
+    };
+  },
+
   // ── Bulk Sync (initial upload from localStorage) ──
   async syncAll(userId: string, data: {
     categories: Category[];
@@ -200,12 +281,30 @@ export const firestoreService = {
 
     data.categories.forEach((c) => ops.push((b) => b.set(subDoc(userId, 'categories', c.id), stripUndefined(c))));
     data.items.forEach((i) => ops.push((b) => b.set(subDoc(userId, 'items', i.id), stripUndefined(i))));
-    data.libraries.forEach((l) => ops.push((b) => b.set(subDoc(userId, 'libraries', l.id), stripUndefined(l))));
+    data.libraries.forEach((l) => ops.push((b) => b.set(subDoc(userId, 'libraries', l.id), stripUndefined(normalizeLibrary(l)))));
     data.wishlist.forEach((w) => ops.push((b) => b.set(subDoc(userId, 'wishlist', w.id), stripUndefined(w))));
     data.activityLog.slice(0, 50).forEach((a) => ops.push((b) => b.set(subDoc(userId, 'activityLog', a.id), stripUndefined(a))));
     data.contributors.forEach((c) => ops.push((b) => b.set(subDoc(userId, 'contributors', c.id), stripUndefined(c))));
 
     await commitInChunks(ops);
+  },
+
+  async wipeAllUserData(userId: string): Promise<void> {
+    const collectionsToClear = [
+      'categories',
+      'items',
+      'libraries',
+      'wishlist',
+      'activityLog',
+      'contributors',
+    ] as const;
+
+    await Promise.all(collectionsToClear.map(async (collectionName) => {
+      const snap = await getDocs(subCol(userId, collectionName));
+      await commitInChunks(snap.docs.map((docSnap) => (batch) => batch.delete(docSnap.ref)));
+    }));
+
+    await deleteDoc(doc(db, 'users', userId));
   },
 
   // ── Load All (initial load from Firestore) ──

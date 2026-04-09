@@ -12,6 +12,7 @@ import {
 } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { auth, db, isFirebaseConfigured } from './firebase';
+import type { ContributorRole } from '@/types';
 
 const googleProvider = new GoogleAuthProvider();
 
@@ -20,22 +21,30 @@ export interface AuthUser {
   email: string | null;
   displayName: string | null;
   photoURL: string | null;
+  role: ContributorRole;
 }
 
-function mapUser(user: User): AuthUser {
+interface UserProfileDoc {
+  role: ContributorRole;
+}
+
+function mapUser(user: User, role: ContributorRole = 'admin'): AuthUser {
   return {
     uid: user.uid,
     email: user.email,
     displayName: user.displayName,
     photoURL: user.photoURL,
+    role,
   };
 }
 
-async function ensureUserDoc(user: User): Promise<void> {
+async function ensureUserDoc(user: User): Promise<UserProfileDoc> {
   const ref = doc(db, 'users', user.uid);
   const snap = await getDoc(ref);
   if (!snap.exists()) {
+    const profile: UserProfileDoc = { role: 'admin' };
     await setDoc(ref, {
+      ...profile,
       displayCurrency: 'USD',
       theme: 'light',
       sidebarOpen: true,
@@ -43,15 +52,28 @@ async function ensureUserDoc(user: User): Promise<void> {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
+    return profile;
   }
+
+  const data = snap.data() as Partial<UserProfileDoc>;
+  if (!data.role) {
+    await setDoc(ref, {
+      role: 'admin',
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+  }
+
+  return {
+    role: data.role ?? 'admin',
+  };
 }
 
 export const authService = {
   async loginWithEmail(email: string, password: string): Promise<AuthUser> {
     if (!isFirebaseConfigured()) throw new Error('Firebase not configured');
     const cred = await signInWithEmailAndPassword(auth, email, password);
-    await ensureUserDoc(cred.user);
-    return mapUser(cred.user);
+    const profile = await ensureUserDoc(cred.user);
+    return mapUser(cred.user, profile.role);
   },
 
   async registerWithEmail(email: string, password: string, displayName?: string): Promise<AuthUser> {
@@ -60,15 +82,15 @@ export const authService = {
     if (displayName) {
       await updateProfile(cred.user, { displayName });
     }
-    await ensureUserDoc(cred.user);
-    return mapUser(cred.user);
+    const profile = await ensureUserDoc(cred.user);
+    return mapUser(cred.user, profile.role);
   },
 
   async loginWithGoogle(): Promise<AuthUser> {
     if (!isFirebaseConfigured()) throw new Error('Firebase not configured');
     const cred = await signInWithPopup(auth, googleProvider);
-    await ensureUserDoc(cred.user);
-    return mapUser(cred.user);
+    const profile = await ensureUserDoc(cred.user);
+    return mapUser(cred.user, profile.role);
   },
 
   async logout(): Promise<void> {
@@ -82,8 +104,8 @@ export const authService = {
     }
     return onAuthStateChanged(auth, async (user) => {
       if (user) {
-        await ensureUserDoc(user);
-        callback(mapUser(user));
+        const profile = await ensureUserDoc(user);
+        callback(mapUser(user, profile.role));
       } else {
         callback(null);
       }
