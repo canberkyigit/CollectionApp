@@ -10,6 +10,7 @@ import {
   getKeyFields,
 } from '@/pages/favorites-helpers';
 import { createMockCategory, createMockItem } from '@/test/helpers';
+import type { Category } from '@/types';
 
 describe('favorites helpers', () => {
   it('returns badge styles for known and unknown conditions', () => {
@@ -23,14 +24,20 @@ describe('favorites helpers', () => {
   });
 
   it('derives visible key fields while skipping built-in metadata fields', () => {
-    const category = createMockCategory({
-      fields: [
-        { id: 'title', key: 'title', label: 'Title', type: 'text', required: true, order: 0 },
-        { id: 'author', key: 'author', label: 'Author', type: 'text', required: false, order: 1 },
-        { id: 'signed', key: 'signed', label: 'Signed', type: 'boolean', required: false, order: 2 },
-        { id: 'notes', key: 'notes', label: 'Notes', type: 'textarea', required: false, order: 3 },
-      ],
-    });
+    const category = {
+      ...createMockCategory({
+        fields: [
+          { id: 'title', key: 'title', label: 'Title', type: 'text', required: true, order: 0 },
+          { id: 'author', key: 'author', label: 'Author', type: 'text', required: false, order: 1 },
+          { id: 'signed', key: 'signed', label: 'Signed', type: 'boolean', required: false, order: 2 },
+          { id: 'notes', key: 'notes', label: 'Notes', type: 'textarea', required: false, order: 3 },
+        ],
+      }),
+      id: 'cat-books',
+      order: 0,
+      createdAt: '2024-01-01',
+      updatedAt: '2024-01-01',
+    };
     const item = {
       ...createMockItem({
         customFields: {
@@ -53,7 +60,7 @@ describe('favorites helpers', () => {
   });
 
   it('builds filter metadata, stats, and complex filtered/sorted favorite lists', () => {
-    const categories = [
+    const categories: Category[] = [
       { ...createMockCategory({ name: 'Books' }), id: 'cat-books', order: 0, createdAt: '2024-01-01', updatedAt: '2024-01-01' },
       { ...createMockCategory({ name: 'Vinyl', slug: 'vinyl' }), id: 'cat-vinyl', order: 1, createdAt: '2024-01-01', updatedAt: '2024-01-01' },
     ];

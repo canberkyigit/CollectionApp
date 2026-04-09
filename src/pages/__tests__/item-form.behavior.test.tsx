@@ -167,6 +167,7 @@ describe('ItemForm behavior', () => {
         coverUrl: 'https://example.com/hyperion.jpg',
         coverUrlLarge: 'https://example.com/hyperion-large.jpg',
         languages: ['English'],
+        subjects: ['Science fiction'],
       },
     ]);
 
