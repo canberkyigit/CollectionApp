@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import {
   Plus,
@@ -15,10 +15,14 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { formatDate } from '@/lib/utils';
+import { getAdminBreadcrumbs, withAdminSource } from '@/lib/adminNavigation';
 import { useCollectionStore } from '@/store/useCollectionStore';
 
 export default function AdminCategories() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const search = searchParams.toString();
+  const searchSuffix = search ? `?${search}` : '';
   const { categories, items, deleteCategory } = useCollectionStore();
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
@@ -35,12 +39,9 @@ export default function AdminCategories() {
       <PageHeader
         title="Categories"
         description="Manage your collection categories and their fields"
-        breadcrumbs={[
-          { label: 'Admin', href: '/admin' },
-          { label: 'Categories' },
-        ]}
+        breadcrumbs={getAdminBreadcrumbs(searchSuffix, [{ label: 'Categories' }])}
       >
-        <Button onClick={() => navigate('/admin/categories/new')}>
+        <Button onClick={() => navigate(withAdminSource('/admin/categories/new', searchSuffix))}>
           <Plus className="size-4" />
           New Category
         </Button>
@@ -53,7 +54,7 @@ export default function AdminCategories() {
           description="Create your first collection category to start organizing your items."
           action={{
             label: 'Create Category',
-            onClick: () => navigate('/admin/categories/new'),
+            onClick: () => navigate(withAdminSource('/admin/categories/new', searchSuffix)),
           }}
         />
       ) : (
@@ -118,7 +119,7 @@ export default function AdminCategories() {
                             variant="ghost"
                             size="icon"
                             className="size-8"
-                            onClick={() => navigate(`/admin/categories/${category.id}/edit`)}
+                            onClick={() => navigate(withAdminSource(`/admin/categories/${category.id}/edit`, searchSuffix))}
                           >
                             <Pencil className="size-3.5" />
                           </Button>

@@ -1,6 +1,13 @@
 import type { CollectionItem, Category } from '@/types';
 
 export function createMockItem(overrides: Partial<CollectionItem> = {}): Omit<CollectionItem, 'id' | 'createdAt' | 'updatedAt'> {
+  const {
+    id: _ignoredId,
+    createdAt: _ignoredCreatedAt,
+    updatedAt: _ignoredUpdatedAt,
+    ...safeOverrides
+  } = overrides;
+
   return {
     categoryId: 'cat-books',
     title: 'Test Book',
@@ -29,11 +36,19 @@ export function createMockItem(overrides: Partial<CollectionItem> = {}): Omit<Co
     maintenanceLog: [],
     lendingHistory: [],
     quantity: 1,
-    ...overrides,
-  } as any;
+    ...safeOverrides,
+  };
 }
 
 export function createMockCategory(overrides: Partial<Category> = {}): Omit<Category, 'id' | 'order' | 'createdAt' | 'updatedAt'> {
+  const {
+    id: _ignoredId,
+    order: _ignoredOrder,
+    createdAt: _ignoredCreatedAt,
+    updatedAt: _ignoredUpdatedAt,
+    ...safeOverrides
+  } = overrides;
+
   return {
     name: 'Test Category',
     slug: 'test-category',
@@ -43,6 +58,6 @@ export function createMockCategory(overrides: Partial<Category> = {}): Omit<Cate
       { id: 'title', key: 'title', label: 'Title', type: 'text', required: true, order: 1 },
       { id: 'author', key: 'author', label: 'Author', type: 'text', required: false, order: 2 },
     ],
-    ...overrides,
-  } as any;
+    ...safeOverrides,
+  };
 }

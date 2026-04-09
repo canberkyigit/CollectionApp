@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Archive,
   RotateCcw,
@@ -26,11 +26,15 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn, formatRelativeDate } from '@/lib/utils';
+import { getAdminBreadcrumbs, getAdminRootPath } from '@/lib/adminNavigation';
 import { getCategoryIcon } from '@/lib/icons';
 import { useCollectionStore } from '@/store/useCollectionStore';
 
 export default function AdminArchive() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const searchQuery = searchParams.toString();
+  const adminRootPath = getAdminRootPath(searchQuery ? `?${searchQuery}` : '');
   const {
     categories,
     getArchivedItems,
@@ -41,8 +45,7 @@ export default function AdminArchive() {
     permanentDeleteItems,
   } = useCollectionStore();
 
-  const items = useCollectionStore((s) => s.items);
-  const archived = useMemo(() => getArchivedItems(), [getArchivedItems, items]);
+  const archived = useMemo(() => getArchivedItems(), [getArchivedItems]);
 
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
@@ -120,10 +123,7 @@ export default function AdminArchive() {
       <PageHeader
         title="Archive"
         description={`${archived.length} archived item${archived.length !== 1 ? 's' : ''}`}
-        breadcrumbs={[
-          { label: 'Admin', href: '/admin' },
-          { label: 'Archive' },
-        ]}
+        breadcrumbs={getAdminBreadcrumbs(searchQuery ? `?${searchQuery}` : '', [{ label: 'Archive' }])}
       />
 
       {archived.length === 0 ? (
@@ -138,7 +138,7 @@ export default function AdminArchive() {
                 Deleted items will appear here for recovery
               </p>
             </div>
-            <Button variant="outline" onClick={() => navigate('/admin')}>
+            <Button variant="outline" onClick={() => navigate(adminRootPath)}>
               Back to Admin
             </Button>
           </CardContent>

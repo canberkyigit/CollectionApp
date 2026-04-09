@@ -2,7 +2,6 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { PageTransition } from '@/components/shared/motion';
-import type { Category, CollectionItem } from '@/types';
 import {
   Star,
   Package,
@@ -23,6 +22,7 @@ import {
   PageHeader,
   SearchBar,
   EmptyState,
+  LoadingSkeleton,
   StatCard,
   AdvancedFilters,
   DEFAULT_FILTERS,
@@ -46,9 +46,19 @@ import {
 } from '@/lib/utils';
 import { currencyService } from '@/services/currencyService';
 import { useCollectionStore } from '@/store/useCollectionStore';
+import { selectIsColdLoading } from '@/store/collectionStore.selectors';
 import { ItemDetailPanel } from '@/components/shared/ItemDetailPanel';
+import {
+  filterFavoriteItems,
+  getConditionBadgeProps,
+  getFavoriteFilterMeta,
+  getFavoriteItems,
+  getFavoriteStats,
+  getKeyFields,
+  type FavoritesSortKey,
+} from '@/pages/favorites-helpers';
 
-type SortKey = 'title' | 'createdAt' | 'category';
+type SortKey = FavoritesSortKey;
 
 const SORT_OPTIONS: { label: string; value: SortKey }[] = [
   { label: 'Title', value: 'title' },
@@ -56,65 +66,21 @@ const SORT_OPTIONS: { label: string; value: SortKey }[] = [
   { label: 'Category', value: 'category' },
 ];
 
-function getConditionBadgeProps(condition: string) {
-  switch (condition) {
-    case 'Mint':
-      return {
-        variant: 'outline' as const,
-        className: 'border-emerald-500/40 bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
-      };
-    case 'Near Mint':
-      return {
-        variant: 'outline' as const,
-        className: 'border-green-500/40 bg-green-500/20 text-green-700 dark:text-green-400',
-      };
-    case 'Very Good':
-      return {
-        variant: 'outline' as const,
-        className: 'border-teal-500/40 bg-teal-500/20 text-teal-700 dark:text-teal-400',
-      };
-    case 'Good':
-      return {
-        variant: 'outline' as const,
-        className: 'border-blue-500/40 bg-blue-500/20 text-blue-700 dark:text-blue-400',
-      };
-    case 'Fair':
-      return {
-        variant: 'outline' as const,
-        className: 'border-amber-500/40 bg-amber-500/20 text-amber-700 dark:text-amber-400',
-      };
-    case 'Poor':
-      return {
-        variant: 'outline' as const,
-        className: 'border-red-500/40 bg-red-500/20 text-red-700 dark:text-red-400',
-      };
-    default:
-      return { variant: 'secondary' as const, className: '' };
-  }
-}
-
-function getKeyFields(category: Category | undefined, item: CollectionItem) {
-  if (!category) return [];
-  const skipKeys = new Set([
-    'title', 'condition', 'purchasePrice', 'purchaseCurrency',
-    'currentValue', 'estimatedValue', 'purchaseDate', 'notes',
-  ]);
-  return category.fields
-    .filter((f) => !skipKeys.has(f.key) && item.customFields[f.key] != null && item.customFields[f.key] !== '')
-    .slice(0, 2)
-    .map((f) => ({ label: f.label, value: String(item.customFields[f.key]) }));
-}
-
 export default function Favorites() {
   const navigate = useNavigate();
   const {
-    getFavoriteItems,
     getCategoryById,
     toggleFavorite,
     items,
     openItemDialog,
+    ownerUserId,
+    isRemoteDataLoading,
   } = useCollectionStore();
   const displayCurrency = useCollectionStore((s) => s.displayCurrency);
+  const shouldShowLoadingState = selectIsColdLoading(
+    { ownerUserId, isRemoteDataLoading },
+    [items.length],
+  );
 
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('createdAt');
@@ -122,21 +88,12 @@ export default function Favorites() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [detailPanelItemId, setDetailPanelItemId] = useState<string | null>(null);
 
-  const favorites = useMemo(() => getFavoriteItems(), [items]);
+  const favorites = getFavoriteItems(items);
 
-  const itemPurchase = (item: typeof favorites[0]) =>
-    currencyService.convert(item.purchaseInfo.purchasePrice, item.purchaseInfo.purchaseCurrency, displayCurrency);
-
-  const filterMeta = useMemo(() => {
-    let maxP = 0;
-    const tagSet = new Set<string>();
-    favorites.forEach((i) => {
-      const pp = itemPurchase(i);
-      if (pp > maxP) maxP = pp;
-      i.tags.forEach((t) => tagSet.add(t));
-    });
-    return { maxPrice: Math.ceil(maxP), maxValue: Math.ceil(maxP), tags: [...tagSet].sort() };
-  }, [favorites, displayCurrency]);
+  const filterMeta = useMemo(
+    () => getFavoriteFilterMeta(favorites, displayCurrency),
+    [favorites, displayCurrency],
+  );
 
   const [advFilters, setAdvFilters] = useState<FilterState>(() => ({
     ...DEFAULT_FILTERS,
@@ -144,77 +101,24 @@ export default function Favorites() {
     valueRange: [0, filterMeta.maxValue],
   }));
 
-  const filtered = useMemo(() => {
-    let list = favorites;
+  const filtered = useMemo(
+    () => filterFavoriteItems({
+      favorites,
+      search,
+      advFilters,
+      filterMeta,
+      sortKey,
+      sortDir,
+      displayCurrency,
+      getCategoryById,
+    }),
+    [favorites, search, advFilters, filterMeta, sortKey, sortDir, displayCurrency, getCategoryById],
+  );
 
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      list = list.filter(
-        (i) =>
-          i.title.toLowerCase().includes(q) ||
-          i.tags.some((t) => t.toLowerCase().includes(q)),
-      );
-    }
-
-    if (advFilters.conditions.length > 0) {
-      list = list.filter((i) => advFilters.conditions.includes(i.condition));
-    }
-
-    if (advFilters.priceRange[0] > 0 || (advFilters.priceRange[1] > 0 && advFilters.priceRange[1] < filterMeta.maxPrice)) {
-      list = list.filter((i) => {
-        const p = itemPurchase(i);
-        return p >= advFilters.priceRange[0] && p <= advFilters.priceRange[1];
-      });
-    }
-
-    if (advFilters.dateFrom) {
-      const from = new Date(advFilters.dateFrom).getTime();
-      list = list.filter((i) => new Date(i.createdAt).getTime() >= from);
-    }
-    if (advFilters.dateTo) {
-      const to = new Date(advFilters.dateTo).getTime() + 86400000;
-      list = list.filter((i) => new Date(i.createdAt).getTime() <= to);
-    }
-
-    if (advFilters.tags.length > 0) {
-      list = list.filter((i) => advFilters.tags.some((t) => i.tags.includes(t)));
-    }
-
-    if (advFilters.hasImages === true) {
-      list = list.filter((i) => i.images.length > 0);
-    } else if (advFilters.hasImages === false) {
-      list = list.filter((i) => i.images.length === 0);
-    }
-
-    return [...list].sort((a, b) => {
-      let cmp = 0;
-      switch (sortKey) {
-        case 'title':
-          cmp = a.title.localeCompare(b.title);
-          break;
-        case 'createdAt':
-          cmp = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-          break;
-        case 'category': {
-          const catA = getCategoryById(a.categoryId)?.name ?? '';
-          const catB = getCategoryById(b.categoryId)?.name ?? '';
-          cmp = catA.localeCompare(catB);
-          break;
-        }
-      }
-      return sortDir === 'asc' ? cmp : -cmp;
-    });
-  }, [favorites, search, advFilters, filterMeta, sortKey, sortDir, displayCurrency, getCategoryById]);
-
-  const stats = useMemo(() => {
-    const totalValue = favorites.reduce(
-      (sum, i) =>
-        sum + currencyService.convert(i.purchaseInfo.purchasePrice, i.purchaseInfo.purchaseCurrency, displayCurrency),
-      0,
-    );
-    const catSet = new Set(favorites.map((i) => i.categoryId));
-    return { count: favorites.length, totalValue, categories: catSet.size };
-  }, [favorites, displayCurrency]);
+  const stats = useMemo(
+    () => getFavoriteStats(favorites, displayCurrency),
+    [favorites, displayCurrency],
+  );
 
   const renderGridView = () => (
     <div
@@ -407,6 +311,14 @@ export default function Favorites() {
         </div>
       </PageHeader>
 
+      {shouldShowLoadingState ? (
+        <div className="space-y-4">
+          <LoadingSkeleton variant="list" count={3} />
+          <LoadingSkeleton variant="card" count={6} />
+        </div>
+      ) : (
+        <>
+
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
         <StatCard
@@ -494,15 +406,19 @@ export default function Favorites() {
         favorites.length === 0 ? (
           <EmptyState
             icon={Star}
+            eyebrow="Favorites"
             title="No favorites yet"
-            description="Star items from your collections to see them here"
+            description="Star the items you care about most from any collection and they will appear here for quick access."
             action={{ label: 'Browse Collections', onClick: () => navigate('/collections') }}
+            secondaryAction={{ label: 'Open Wishlist', onClick: () => navigate('/wishlist') }}
+            hint="Favorites are great for shortlists, insurance picks, or items you want to monitor more closely."
           />
         ) : (
           <EmptyState
             icon={Star}
+            eyebrow="Favorites"
             title="No matching favorites"
-            description="Try adjusting your search or filters"
+            description="Your starred items are still here, but none match the current search or filter combination."
             action={{
               label: 'Clear Filters',
               onClick: () => {
@@ -510,9 +426,13 @@ export default function Favorites() {
                 setAdvFilters({ ...DEFAULT_FILTERS, priceRange: [0, filterMeta.maxPrice], valueRange: [0, filterMeta.maxValue] });
               },
             }}
+            secondaryAction={{ label: 'Browse Collections', onClick: () => navigate('/collections') }}
+            hint="Try a broader search term or widen the price and value ranges."
           />
         )
       ) : viewMode === 'grid' ? renderGridView() : renderListView()}
+        </>
+      )}
     </div>
     </div>
 

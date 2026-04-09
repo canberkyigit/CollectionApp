@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { Category, CollectionItem } from '@/types';
 
 // Mock DOM APIs used by exportService
 const mockClick = vi.fn();
@@ -9,11 +10,14 @@ const mockRevokeObjectURL = vi.fn();
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.spyOn(document, 'createElement').mockReturnValue({
+  const mockAnchor = {
     href: '',
     download: '',
     click: mockClick,
-  } as any);
+  } as unknown as HTMLAnchorElement;
+  vi.spyOn(document, 'createElement').mockReturnValue({
+    ...mockAnchor,
+  });
   vi.spyOn(document.body, 'appendChild').mockImplementation(mockAppendChild);
   vi.spyOn(document.body, 'removeChild').mockImplementation(mockRemoveChild);
   vi.spyOn(URL, 'createObjectURL').mockImplementation(mockCreateObjectURL);
@@ -26,7 +30,7 @@ async function getService() {
   return mod.exportService;
 }
 
-const mockCategory = {
+const mockCategory: Category = {
   id: 'cat-1',
   name: 'Books',
   slug: 'books',
@@ -41,7 +45,7 @@ const mockCategory = {
   updatedAt: '2024-01-01',
 };
 
-const mockItem = {
+const mockItem: CollectionItem = {
   id: 'item-1',
   categoryId: 'cat-1',
   title: 'Test Book',
@@ -77,7 +81,7 @@ describe('exportService', () => {
   describe('exportToCSV', () => {
     it('triggers a file download with CSV content', async () => {
       const service = await getService();
-      service.exportToCSV([mockItem as any], [mockCategory as any], 'test.csv');
+      service.exportToCSV([mockItem], [mockCategory], 'test.csv');
 
       expect(mockCreateObjectURL).toHaveBeenCalledTimes(1);
       const blob = mockCreateObjectURL.mock.calls[0][0] as Blob;
@@ -88,7 +92,7 @@ describe('exportService', () => {
 
     it('includes headers and item data', async () => {
       const service = await getService();
-      service.exportToCSV([mockItem as any], [mockCategory as any], 'test.csv');
+      service.exportToCSV([mockItem], [mockCategory], 'test.csv');
 
       const blob = mockCreateObjectURL.mock.calls[0][0] as Blob;
       const text = await blob.text();
@@ -104,7 +108,7 @@ describe('exportService', () => {
   describe('exportToJSON', () => {
     it('triggers a JSON file download', async () => {
       const service = await getService();
-      service.exportToJSON([mockItem as any], 'test.json');
+      service.exportToJSON([mockItem], 'test.json');
 
       expect(mockCreateObjectURL).toHaveBeenCalledTimes(1);
       const blob = mockCreateObjectURL.mock.calls[0][0] as Blob;
@@ -119,7 +123,7 @@ describe('exportService', () => {
   describe('exportCategoryToCSV', () => {
     it('includes category-specific custom field columns', async () => {
       const service = await getService();
-      service.exportCategoryToCSV([mockItem as any], mockCategory as any, 'books.csv');
+      service.exportCategoryToCSV([mockItem], mockCategory, 'books.csv');
 
       const blob = mockCreateObjectURL.mock.calls[0][0] as Blob;
       const text = await blob.text();

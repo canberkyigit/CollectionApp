@@ -21,16 +21,18 @@ import {
   Cell,
 } from 'recharts';
 
-import { PageHeader, StatCard } from '@/components/shared';
+import { PageHeader, LoadingSkeleton, StatCard } from '@/components/shared';
 import { PageTransition } from '@/components/shared/motion';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import { buildContributorSummaries } from '@/lib/contributors';
 import { cn, formatCurrency, formatNumber, formatDate, formatRelativeDate } from '@/lib/utils';
 import { currencyService } from '@/services/currencyService';
 import { useCollectionStore } from '@/store/useCollectionStore';
+import { selectIsColdLoading } from '@/store/collectionStore.selectors';
 
 const COLORS = ['#7c3aed', '#10b981', '#f59e0b', '#3b82f6'];
 
@@ -39,6 +41,18 @@ const ROLE_STYLES: Record<string, { variant: 'default' | 'secondary' | 'outline'
   editor: { variant: 'default', className: 'bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/30' },
   viewer: { variant: 'secondary', className: 'bg-muted text-muted-foreground' },
 };
+
+interface ContributorTooltipEntry {
+  color?: string;
+  value?: number;
+}
+
+interface ContributorTooltipProps {
+  active?: boolean;
+  payload?: ContributorTooltipEntry[];
+  label?: string;
+  displayCurrency: string;
+}
 
 function getInitials(name: string): string {
   return name
@@ -49,14 +63,14 @@ function getInitials(name: string): string {
     .slice(0, 2);
 }
 
-const CustomTooltip = ({ active, payload, label, displayCurrency }: any) => {
+const CustomTooltip = ({ active, payload, label, displayCurrency }: ContributorTooltipProps) => {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-card border border-border rounded-lg px-3 py-2 shadow-xl">
       <p className="text-xs text-muted-foreground">{label}</p>
-      {payload.map((entry: any, i: number) => (
-        <p key={i} className="text-sm font-semibold" style={{ color: entry.color }}>
-          {formatCurrency(entry.value, displayCurrency)}
+      {payload.map((entry, index) => (
+        <p key={index} className="text-sm font-semibold" style={{ color: entry.color }}>
+          {formatCurrency(entry.value ?? 0, displayCurrency)}
         </p>
       ))}
     </div>
@@ -65,16 +79,35 @@ const CustomTooltip = ({ active, payload, label, displayCurrency }: any) => {
 
 export default function Contributors() {
   const displayCurrency = useCollectionStore((s) => s.displayCurrency);
-  const { contributors, items, getCategoryById } = useCollectionStore();
+  const {
+    contributors,
+    items,
+    getCategoryById,
+    ownerUserId,
+    isRemoteDataLoading,
+  } = useCollectionStore();
+  const shouldShowLoadingState = selectIsColdLoading(
+    { ownerUserId, isRemoteDataLoading },
+    [contributors.length, items.length],
+  );
+  const contributorSummaries = useMemo(
+    () => buildContributorSummaries(contributors, items),
+    [contributors, items],
+  );
+  const visibleContributors = useMemo(
+    () => contributorSummaries.filter((contributor) => contributor.derivedItemCount > 0 || contributor.itemCount > 0),
+    [contributorSummaries],
+  );
+  const contributorsToRender = visibleContributors.length > 0 ? visibleContributors : contributorSummaries;
 
   const totalItems = useMemo(
-    () => contributors.reduce((sum, c) => sum + c.itemCount, 0),
-    [contributors],
+    () => contributorsToRender.reduce((sum, contributor) => sum + contributor.derivedItemCount, 0),
+    [contributorsToRender],
   );
 
   const totalValueUSD = useMemo(
-    () => contributors.reduce((sum, c) => sum + c.totalContributionValue, 0),
-    [contributors],
+    () => contributorsToRender.reduce((sum, contributor) => sum + contributor.derivedTotalContributionValue, 0),
+    [contributorsToRender],
   );
 
   const totalValue = useMemo(
@@ -107,13 +140,13 @@ export default function Contributors() {
 
   const chartData = useMemo(
     () =>
-      [...contributors]
-        .sort((a, b) => b.totalContributionValue - a.totalContributionValue)
+      [...contributorsToRender]
+        .sort((a, b) => b.derivedTotalContributionValue - a.derivedTotalContributionValue)
         .map((c) => ({
           name: c.name,
-          value: currencyService.convert(c.totalContributionValue, 'USD', displayCurrency),
+          value: currencyService.convert(c.derivedTotalContributionValue, 'USD', displayCurrency),
         })),
-    [contributors, displayCurrency],
+    [contributorsToRender, displayCurrency],
   );
 
   return (
@@ -124,10 +157,18 @@ export default function Contributors() {
         description="People who contribute to your collection"
       />
 
+      {shouldShowLoadingState ? (
+        <div className="space-y-4">
+          <LoadingSkeleton variant="list" count={3} />
+          <LoadingSkeleton variant="card" count={4} />
+        </div>
+      ) : (
+        <>
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard
           title="Total Contributors"
-          value={formatNumber(contributors.length)}
+          value={formatNumber(contributorsToRender.length)}
           icon={Users}
           subtitle="active members"
         />
@@ -146,10 +187,14 @@ export default function Contributors() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-3">
-        {contributors.map((contributor, index) => {
+        {contributorsToRender.map((contributor, index) => {
           const roleStyle = ROLE_STYLES[contributor.role] ?? ROLE_STYLES.viewer;
           const topCategories = contributorCategories.get(contributor.id) ?? [];
-          const contributorValue = currencyService.convert(contributor.totalContributionValue, 'USD', displayCurrency);
+          const contributorValue = currencyService.convert(
+            contributor.derivedTotalContributionValue,
+            'USD',
+            displayCurrency,
+          );
 
           return (
             <Card
@@ -185,7 +230,7 @@ export default function Contributors() {
               <CardContent className="space-y-4 pt-0">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="rounded-lg bg-muted/50 p-3 text-center">
-                    <p className="text-2xl font-bold">{contributor.itemCount}</p>
+                    <p className="text-2xl font-bold">{contributor.derivedItemCount}</p>
                     <p className="text-xs text-muted-foreground">Items</p>
                   </div>
                   <div className="rounded-lg bg-muted/50 p-3 text-center">
@@ -205,7 +250,7 @@ export default function Contributors() {
                   </div>
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <Clock className="size-3.5 shrink-0" />
-                    <span>Last active {formatRelativeDate(contributor.lastContributionAt)}</span>
+                    <span>Last active {formatRelativeDate(contributor.derivedLastContributionAt)}</span>
                   </div>
                 </div>
 
@@ -281,6 +326,8 @@ export default function Contributors() {
           </div>
         </CardContent>
       </Card>
+        </>
+      )}
     </div>
     </PageTransition>
   );

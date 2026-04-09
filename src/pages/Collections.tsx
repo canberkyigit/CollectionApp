@@ -1,12 +1,11 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import {
   Package,
   Plus,
   Layers,
   DollarSign,
-  ArrowRight,
   LayoutGrid,
   List,
   ChevronRight,
@@ -14,18 +13,15 @@ import {
   SortAsc,
   SortDesc,
 } from 'lucide-react';
-import { PageTransition, MotionGrid, MotionItem, staggerContainer, staggerItem } from '@/components/shared/motion';
+import { PageTransition, MotionGrid, MotionItem } from '@/components/shared/motion';
+import { staggerContainer, staggerItem } from '@/components/shared/motion-variants';
 import { getCategoryIcon } from '@/lib/icons';
+import { CategoryShowcaseCard } from '@/components/collections/CategoryShowcaseCard';
 
-import { PageHeader, StatCard, SearchBar } from '@/components/shared';
+import { PageHeader, StatCard, SearchBar, EmptyState, LoadingSkeleton } from '@/components/shared';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardFooter,
-  CardHeader,
-} from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,8 +31,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn, formatCurrency, formatNumber, formatRelativeDate } from '@/lib/utils';
-import { currencyService } from '@/services/currencyService';
 import { useCollectionStore } from '@/store/useCollectionStore';
+import { useAuthStore } from '@/store/useAuthStore';
+import { canManageCatalog } from '@/lib/permissions';
+import { getItemsCurrentValue } from '@/lib/valuation';
+import { libraryMatchesCategory } from '@/lib/libraries';
 
 type CatSort = 'order' | 'name' | 'count' | 'value';
 const CAT_SORT_OPTIONS: { label: string; value: CatSort }[] = [
@@ -48,35 +47,42 @@ const CAT_SORT_OPTIONS: { label: string; value: CatSort }[] = [
 
 export default function Collections() {
   const navigate = useNavigate();
-  const { categories, items } = useCollectionStore();
+  const [searchParams] = useSearchParams();
+  const { categories, items, contributors, libraries } = useCollectionStore();
+  const isRemoteDataLoading = useCollectionStore((state) => state.isRemoteDataLoading);
+  const ownerUserId = useCollectionStore((state) => state.ownerUserId);
+  const user = useAuthStore((state) => state.user);
   const displayCurrency = useCollectionStore((s) => s.displayCurrency);
+  const canCreateCategory = canManageCatalog(user?.role ?? 'viewer');
+  const contributorFilter = searchParams.get('contributor');
+  const activeContributor = contributorFilter
+    ? contributors.find((contributor) => contributor.id === contributorFilter)
+    : null;
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [catSearch, setCatSearch] = useState('');
   const [catSort, setCatSort] = useState<CatSort>('order');
   const [catSortDir, setCatSortDir] = useState<'asc' | 'desc'>('asc');
 
+  const activeItems = useMemo(() => {
+    const visibleItems = items.filter((item) => !item.isArchived);
+    if (!contributorFilter) return visibleItems;
+    return visibleItems.filter((item) => item.contributorId === contributorFilter);
+  }, [items, contributorFilter]);
+
   const allCategoryData = useMemo(() => {
     return categories.map((cat) => {
-      const catItems = items.filter((i) => i.categoryId === cat.id && !i.isArchived);
-      const totalValue = catItems.reduce(
-        (sum, item) =>
-          sum +
-          currencyService.convert(
-            item.purchaseInfo.purchasePrice,
-            item.purchaseInfo.purchaseCurrency,
-            displayCurrency,
-          ),
-        0,
-      );
+      const catItems = activeItems.filter((i) => i.categoryId === cat.id);
+      const totalValue = getItemsCurrentValue(catItems, displayCurrency);
       const lastUpdated = catItems.length > 0
         ? catItems.reduce((latest, item) =>
             new Date(item.updatedAt) > new Date(latest.updatedAt) ? item : latest,
           ).updatedAt
         : cat.updatedAt;
+      const libraryCount = libraries.filter((library) => libraryMatchesCategory(library, cat.id)).length;
 
-      return { category: cat, count: catItems.length, totalValue, lastUpdated };
+      return { category: cat, count: catItems.length, totalValue, lastUpdated, libraryCount };
     });
-  }, [categories, items, displayCurrency]);
+  }, [categories, activeItems, displayCurrency, libraries]);
 
   const categoryData = useMemo(() => {
     let data = allCategoryData;
@@ -88,6 +94,10 @@ export default function Collections() {
           d.category.name.toLowerCase().includes(q) ||
           d.category.description.toLowerCase().includes(q),
       );
+    }
+
+    if (contributorFilter) {
+      data = data.filter((entry) => entry.count > 0);
     }
 
     const sorted = [...data].sort((a, b) => {
@@ -110,33 +120,35 @@ export default function Collections() {
     });
 
     return sorted;
-  }, [allCategoryData, catSearch, catSort, catSortDir]);
-
-  const activeItems = useMemo(() => items.filter((i) => !i.isArchived), [items]);
+  }, [allCategoryData, catSearch, catSort, catSortDir, contributorFilter]);
 
   const totalValue = useMemo(
-    () =>
-      activeItems.reduce(
-        (sum, item) =>
-          sum +
-          currencyService.convert(
-            item.purchaseInfo.purchasePrice,
-            item.purchaseInfo.purchaseCurrency,
-            displayCurrency,
-          ),
-        0,
-      ),
+    () => getItemsCurrentValue(activeItems, displayCurrency),
     [activeItems, displayCurrency],
   );
+  const shouldShowLoadingState =
+    Boolean(ownerUserId) &&
+    isRemoteDataLoading &&
+    categories.length === 0 &&
+    activeItems.length === 0;
 
   return (
     <PageTransition>
     <div className="space-y-4 sm:space-y-6 md:space-y-8">
       <PageHeader
         title="Collections"
-        description="Browse and manage your collection categories"
+        description={
+          activeContributor
+            ? `Browsing categories for ${activeContributor.name}`
+            : 'Browse and manage your collection categories'
+        }
       >
         <div className="flex items-center gap-2">
+          {activeContributor && (
+            <Button variant="outline" onClick={() => navigate('/collections')}>
+              Clear Filter
+            </Button>
+          )}
           <div className="flex items-center rounded-lg border bg-muted/30 p-0.5">
             <Button
               variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
@@ -155,33 +167,42 @@ export default function Collections() {
               <List className="size-4" />
             </Button>
           </div>
-          <Button onClick={() => navigate('/admin/categories/new')}>
-            <Plus className="size-4" />
-            New Category
-          </Button>
+          {canCreateCategory && (
+            <Button onClick={() => navigate('/admin/categories/new')}>
+              <Plus className="size-4" />
+              New Category
+            </Button>
+          )}
         </div>
       </PageHeader>
 
-      <MotionGrid className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4" variants={staggerContainer} initial="hidden" animate="visible">
-        <MotionItem variants={staggerItem}><StatCard
-          title="Total Items"
-          value={formatNumber(activeItems.length)}
-          icon={Package}
-          subtitle="across all categories"
-        /></MotionItem>
-        <MotionItem variants={staggerItem}><StatCard
-          title="Categories"
-          value={formatNumber(categories.length)}
-          icon={Layers}
-          subtitle="collection types"
-        /></MotionItem>
-        <MotionItem variants={staggerItem}><StatCard
-          title="Total Value"
-          value={formatCurrency(totalValue, displayCurrency)}
-          icon={DollarSign}
-          subtitle="estimated portfolio"
-        /></MotionItem>
-      </MotionGrid>
+      {shouldShowLoadingState ? (
+        <div className="space-y-5">
+          <LoadingSkeleton variant="card" count={3} className="lg:grid-cols-3" />
+          <LoadingSkeleton variant="card" count={5} className="xl:grid-cols-4 2xl:grid-cols-5" />
+        </div>
+      ) : (
+        <>
+          <MotionGrid className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4" variants={staggerContainer} initial="hidden" animate="visible">
+            <MotionItem variants={staggerItem}><StatCard
+              title="Total Items"
+              value={formatNumber(activeItems.length)}
+              icon={Package}
+              subtitle="across all categories"
+            /></MotionItem>
+            <MotionItem variants={staggerItem}><StatCard
+              title="Categories"
+              value={formatNumber(categories.length)}
+              icon={Layers}
+              subtitle="collection types"
+            /></MotionItem>
+            <MotionItem variants={staggerItem}><StatCard
+              title="Total Value"
+              value={formatCurrency(totalValue, displayCurrency)}
+              icon={DollarSign}
+              subtitle="estimated portfolio"
+            /></MotionItem>
+          </MotionGrid>
 
       {/* Search & Sort */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -225,63 +246,25 @@ export default function Collections() {
       </div>
 
       {viewMode === 'grid' ? (
-        <MotionGrid className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-3 xl:grid-cols-4" variants={staggerContainer} initial="hidden" animate="visible">
-          {categoryData.map(({ category, count, totalValue: catValue, lastUpdated }) => {
+        <MotionGrid className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5" variants={staggerContainer} initial="hidden" animate="visible">
+          {categoryData.map(({ category, count, totalValue: catValue, lastUpdated, libraryCount }) => {
             const Icon = getCategoryIcon(category.icon);
+            const categoryDescription = category.description?.trim() || 'A focused collection ready for new additions.';
+            const averageValue = count > 0 ? catValue / count : 0;
 
             return (
-              <MotionItem key={category.id} variants={staggerItem}>
-              <Card
-                className={cn(
-                  'group relative cursor-pointer overflow-hidden transition-shadow duration-300',
-                  'hover:shadow-xl hover:shadow-primary/5',
-                )}
+              <MotionItem key={category.id} variants={staggerItem} className="h-full">
+              <CategoryShowcaseCard
+                title={category.name}
+                description={categoryDescription}
+                itemCount={count}
+                libraryCount={libraryCount}
+                totalValueLabel={formatCurrency(catValue, displayCurrency)}
+                averageValueLabel={formatCurrency(averageValue, displayCurrency)}
+                lastUpdatedLabel={formatRelativeDate(lastUpdated)}
+                icon={Icon}
                 onClick={() => navigate(`/collections/${category.slug}`)}
-              >
-                <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-primary/60 to-primary/20 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <div className="rounded-xl bg-primary/10 p-3 transition-colors duration-300 group-hover:bg-primary/15">
-                      <Icon className="size-6 text-primary" />
-                    </div>
-                    <Badge variant="secondary" className="font-medium">
-                      {count} {count === 1 ? 'item' : 'items'}
-                    </Badge>
-                  </div>
-                  <div className="mt-4 space-y-1">
-                    <h3 className="text-lg font-semibold tracking-tight">
-                      {category.name}
-                    </h3>
-                    <p className="line-clamp-2 text-sm leading-relaxed text-muted-foreground">
-                      {category.description}
-                    </p>
-                  </div>
-                </CardHeader>
-
-                <CardContent className="space-y-2.5 pb-4">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Total Value</span>
-                    <span className="font-semibold">{formatCurrency(catValue, displayCurrency)}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Last Updated</span>
-                    <span className="text-muted-foreground">
-                      {formatRelativeDate(lastUpdated)}
-                    </span>
-                  </div>
-                </CardContent>
-
-                <CardFooter className="pt-0">
-                  <Button
-                    variant="ghost"
-                    className="w-full transition-colors duration-300 group-hover:bg-primary group-hover:text-primary-foreground"
-                  >
-                    View Collection
-                    <ArrowRight className="ml-1 size-4 transition-transform duration-300 group-hover:translate-x-0.5" />
-                  </Button>
-                </CardFooter>
-              </Card>
+              />
               </MotionItem>
             );
           })}
@@ -334,13 +317,39 @@ export default function Collections() {
             })}
 
             {categoryData.length === 0 && (
-              <div className="flex flex-col items-center justify-center py-16 text-center">
-                <Package className="mb-3 size-12 text-muted-foreground/30" />
-                <p className="text-sm text-muted-foreground">No categories yet</p>
-              </div>
+              <EmptyState
+                icon={Package}
+                eyebrow="Collections"
+                title={activeContributor ? 'No shared collections yet' : 'No categories yet'}
+                description={
+                  activeContributor
+                    ? `${activeContributor.name} does not have any items assigned yet. Add an item for this contributor or switch back to all collections.`
+                    : 'Create your first category to start organizing your collection and grouping items into libraries.'
+                }
+                action={
+                  canCreateCategory
+                    ? {
+                        label: 'Create Category',
+                        onClick: () => navigate('/admin/categories/new'),
+                      }
+                    : undefined
+                }
+                secondaryAction={{
+                  label: activeContributor ? 'View All Collections' : 'Go to Dashboard',
+                  onClick: () => navigate(activeContributor ? '/collections' : '/dashboard'),
+                }}
+                hint={
+                  activeContributor
+                    ? 'Contributor filters only show categories that currently contain visible items for that person.'
+                    : 'Once categories exist, you can add libraries under them and browse from the sidebar.'
+                }
+                className="mx-6 my-8"
+              />
             )}
           </div>
         </Card>
+      )}
+        </>
       )}
     </div>
     </PageTransition>

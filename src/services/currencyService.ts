@@ -2,12 +2,18 @@ import type { CurrencyRate } from '@/types';
 
 const API_URL = 'https://api.frankfurter.dev/v1/latest?base=USD';
 const CACHE_KEY = 'collectvault_exchange_rates';
+const HISTORICAL_CACHE_KEY = 'collectvault_historical_exchange_rates';
 const CACHE_TTL = 4 * 60 * 60 * 1000; // 4 hours
+const HISTORICAL_CACHE_TTL = 1000 * 60 * 60 * 24 * 30; // 30 days
 
 interface CachedRates {
   rates: Record<string, number>;
   fetchedAt: number;
   date: string;
+}
+
+interface HistoricalRatesCache {
+  [cacheKey: string]: CachedRates;
 }
 
 const FALLBACK_RATES: Record<string, number> = {
@@ -40,6 +46,23 @@ let liveRates: Record<string, number> = { ...FALLBACK_RATES };
 let ratesDate = '';
 let fetchPromise: Promise<void> | null = null;
 let initialized = false;
+
+function getHistoricalCache(): HistoricalRatesCache {
+  try {
+    const raw = localStorage.getItem(HISTORICAL_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as HistoricalRatesCache) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveHistoricalCache(cache: HistoricalRatesCache) {
+  try {
+    localStorage.setItem(HISTORICAL_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // Ignore quota errors
+  }
+}
 
 function loadFromCache(): boolean {
   try {
@@ -183,10 +206,26 @@ export const currencyService = {
 
   async getHistoricalRates(date: string, base: string): Promise<Record<string, number> | null> {
     try {
-      const res = await fetch(`https://api.frankfurter.dev/v1/${date}?base=${base}`);
+      const cacheKey = `${date}:${base}`;
+      const cache = getHistoricalCache();
+      const cached = cache[cacheKey];
+      if (cached && Date.now() - cached.fetchedAt <= HISTORICAL_CACHE_TTL) {
+        return cached.rates;
+      }
+
+      const res = await fetch(`https://api.frankfurter.dev/v1/${date}?base=${base}&symbols=USD,EUR,GBP,TRY,JPY,CHF`);
       if (!res.ok) return null;
       const data = await res.json();
-      return data.rates ?? null;
+      if (!data.rates) return null;
+
+      cache[cacheKey] = {
+        rates: data.rates,
+        fetchedAt: Date.now(),
+        date: data.date ?? date,
+      };
+      saveHistoricalCache(cache);
+
+      return data.rates;
     } catch {
       return null;
     }

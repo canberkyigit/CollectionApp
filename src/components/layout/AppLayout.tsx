@@ -6,15 +6,26 @@ import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 import { AddEditItemDialog } from '@/components/shared/AddEditItemDialog';
 import { useAuthStore } from '@/store/useAuthStore';
-import { useCollectionStore, setFirebaseUserId } from '@/store/useCollectionStore';
+import {
+  useCollectionStore,
+  setFirebaseUserId,
+  setCurrentCollectionActor,
+} from '@/store/useCollectionStore';
+import { useSyncStore } from '@/store/useSyncStore';
+import { collectionSyncService } from '@/services/collectionSyncService';
 import { Layers } from 'lucide-react';
 
 const AppLayout = () => {
   const { user, isAuthenticated, isLoading, init } = useAuthStore();
   const loadFromFirestore = useCollectionStore((s) => s.loadFromFirestore);
+  const subscribeToFirestore = useCollectionStore((s) => s.subscribeToFirestore);
+  const resetForUser = useCollectionStore((s) => s.resetForUser);
+  const upsertContributorProfile = useCollectionStore((s) => s.upsertContributorProfile);
   const getLentItems = useCollectionStore((s) => s.getLentItems);
+  const setOnlineState = useSyncStore((s) => s.setOnlineState);
   const loadedUidRef = useRef<string | null>(null);
   const overdueNotifiedRef = useRef(false);
+  const remoteUnsubRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const unsub = init();
@@ -22,17 +33,83 @@ const AppLayout = () => {
   }, [init]);
 
   useEffect(() => {
+    const handleOnline = () => {
+      setOnlineState(true);
+      void collectionSyncService.retryPending();
+    };
+    const handleOffline = () => setOnlineState(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [setOnlineState]);
+
+  useEffect(() => {
+    remoteUnsubRef.current?.();
+
     if (user && user.uid !== 'offline') {
       setFirebaseUserId(user.uid);
+      setCurrentCollectionActor({
+        id: user.uid,
+        name: user.displayName ?? user.email ?? 'User',
+        avatar: user.photoURL ?? '',
+        role: user.role,
+      });
+      upsertContributorProfile({
+        id: user.uid,
+        name: user.displayName ?? user.email ?? 'User',
+        avatar: user.photoURL ?? '',
+        role: user.role,
+        joinedAt: new Date().toISOString(),
+        itemCount: 0,
+        totalContributionValue: 0,
+        lastContributionAt: new Date().toISOString(),
+      });
       if (loadedUidRef.current !== user.uid) {
         loadedUidRef.current = user.uid;
-        loadFromFirestore(user.uid);
+        resetForUser(user.uid, 'empty');
+        void loadFromFirestore(user.uid).finally(() => {
+          remoteUnsubRef.current = subscribeToFirestore(user.uid);
+        });
+      } else {
+        remoteUnsubRef.current = subscribeToFirestore(user.uid);
       }
+    } else if (user?.uid === 'offline') {
+      setFirebaseUserId(null);
+      setCurrentCollectionActor({
+        id: 'offline',
+        name: user.displayName ?? 'Local User',
+        avatar: '',
+        role: 'admin',
+      });
+      resetForUser('offline');
+      upsertContributorProfile({
+        id: 'offline',
+        name: user.displayName ?? 'Local User',
+        avatar: '',
+        role: 'admin',
+        joinedAt: new Date().toISOString(),
+        itemCount: 0,
+        totalContributionValue: 0,
+        lastContributionAt: new Date().toISOString(),
+      });
     } else {
       setFirebaseUserId(null);
+      setCurrentCollectionActor(null);
+      resetForUser(null, 'empty');
       loadedUidRef.current = null;
     }
-  }, [user, loadFromFirestore]);
+    overdueNotifiedRef.current = false;
+
+    return () => {
+      remoteUnsubRef.current?.();
+      remoteUnsubRef.current = null;
+    };
+  }, [user, loadFromFirestore, subscribeToFirestore, resetForUser, upsertContributorProfile]);
 
   useEffect(() => {
     if (!isAuthenticated || overdueNotifiedRef.current) return;
@@ -54,7 +131,7 @@ const AppLayout = () => {
 
   if (isLoading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-background">
+      <div className="surface-page flex h-screen items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="flex size-14 items-center justify-center rounded-xl border border-primary/20 bg-primary/10">
             <Layers className="size-7 animate-pulse text-primary" />
@@ -71,7 +148,7 @@ const AppLayout = () => {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="flex h-screen overflow-hidden bg-background text-foreground">
+      <div className="surface-page flex h-screen overflow-hidden text-foreground">
         <Sidebar />
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <Topbar />

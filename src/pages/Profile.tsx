@@ -22,6 +22,21 @@ import { Separator } from '@/components/ui/separator';
 import { useAuthStore } from '@/store/useAuthStore';
 import { storageService } from '@/services/storageService';
 
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return fallback;
+}
+
+function isRecentLoginError(error: unknown) {
+  return typeof error === 'object'
+    && error !== null
+    && 'code' in error
+    && error.code === 'auth/requires-recent-login';
+}
+
 export default function Profile() {
   const { user, firebaseReady, updateUserProfile, changePassword } = useAuthStore();
 
@@ -55,8 +70,8 @@ export default function Profile() {
     try {
       await updateUserProfile(displayName.trim());
       toast.success('Display name updated');
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to update name');
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to update name'));
     } finally {
       setNameLoading(false);
     }
@@ -80,8 +95,8 @@ export default function Profile() {
       const url = await storageService.uploadImage(user.uid, file, 'avatars');
       await updateUserProfile(undefined, url);
       toast.success('Avatar updated');
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to upload avatar');
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Failed to upload avatar'));
     } finally {
       setAvatarLoading(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -104,10 +119,10 @@ export default function Profile() {
       toast.success('Password changed successfully');
       setNewPassword('');
       setConfirmPassword('');
-    } catch (err: any) {
-      const msg = err.code === 'auth/requires-recent-login'
+    } catch (error) {
+      const msg = isRecentLoginError(error)
         ? 'Please log out and log back in before changing your password'
-        : err.message || 'Failed to change password';
+        : getErrorMessage(error, 'Failed to change password');
       toast.error(msg);
     } finally {
       setPwLoading(false);

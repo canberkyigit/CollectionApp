@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
-import { PageHeader, EmptyState } from '@/components/shared';
+import { PageHeader, EmptyState, LoadingSkeleton } from '@/components/shared';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { PageTransition } from '@/components/shared/motion';
 import { Badge } from '@/components/ui/badge';
@@ -34,6 +34,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn, formatRelativeDate } from '@/lib/utils';
 import { useCollectionStore } from '@/store/useCollectionStore';
+import { selectIsColdLoading } from '@/store/collectionStore.selectors';
 
 const PAGE_SIZE = 20;
 
@@ -155,10 +156,20 @@ function getEntityRoute(entityType: string, entityId: string): string | null {
 
 export default function ActivityLog() {
   const navigate = useNavigate();
-  const { activityLog, getContributorById, clearActivityLog } = useCollectionStore();
+  const {
+    activityLog,
+    getContributorById,
+    clearActivityLog,
+    ownerUserId,
+    isRemoteDataLoading,
+  } = useCollectionStore();
   const [entityFilter, setEntityFilter] = useState<EntityFilter>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
+  const shouldShowLoadingState = selectIsColdLoading(
+    { ownerUserId, isRemoteDataLoading },
+    [activityLog.length],
+  );
 
   const filteredLog = useMemo(() => {
     if (entityFilter === 'all') return activityLog;
@@ -212,221 +223,222 @@ export default function ActivityLog() {
           description="Track all changes and actions in your collection"
         />
 
-        {/* Filter Bar */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1">
-          <Filter className="size-4 shrink-0 text-muted-foreground" />
-          <div className="flex items-center gap-0.5 rounded-lg border p-0.5">
-            {ENTITY_FILTERS.map((filter) => (
-              <Button
-                key={filter.value}
-                variant={entityFilter === filter.value ? 'default' : 'ghost'}
-                size="sm"
-                className="h-7 px-3 text-xs"
-                onClick={() => handleFilterChange(filter.value)}
-              >
-                {filter.label}
-              </Button>
-            ))}
+        {shouldShowLoadingState ? (
+          <div className="space-y-4">
+            <LoadingSkeleton variant="list" count={6} />
           </div>
-          {entityFilter !== 'all' && (
-            <Badge variant="secondary" className="shrink-0">
-              {filteredLog.length} {filteredLog.length === 1 ? 'entry' : 'entries'}
-            </Badge>
-          )}
-          {activityLog.length > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="ml-auto shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
-              onClick={() => setConfirmClearOpen(true)}
-            >
-              <Trash className="mr-1.5 size-3.5" />
-              Clear Log
-            </Button>
-          )}
-        </div>
-
-        {/* Timeline */}
-        {groupedByDate.length === 0 ? (
-          <EmptyState
-            icon={ClipboardList}
-            title="No activity yet"
-            description="Actions you perform on your collection will appear here as a timeline."
-          />
         ) : (
           <>
-            <div className="space-y-10">
-              {groupedByDate.map((group) => (
-                <div key={group.label}>
-                  {/* Date Group Header */}
-                  <div className="mb-4 flex items-center gap-3">
-                    <h2 className="text-sm font-semibold text-foreground">
-                      {group.label}
-                    </h2>
-                    <div className="h-px flex-1 bg-border" />
-                    <span className="text-xs text-muted-foreground">
-                      {group.entries.length} {group.entries.length === 1 ? 'action' : 'actions'}
-                    </span>
-                  </div>
-
-                  {/* Timeline Entries */}
-                  <div className="relative ml-[72px]">
-                    {/* Vertical connector line */}
-                    <div className="absolute left-3 top-3 bottom-0 w-px bg-border" />
-
-                    <div className="space-y-0">
-                      {group.entries.map((entry, entryIdx) => {
-                        const Icon = ACTION_ICON_MAP[entry.action];
-                        const dotColor = ACTION_DOT_COLOR[entry.action];
-                        const badgeColor = ACTION_BADGE_VARIANT[entry.action];
-                        const contributor = getContributorById(entry.userId);
-                        const entityRoute = getEntityRoute(entry.entityType, entry.entityId);
-                        const isLast = entryIdx === group.entries.length - 1;
-
-                        return (
-                          <div key={entry.id} className="relative flex gap-4 pb-6 last:pb-0">
-                            {/* Time label - positioned to the left */}
-                            <div className="absolute -left-[72px] top-0.5 w-[56px] text-right">
-                              <span className="text-xs font-medium tabular-nums text-muted-foreground">
-                                {formatTime(entry.timestamp)}
-                              </span>
-                            </div>
-
-                            {/* Dot on the timeline */}
-                            <div className="relative z-10 mt-1.5 flex shrink-0 items-center justify-center">
-                              <div
-                                className={cn(
-                                  'size-[10px] rounded-full shadow-[0_0_8px]',
-                                  dotColor,
-                                )}
-                              />
-                            </div>
-
-                            {/* Hide connector line after last entry */}
-                            {isLast && (
-                              <div className="absolute left-[9px] top-4 bottom-0 w-px bg-background" />
-                            )}
-
-                            {/* Entry Card */}
-                            <Card className="flex-1 transition-all duration-200 hover:shadow-md">
-                              <CardContent className="flex items-start gap-3 p-4">
-                                {/* Action Icon */}
-                                <div
-                                  className={cn(
-                                    'flex size-9 shrink-0 items-center justify-center rounded-lg border',
-                                    badgeColor,
-                                  )}
-                                >
-                                  <Icon className="size-4" />
-                                </div>
-
-                                {/* Content */}
-                                <div className="min-w-0 flex-1 space-y-1">
-                                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                                    <span className="text-sm font-medium">
-                                      {getActionLabel(entry.action)}
-                                    </span>
-                                    {entityRoute ? (
-                                      <button
-                                        className="truncate text-sm font-semibold text-primary underline-offset-2 hover:underline"
-                                        onClick={() => navigate(entityRoute)}
-                                      >
-                                        {entry.entityTitle}
-                                      </button>
-                                    ) : (
-                                      <span className="truncate text-sm font-semibold">
-                                        {entry.entityTitle}
-                                      </span>
-                                    )}
-                                  </div>
-
-                                  {entry.details && (
-                                    <p className="text-sm leading-relaxed text-muted-foreground">
-                                      {entry.details}
-                                    </p>
-                                  )}
-
-                                  {/* Footer: avatar + relative time */}
-                                  <div className="flex items-center gap-2 pt-1">
-                                    {contributor && (
-                                      <div className="flex items-center gap-1.5">
-                                        <Avatar className="size-5">
-                                          <AvatarImage
-                                            src={contributor.avatar}
-                                            alt={contributor.name}
-                                          />
-                                          <AvatarFallback className="text-[10px]">
-                                            {contributor.name
-                                              .split(' ')
-                                              .map((n) => n[0])
-                                              .join('')}
-                                          </AvatarFallback>
-                                        </Avatar>
-                                        <span className="text-xs text-muted-foreground">
-                                          {contributor.name}
-                                        </span>
-                                      </div>
-                                    )}
-                                    <span className="text-xs text-muted-foreground/70">
-                                      ·
-                                    </span>
-                                    <span className="text-xs text-muted-foreground/70">
-                                      {formatRelativeDate(entry.timestamp)}
-                                    </span>
-                                  </div>
-                                </div>
-                              </CardContent>
-                            </Card>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              ))}
+            {/* Filter Bar */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              <Filter className="size-4 shrink-0 text-muted-foreground" />
+              <div className="flex items-center gap-0.5 rounded-lg border p-0.5">
+                {ENTITY_FILTERS.map((filter) => (
+                  <Button
+                    key={filter.value}
+                    variant={entityFilter === filter.value ? 'default' : 'ghost'}
+                    size="sm"
+                    className="h-7 px-3 text-xs"
+                    onClick={() => handleFilterChange(filter.value)}
+                  >
+                    {filter.label}
+                  </Button>
+                ))}
+              </div>
+              {entityFilter !== 'all' && (
+                <Badge variant="secondary" className="shrink-0">
+                  {filteredLog.length} {filteredLog.length === 1 ? 'entry' : 'entries'}
+                </Badge>
+              )}
+              {activityLog.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  onClick={() => setConfirmClearOpen(true)}
+                >
+                  <Trash className="mr-1.5 size-3.5" />
+                  Clear Log
+                </Button>
+              )}
             </div>
 
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between border-t pt-4">
-                <span className="text-sm text-muted-foreground">
-                  Page {currentPage} of {totalPages} · {filteredLog.length} entries
-                </span>
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                    disabled={currentPage === 1}
-                  >
-                    <ChevronLeft className="size-4" />
-                    Previous
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                    disabled={currentPage === totalPages}
-                  >
-                    Next
-                    <ChevronRight className="size-4" />
-                  </Button>
+            {/* Timeline */}
+            {groupedByDate.length === 0 ? (
+              <EmptyState
+                icon={ClipboardList}
+                eyebrow="Timeline"
+                title="No activity yet"
+                description="Actions you perform on your collection will appear here as a timeline."
+                action={{ label: 'Browse Collections', onClick: () => navigate('/collections') }}
+                secondaryAction={{ label: 'Go to Dashboard', onClick: () => navigate('/dashboard') }}
+                hint="Creating, updating, lending, exporting, and wishlist changes all show up here once the collection becomes active."
+              />
+            ) : (
+              <>
+                <div className="space-y-10">
+                  {groupedByDate.map((group) => (
+                    <div key={group.label}>
+                      <div className="mb-4 flex items-center gap-3">
+                        <h2 className="text-sm font-semibold text-foreground">
+                          {group.label}
+                        </h2>
+                        <div className="h-px flex-1 bg-border" />
+                        <span className="text-xs text-muted-foreground">
+                          {group.entries.length} {group.entries.length === 1 ? 'action' : 'actions'}
+                        </span>
+                      </div>
+
+                      <div className="relative ml-[72px]">
+                        <div className="absolute bottom-0 left-3 top-3 w-px bg-border" />
+
+                        <div className="space-y-0">
+                          {group.entries.map((entry, entryIdx) => {
+                            const Icon = ACTION_ICON_MAP[entry.action];
+                            const dotColor = ACTION_DOT_COLOR[entry.action];
+                            const badgeColor = ACTION_BADGE_VARIANT[entry.action];
+                            const contributor = getContributorById(entry.userId);
+                            const entityRoute = getEntityRoute(entry.entityType, entry.entityId);
+                            const isLast = entryIdx === group.entries.length - 1;
+
+                            return (
+                              <div key={entry.id} className="relative flex gap-4 pb-6 last:pb-0">
+                                <div className="absolute -left-[72px] top-0.5 w-[56px] text-right">
+                                  <span className="text-xs font-medium tabular-nums text-muted-foreground">
+                                    {formatTime(entry.timestamp)}
+                                  </span>
+                                </div>
+
+                                <div className="relative z-10 mt-1.5 flex shrink-0 items-center justify-center">
+                                  <div
+                                    className={cn(
+                                      'size-[10px] rounded-full shadow-[0_0_8px]',
+                                      dotColor,
+                                    )}
+                                  />
+                                </div>
+
+                                {isLast && (
+                                  <div className="absolute bottom-0 left-[9px] top-4 w-px bg-background" />
+                                )}
+
+                                <Card className="flex-1 transition-all duration-200 hover:shadow-md">
+                                  <CardContent className="flex items-start gap-3 p-4">
+                                    <div
+                                      className={cn(
+                                        'flex size-9 shrink-0 items-center justify-center rounded-lg border',
+                                        badgeColor,
+                                      )}
+                                    >
+                                      <Icon className="size-4" />
+                                    </div>
+
+                                    <div className="min-w-0 flex-1 space-y-1">
+                                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                        <span className="text-sm font-medium">
+                                          {getActionLabel(entry.action)}
+                                        </span>
+                                        {entityRoute ? (
+                                          <button
+                                            className="truncate text-sm font-semibold text-primary underline-offset-2 hover:underline"
+                                            onClick={() => navigate(entityRoute)}
+                                          >
+                                            {entry.entityTitle}
+                                          </button>
+                                        ) : (
+                                          <span className="truncate text-sm font-semibold">
+                                            {entry.entityTitle}
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      {entry.details && (
+                                        <p className="text-sm leading-relaxed text-muted-foreground">
+                                          {entry.details}
+                                        </p>
+                                      )}
+
+                                      <div className="flex items-center gap-2 pt-1">
+                                        {contributor && (
+                                          <div className="flex items-center gap-1.5">
+                                            <Avatar className="size-5">
+                                              <AvatarImage
+                                                src={contributor.avatar}
+                                                alt={contributor.name}
+                                              />
+                                              <AvatarFallback className="text-[10px]">
+                                                {contributor.name
+                                                  .split(' ')
+                                                  .map((n) => n[0])
+                                                  .join('')}
+                                              </AvatarFallback>
+                                            </Avatar>
+                                            <span className="text-xs text-muted-foreground">
+                                              {contributor.name}
+                                            </span>
+                                          </div>
+                                        )}
+                                        <span className="text-xs text-muted-foreground/70">
+                                          ·
+                                        </span>
+                                        <span className="text-xs text-muted-foreground/70">
+                                          {formatRelativeDate(entry.timestamp)}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </CardContent>
+                                </Card>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              </div>
+
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between border-t pt-4">
+                    <span className="text-sm text-muted-foreground">
+                      Page {currentPage} of {totalPages} · {filteredLog.length} entries
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                        disabled={currentPage === 1}
+                      >
+                        <ChevronLeft className="size-4" />
+                        Previous
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                        disabled={currentPage === totalPages}
+                      >
+                        Next
+                        <ChevronRight className="size-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </>
         )}
-      </div>
 
-      <ConfirmDialog
-        open={confirmClearOpen}
-        onClose={() => setConfirmClearOpen(false)}
-        onConfirm={handleClearConfirm}
-        title="Clear Activity Log"
-        description="This will permanently delete all activity log entries. This action cannot be undone."
-        confirmLabel="Clear All"
-        destructive
-      />
+        <ConfirmDialog
+          open={confirmClearOpen}
+          onClose={() => setConfirmClearOpen(false)}
+          onConfirm={handleClearConfirm}
+          title="Clear Activity Log"
+          description="This will permanently delete all activity log entries. This action cannot be undone."
+          confirmLabel="Clear All"
+          destructive
+        />
+      </div>
     </PageTransition>
   );
 }

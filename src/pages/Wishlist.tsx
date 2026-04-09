@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 import type { WishlistItem } from '@/types';
 import {
@@ -22,6 +23,7 @@ import {
   PageHeader,
   EmptyState,
   SearchBar,
+  LoadingSkeleton,
   StatCard,
   ConfirmDialog,
 } from '@/components/shared';
@@ -48,9 +50,11 @@ import {
   DialogFooter,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { cn, formatCurrency, formatRelativeDate, generateId } from '@/lib/utils';
+import { cn, formatCurrency, formatRelativeDate } from '@/lib/utils';
 import { currencyService } from '@/services/currencyService';
+import { useAuthStore } from '@/store/useAuthStore';
 import { useCollectionStore } from '@/store/useCollectionStore';
+import { selectIsColdLoading } from '@/store/collectionStore.selectors';
 
 type Priority = WishlistItem['priority'];
 
@@ -107,6 +111,7 @@ const EMPTY_FORM: FormState = {
 };
 
 export default function Wishlist() {
+  const navigate = useNavigate();
   const {
     wishlist,
     categories,
@@ -114,8 +119,15 @@ export default function Wishlist() {
     updateWishlistItem,
     deleteWishlistItem,
     getCategoryById,
+    ownerUserId,
+    isRemoteDataLoading,
   } = useCollectionStore();
+  const user = useAuthStore((state) => state.user);
   const displayCurrency = useCollectionStore((s) => s.displayCurrency);
+  const shouldShowLoadingState = selectIsColdLoading(
+    { ownerUserId, isRemoteDataLoading },
+    [wishlist.length, categories.length],
+  );
 
   const [searchQuery, setSearchQuery] = useState('');
   const [priorityFilter, setPriorityFilter] = useState<Priority | 'all'>('all');
@@ -224,7 +236,7 @@ export default function Wishlist() {
       notes: form.notes.trim() || undefined,
       images: [] as string[],
       tags: parsedTags,
-      addedBy: 'contrib-1',
+      addedBy: user?.uid ?? 'offline',
     };
 
     if (editingItem) {
@@ -238,7 +250,7 @@ export default function Wishlist() {
     setDialogOpen(false);
     setEditingItem(null);
     setForm(EMPTY_FORM);
-  }, [form, editingItem, addWishlistItem, updateWishlistItem]);
+  }, [form, editingItem, addWishlistItem, updateWishlistItem, user?.uid]);
 
   const handleDelete = useCallback(() => {
     if (itemToDelete) {
@@ -278,6 +290,14 @@ export default function Wishlist() {
           Add Item
         </Button>
       </PageHeader>
+
+      {shouldShowLoadingState ? (
+        <div className="space-y-4">
+          <LoadingSkeleton variant="list" count={3} />
+          <LoadingSkeleton variant="card" count={6} />
+        </div>
+      ) : (
+        <>
 
       {/* Stats */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -354,16 +374,33 @@ export default function Wishlist() {
       {filteredItems.length === 0 ? (
         <EmptyState
           icon={Heart}
+          eyebrow="Wishlist"
           title="No wishlist items"
           description={
             searchQuery || priorityFilter !== 'all'
-              ? 'No items match your current filters. Try adjusting your search or priority filter.'
-              : 'Start building your wishlist by adding items you want to acquire.'
+              ? 'Nothing in your wishlist matches the current search or priority filter.'
+              : 'Track the items you want next so you can compare priorities, target prices, and acquisition status in one place.'
           }
           action={
             !searchQuery && priorityFilter === 'all'
               ? { label: 'Add First Item', onClick: openAdd }
+              : {
+                  label: 'Clear Filters',
+                  onClick: () => {
+                    setSearchQuery('');
+                    setPriorityFilter('all');
+                  },
+                }
+          }
+          secondaryAction={
+            !searchQuery && priorityFilter === 'all'
+              ? { label: 'Browse Collections', onClick: () => navigate('/collections') }
               : undefined
+          }
+          hint={
+            searchQuery || priorityFilter !== 'all'
+              ? 'Try removing one filter at a time to quickly find the missing items.'
+              : 'You can also mark wishlist items as acquired later without losing the original target price and notes.'
           }
         />
       ) : (
@@ -533,6 +570,8 @@ export default function Wishlist() {
             );
           })}
         </div>
+      )}
+        </>
       )}
 
       {/* Add / Edit Dialog */}

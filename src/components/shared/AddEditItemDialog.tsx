@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm, Controller, useWatch } from 'react-hook-form';
 import type { Control, FieldErrors } from 'react-hook-form';
 import { toast } from 'sonner';
 import {
@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import type { CategoryField, CollectionItem } from '@/types';
 import { useCollectionStore } from '@/store/useCollectionStore';
+import { useAuthStore } from '@/store/useAuthStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -24,48 +25,31 @@ import {
 } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
+import {
+  ITEM_FORM_CONDITIONS,
+  ITEM_FORM_CURRENCIES,
+  ITEM_FORM_HIDDEN_CUSTOM_KEYS,
+  buildCurrencyEquivalents,
+  buildPurchaseRatesMap,
+  getEquivalentForDisplay,
+  getHistoricalPurchaseRates,
+  getPurchaseExchangeRateToUsd,
+  itemToFormValues,
+  normalizeCustomFields,
+  persistItemImages,
+  resolveCurrentValuationInput,
+  type ItemFormValues,
+} from '@/lib/itemForm';
 import { currencyService } from '@/services/currencyService';
 import { bookSearchService, type BookSearchResult } from '@/services/bookSearchService';
 import { BarcodeScannerDialog } from '@/components/shared/BarcodeScannerDialog';
-
-const CONDITIONS = ['Mint', 'Near Mint', 'Very Good', 'Good', 'Fair', 'Poor'] as const;
-const CURRENCIES = ['USD', 'EUR', 'TRY', 'GBP', 'JPY', 'CHF'] as const;
-
-const HIDDEN_CUSTOM_KEYS = new Set([
-  'purchaseDate', 'purchasePrice', 'purchaseCurrency', 'currentValue', 'isFirstEdition',
-  'condition', 'notes',
-]);
-
-interface FormValues {
-  title: string;
-  description?: string;
-  condition: string;
-  location?: string;
-  tags?: string;
-  customFields: Record<string, unknown>;
-  purchaseDate?: string;
-  purchasePrice?: number;
-  purchaseCurrency: string;
-  purchaseLocation?: string;
-  exchangeRate?: number;
-  currentValue?: number;
-  currentValueCurrency: string;
-  targetYear: number;
-  targetValue?: number;
-  notes?: string;
-  libraryId?: string;
-  quantity?: number;
-  eurRate?: number;
-  usdRate?: number;
-  gbpRate?: number;
-}
 
 function DynamicFieldRenderer({
   field, control, errors,
 }: {
   field: CategoryField;
-  control: Control<FormValues>;
-  errors: FieldErrors<FormValues>;
+  control: Control<ItemFormValues>;
+  errors: FieldErrors<ItemFormValues>;
 }) {
   const fieldError = errors?.customFields?.[field.key];
 
@@ -239,49 +223,6 @@ function DynamicFieldRenderer({
   }
 }
 
-function itemToFormValues(item: CollectionItem, fields: CategoryField[]): FormValues {
-  const customFieldValues: Record<string, unknown> = {};
-  for (const field of fields) {
-    const raw = item.customFields[field.key];
-    if (field.type === 'boolean') {
-      customFieldValues[field.key] = !!raw;
-    } else if (field.type === 'multi-select' || field.type === 'tags') {
-      customFieldValues[field.key] = Array.isArray(raw) ? raw.join(', ') : (raw ?? '');
-    } else {
-      customFieldValues[field.key] = raw ?? '';
-    }
-  }
-
-  const equivs = item.purchaseInfo.currencyEquivalents || [];
-  const eurEq = equivs.find((e) => e.currency === 'EUR');
-  const usdEq = equivs.find((e) => e.currency === 'USD');
-  const gbpEq = equivs.find((e) => e.currency === 'GBP');
-
-  return {
-    title: item.title,
-    description: item.description,
-    condition: item.condition,
-    location: item.location ?? '',
-    tags: item.tags.join(', '),
-    customFields: customFieldValues as Record<string, unknown>,
-    purchaseDate: item.purchaseInfo.purchasedAt ? item.purchaseInfo.purchasedAt.slice(0, 10) : '',
-    purchasePrice: item.purchaseInfo.purchasePrice,
-    purchaseCurrency: item.purchaseInfo.purchaseCurrency,
-    purchaseLocation: item.purchaseInfo.purchaseLocation ?? '',
-    exchangeRate: item.purchaseInfo.exchangeRateAtPurchase,
-    currentValue: item.valuationInfo.currentEstimatedValue,
-    currentValueCurrency: item.valuationInfo.currentValueCurrency,
-    targetYear: item.valuationInfo.targetYearProjection ?? 2030,
-    targetValue: item.valuationInfo.targetEstimatedValue,
-    notes: item.notes,
-    libraryId: item.libraryId ?? '',
-    quantity: item.quantity ?? 1,
-    eurRate: eurEq?.rate,
-    usdRate: usdEq?.rate,
-    gbpRate: gbpEq?.rate,
-  };
-}
-
 function BookSearchDialog({
   open, onOpenChange, onSelect,
 }: {
@@ -315,8 +256,8 @@ function BookSearchDialog({
     try {
       const data = await bookSearchService.search(q, 12);
       setResults(data);
-    } catch (err: any) {
-      if (err.name === 'AbortError' || err.code === 20 || String(err.message).includes('abort')) return;
+    } catch (error: unknown) {
+      if (isAbortLike(error)) return;
       toast.error('Search failed. Please try again.');
     } finally {
       setLoading(false);
@@ -408,10 +349,17 @@ function BookSearchDialog({
   );
 }
 
+function isAbortLike(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return error.name === 'AbortError' || String(error.message).includes('abort');
+}
+
 export function AddEditItemDialog() {
+  const user = useAuthStore((state) => state.user);
+  const currentUserId = user?.uid && user.uid !== 'offline' ? user.uid : null;
   const {
     itemDialogOpen, itemDialogCategoryId, itemDialogItem, closeItemDialog,
-    items: allItems, libraries, getCategoryById, getLibrariesByCategory, addItem, updateItem,
+    items: allItems, getCategoryById, getLibrariesByCategory, addItem, updateItem,
   } = useCollectionStore();
 
   const isEditMode = !!itemDialogItem;
@@ -423,18 +371,18 @@ export function AddEditItemDialog() {
   );
 
   const sortedFields = useMemo(
-    () => [...(category?.fields ?? [])].filter((f) => !HIDDEN_CUSTOM_KEYS.has(f.key)).sort((a, b) => a.order - b.order),
+    () => [...(category?.fields ?? [])].filter((f) => !ITEM_FORM_HIDDEN_CUSTOM_KEYS.has(f.key)).sort((a, b) => a.order - b.order),
     [category],
   );
 
   const categoryLibraries = useMemo(
     () => (category ? getLibrariesByCategory(category.id) : []),
-    [category, libraries, getLibrariesByCategory],
+    [category, getLibrariesByCategory],
   );
 
   const isBookCategory = category?.id === 'cat-books';
 
-  const defaultValues = useMemo<FormValues>(() => {
+  const defaultValues = useMemo<ItemFormValues>(() => {
     if (existingItem && category) {
       return itemToFormValues(existingItem, sortedFields);
     }
@@ -449,22 +397,22 @@ export function AddEditItemDialog() {
       customFields: customDefaults as Record<string, unknown>,
       purchaseDate: '', purchasePrice: undefined, purchaseCurrency: 'TRY',
       purchaseLocation: '', exchangeRate: undefined,
-      currentValue: undefined, currentValueCurrency: 'TRY',
+      currentValue: undefined, currentValueCurrency: '',
       targetYear: 2030, targetValue: undefined,
       notes: '', libraryId: '', quantity: 1,
       eurRate: undefined, usdRate: undefined, gbpRate: undefined,
     };
   }, [existingItem, category, sortedFields]);
 
-  const { register, handleSubmit, control, watch, setValue, reset, formState: { errors, isSubmitting } } =
-    useForm<FormValues>({ defaultValues });
+  const { register, handleSubmit, control, setValue, reset, formState: { errors, isSubmitting } } =
+    useForm<ItemFormValues>({ defaultValues });
 
   useEffect(() => { reset(defaultValues); }, [defaultValues, reset]);
 
-  const purchaseCurrency = watch('purchaseCurrency');
-  const watchedTitle = watch('title');
-  const watchedIsbn = watch('customFields.isbn') as string | undefined;
-  const customTitle = watch('customFields.title');
+  const purchaseCurrency = useWatch({ control, name: 'purchaseCurrency' });
+  const watchedTitle = useWatch({ control, name: 'title' });
+  const watchedIsbn = useWatch({ control, name: 'customFields.isbn' }) as string | undefined;
+  const customTitle = useWatch({ control, name: 'customFields.title' });
 
   const duplicateWarning = useMemo(() => {
     if (!category || !itemDialogCategoryId) return null;
@@ -488,34 +436,43 @@ export function AddEditItemDialog() {
     if (typeof customTitle === 'string' && customTitle) setValue('title', customTitle);
   }, [customTitle, setValue]);
 
-  const tagsValue = watch('tags');
+  const tagsValue = useWatch({ control, name: 'tags' });
   const tagsList = tagsValue ? tagsValue.split(',').map((s) => s.trim()).filter(Boolean) : [];
 
-  const purchaseDate = watch('purchaseDate');
-  const purchasePriceVal = watch('purchasePrice');
-  const gbpRateVal = watch('gbpRate');
-  const usdRateVal = watch('usdRate');
-  const eurRateVal = watch('eurRate');
+  const purchaseDate = useWatch({ control, name: 'purchaseDate' });
+  const purchasePriceVal = useWatch({ control, name: 'purchasePrice' });
+  const gbpRateVal = useWatch({ control, name: 'gbpRate' });
+  const usdRateVal = useWatch({ control, name: 'usdRate' });
+  const eurRateVal = useWatch({ control, name: 'eurRate' });
   const [fetchingRates, setFetchingRates] = useState(false);
 
   useEffect(() => {
-    if (purchaseCurrency && purchaseCurrency !== 'USD') {
-      setValue('exchangeRate', currencyService.getRate(purchaseCurrency, 'USD'));
-    } else {
-      setValue('exchangeRate', 1);
-    }
-  }, [purchaseCurrency, setValue]);
+    const ratesMap = buildPurchaseRatesMap({
+      gbpRate: gbpRateVal,
+      usdRate: usdRateVal,
+      eurRate: eurRateVal,
+    });
+    setValue('exchangeRate', getPurchaseExchangeRateToUsd(purchaseCurrency, ratesMap));
+  }, [purchaseCurrency, gbpRateVal, usdRateVal, eurRateVal, setValue]);
 
   useEffect(() => {
-    if (!purchaseDate) return;
+    if (!purchaseDate) {
+      setValue('gbpRate', undefined);
+      setValue('usdRate', undefined);
+      setValue('eurRate', undefined);
+      return;
+    }
     let cancelled = false;
     (async () => {
       setFetchingRates(true);
-      const rates = await currencyService.getHistoricalRates(purchaseDate, 'TRY');
-      if (cancelled || !rates) { setFetchingRates(false); return; }
-      if (rates.GBP) setValue('gbpRate', Number((1 / rates.GBP).toFixed(4)));
-      if (rates.USD) setValue('usdRate', Number((1 / rates.USD).toFixed(4)));
-      if (rates.EUR) setValue('eurRate', Number((1 / rates.EUR).toFixed(4)));
+      const rates = await getHistoricalPurchaseRates(purchaseDate);
+      if (cancelled) {
+        setFetchingRates(false);
+        return;
+      }
+      setValue('gbpRate', rates?.gbpRate);
+      setValue('usdRate', rates?.usdRate);
+      setValue('eurRate', rates?.eurRate);
       setFetchingRates(false);
     })();
     return () => { cancelled = true; };
@@ -530,9 +487,12 @@ export function AddEditItemDialog() {
   const [barcodeScannerOpen, setBarcodeScannerOpen] = useState(false);
 
   useEffect(() => {
-    setItemImages(existingItem?.images ?? []);
-    setCoverIndex(0);
-    setBookSearchOpen(false);
+    const frame = window.requestAnimationFrame(() => {
+      setItemImages(existingItem?.images ?? []);
+      setCoverIndex(0);
+      setBookSearchOpen(false);
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [existingItem, itemDialogOpen]);
 
   const compressImage = useCallback((file: File): Promise<string> => {
@@ -604,7 +564,7 @@ export function AddEditItemDialog() {
   }, [setValue]);
 
   const onSubmit = useCallback(
-    async (data: FormValues, addAnother = false) => {
+    async (data: ItemFormValues, addAnother = false) => {
       if (!category) return;
       const missing: string[] = [];
       if (!data.title?.trim()) missing.push('Title');
@@ -618,36 +578,31 @@ export function AddEditItemDialog() {
       if (missing.length > 0) { toast.error(`Please fill in: ${missing.join(', ')}`); return; }
 
       try {
-        const customFields: Record<string, unknown> = {};
-        for (const field of sortedFields) {
-          const val = (data.customFields as Record<string, unknown>)[field.key];
-          if (field.type === 'tags' || field.type === 'multi-select') {
-            customFields[field.key] = typeof val === 'string' ? val.split(',').map((s) => s.trim()).filter(Boolean) : val;
-          } else {
-            customFields[field.key] = val;
-          }
-        }
+        const customFields = normalizeCustomFields(sortedFields, data.customFields);
 
         const tags = data.tags ? data.tags.split(',').map((s) => s.trim()).filter(Boolean) : [];
         const now = new Date().toISOString();
         const purchaseDateVal = data.purchaseDate || now;
-        const exchangeRate = Number(data.exchangeRate) || 1;
         const orderedImages = coverIndex === 0 ? itemImages : [itemImages[coverIndex], ...itemImages.filter((_, i) => i !== coverIndex)];
+        const finalImages = await persistItemImages(
+          currentUserId,
+          orderedImages,
+          existingItem?.images ?? [],
+        );
 
-        const currencyEquivalents: { currency: string; rate: number; value: number }[] = [];
         const purchaseAmt = Number(data.purchasePrice) || 0;
-        const pc = data.purchaseCurrency;
-        const ratesMap: Record<string, number> = {
-          TRY: 1, GBP: Number(data.gbpRate) || 0, USD: Number(data.usdRate) || 0, EUR: Number(data.eurRate) || 0,
-        };
-        const pcTlRate = ratesMap[pc] || 1;
-        const amtInTRY = pc === 'TRY' ? purchaseAmt : purchaseAmt * pcTlRate;
-        for (const cur of ['EUR', 'USD', 'GBP'] as const) {
-          const tlRate = ratesMap[cur];
-          if (tlRate > 0 && amtInTRY > 0) {
-            currencyEquivalents.push({ currency: cur, rate: tlRate, value: amtInTRY / tlRate });
-          }
-        }
+        const ratesMap = buildPurchaseRatesMap(data);
+        const exchangeRate = getPurchaseExchangeRateToUsd(data.purchaseCurrency, ratesMap);
+        const currencyEquivalents = buildCurrencyEquivalents(
+          purchaseAmt,
+          data.purchaseCurrency,
+          ratesMap,
+        );
+        const resolvedCurrentValuation = resolveCurrentValuationInput(
+          data,
+          purchaseAmt,
+          existingItem ?? undefined,
+        );
 
         const itemData: Omit<CollectionItem, 'id' | 'createdAt' | 'updatedAt'> = {
           categoryId: category.id,
@@ -657,7 +612,7 @@ export function AddEditItemDialog() {
           customFields,
           notes: data.notes ?? '',
           tags,
-          images: orderedImages,
+          images: finalImages,
           quantity: Number(data.quantity) || 1,
           purchaseInfo: {
             purchasedAt: purchaseDateVal,
@@ -668,16 +623,20 @@ export function AddEditItemDialog() {
             currencyEquivalents,
           },
           valuationInfo: {
-            currentEstimatedValue: existingItem?.valuationInfo.currentEstimatedValue ?? purchaseAmt,
-            currentValueCurrency: existingItem?.valuationInfo.currentValueCurrency ?? data.purchaseCurrency,
-            currentExchangeRate: currencyService.getRate(existingItem?.valuationInfo.currentValueCurrency ?? data.purchaseCurrency, 'USD'),
+            currentEstimatedValue: resolvedCurrentValuation.currentEstimatedValue,
+            currentValueCurrency: resolvedCurrentValuation.currentValueCurrency,
+            currentExchangeRate: resolvedCurrentValuation.currentExchangeRate,
             targetYearProjection: data.targetYear,
             targetEstimatedValue: data.targetValue ? Number(data.targetValue) || 0 : undefined,
             valueHistory: existingItem?.valuationInfo.valueHistory ?? [
-              { date: now.slice(0, 10), value: purchaseAmt, currency: data.purchaseCurrency },
+              {
+                date: now.slice(0, 10),
+                value: resolvedCurrentValuation.currentEstimatedValue,
+                currency: resolvedCurrentValuation.currentValueCurrency,
+              },
             ],
           },
-          contributorId: existingItem?.contributorId ?? 'contrib-1',
+          contributorId: existingItem?.contributorId ?? currentUserId ?? 'offline',
           condition: data.condition,
           location: data.location || undefined,
           isRead: existingItem?.isRead ?? false,
@@ -701,12 +660,11 @@ export function AddEditItemDialog() {
             closeItemDialog();
           }
         }
-      } catch (err) {
-        console.error('Save failed:', err);
+      } catch {
         toast.error('Failed to save item. Please try again.');
       }
     },
-    [category, sortedFields, existingItem, isEditMode, addItem, updateItem, closeItemDialog, reset, defaultValues, itemImages, coverIndex],
+    [category, sortedFields, existingItem, isEditMode, addItem, updateItem, closeItemDialog, reset, defaultValues, itemImages, coverIndex, currentUserId],
   );
 
   if (!itemDialogOpen) return null;
@@ -844,7 +802,7 @@ export function AddEditItemDialog() {
                         <SelectValue placeholder="Select condition" />
                       </SelectTrigger>
                       <SelectContent>
-                        {CONDITIONS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                        {ITEM_FORM_CONDITIONS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   )} />
@@ -911,7 +869,7 @@ export function AddEditItemDialog() {
                       <Select value={field.value} onValueChange={field.onChange}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          {CURRENCIES.map((c) => <SelectItem key={c} value={c}>{currencyService.getCurrencySymbol(c)} {c}</SelectItem>)}
+                          {ITEM_FORM_CURRENCIES.map((c) => <SelectItem key={c} value={c}>{currencyService.getCurrencySymbol(c)} {c}</SelectItem>)}
                         </SelectContent>
                       </Select>
                     )} />
@@ -933,10 +891,13 @@ export function AddEditItemDialog() {
                     {([['GBP', gbpRateVal, '£'] as const, ['USD', usdRateVal, '$'] as const, ['EUR', eurRateVal, '€'] as const]).map(([cur, rateVal, symbol]) => {
                       const rate = Number(rateVal) || 0;
                       const price = Number(purchasePriceVal) || 0;
-                      const ratesMap: Record<string, number> = { TRY: 1, GBP: Number(gbpRateVal) || 0, USD: Number(usdRateVal) || 0, EUR: Number(eurRateVal) || 0 };
-                      const pcRate = ratesMap[purchaseCurrency] || 1;
-                      const priceInTRY = purchaseCurrency === 'TRY' ? price : price * pcRate;
-                      const equivalent = rate > 0 && priceInTRY > 0 ? (priceInTRY / rate).toFixed(2) : '—';
+                      const ratesMap = buildPurchaseRatesMap({
+                        gbpRate: gbpRateVal,
+                        usdRate: usdRateVal,
+                        eurRate: eurRateVal,
+                      });
+                      const equivalentValue = getEquivalentForDisplay(price, purchaseCurrency, cur, ratesMap);
+                      const equivalent = equivalentValue !== null ? equivalentValue.toFixed(2) : '—';
                       return (
                         <div key={cur} className="rounded-md border bg-muted/30 px-2.5 py-2 text-center">
                           <p className="text-[10px] text-muted-foreground">1 {cur} = {rate > 0 ? `${rate.toFixed(2)} TL` : '? TL'}</p>
@@ -964,13 +925,13 @@ export function AddEditItemDialog() {
             <div className="flex items-center gap-2">
               {!isEditMode && (
                 <Button type="button" variant="outline" disabled={isSubmitting}
-                  onClick={handleSubmit((data) => onSubmit(data as FormValues, true), () => toast.error('Please fill in all required fields'))}>
+                  onClick={handleSubmit((data) => onSubmit(data as ItemFormValues, true), () => toast.error('Please fill in all required fields'))}>
                   <Plus className="mr-1 size-3.5" />
                   Save &amp; Add Another
                 </Button>
               )}
               <Button disabled={isSubmitting}
-                onClick={handleSubmit((data) => onSubmit(data as FormValues), () => toast.error('Please fill in all required fields'))}>
+                onClick={handleSubmit((data) => onSubmit(data as ItemFormValues), () => toast.error('Please fill in all required fields'))}>
                 <Save className="mr-1 size-3.5" />
                 {isEditMode ? 'Update Item' : 'Save Item'}
               </Button>

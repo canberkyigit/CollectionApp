@@ -25,21 +25,33 @@ export function StatCard({
   trend,
   className,
 }: StatCardProps) {
+  const hasMeta = Boolean(trend || subtitle);
+
   return (
-    <Card className={cn('overflow-hidden', className)}>
-      <CardContent className="p-4 sm:p-6">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 space-y-0.5 sm:space-y-1">
-            <p className="text-xs font-medium text-muted-foreground sm:text-sm">{title}</p>
-            <p className="text-xl font-bold tracking-tight sm:text-3xl">{value}</p>
+    <Card className={cn('h-full overflow-hidden', className)}>
+      <CardContent className={cn(
+        'flex h-full flex-col p-4 sm:p-5',
+        hasMeta ? 'justify-between' : 'justify-start',
+      )}>
+        <div className={cn(
+          'grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 sm:gap-4',
+          hasMeta ? 'min-h-[4rem] sm:min-h-[4.5rem]' : 'min-h-[3.25rem] sm:min-h-[3.75rem]',
+        )}>
+          <div className="min-w-0 space-y-1 pr-1 sm:pr-2">
+            <p className="text-xs font-medium leading-snug text-muted-foreground sm:text-sm">
+              {title}
+            </p>
+            <p className="text-xl font-bold leading-none tracking-tight sm:text-3xl">
+              {value}
+            </p>
           </div>
           <div className="shrink-0 rounded-full bg-primary/10 p-2 sm:p-2.5">
             <Icon className="size-4 text-primary sm:size-5" />
           </div>
         </div>
 
-        {(trend || subtitle) && (
-          <div className="mt-2 flex items-center gap-2 sm:mt-3">
+        {hasMeta && (
+          <div className="mt-2 flex min-h-5 items-center gap-2 sm:mt-3">
             {trend && (
               <span
                 className={cn(

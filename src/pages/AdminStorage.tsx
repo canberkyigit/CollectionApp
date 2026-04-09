@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Database,
   HardDrive,
@@ -23,6 +24,7 @@ import {
   CardDescription,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { getAdminBreadcrumbs } from '@/lib/adminNavigation';
 import { cn, formatNumber } from '@/lib/utils';
 import { useCollectionStore } from '@/store/useCollectionStore';
 
@@ -45,6 +47,8 @@ const STORAGE_COLORS = [
 const LOCAL_STORAGE_LIMIT = 5 * 1024 * 1024; // 5 MB
 
 export default function AdminStorage() {
+  const [searchParams] = useSearchParams();
+  const search = searchParams.toString();
   const { items, categories, wishlist, activityLog, clearActivityLog } =
     useCollectionStore();
 
@@ -141,10 +145,7 @@ export default function AdminStorage() {
       <PageHeader
         title="Data & Storage"
         description="Monitor your collection data usage"
-        breadcrumbs={[
-          { label: 'Admin', href: '/admin' },
-          { label: 'Data & Storage' },
-        ]}
+        breadcrumbs={getAdminBreadcrumbs(search ? `?${search}` : '', [{ label: 'Data & Storage' }])}
       />
 
       {/* Overview Stats */}

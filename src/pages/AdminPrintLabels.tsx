@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Printer, Search, Check } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { PageHeader } from '@/components/shared/PageHeader';
@@ -8,13 +9,20 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
+import { getAdminBreadcrumbs } from '@/lib/adminNavigation';
 import { useCollectionStore } from '@/store/useCollectionStore';
 import { cn } from '@/lib/utils';
 
 export default function AdminPrintLabels() {
-  const { items, getCategoryById } = useCollectionStore();
+  const [searchParams] = useSearchParams();
+  const searchQueryString = searchParams.toString();
+  const { items, categories } = useCollectionStore();
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const categoryNameById = useMemo(
+    () => new Map(categories.map((category) => [category.id, category.name])),
+    [categories],
+  );
 
   const activeItems = useMemo(
     () => items.filter((i) => !i.isArchived),
@@ -25,9 +33,9 @@ export default function AdminPrintLabels() {
     if (!search.trim()) return activeItems;
     const q = search.toLowerCase();
     return activeItems.filter(
-      (i) => i.title.toLowerCase().includes(q) || getCategoryById(i.categoryId)?.name.toLowerCase().includes(q),
+      (i) => i.title.toLowerCase().includes(q) || (categoryNameById.get(i.categoryId)?.toLowerCase().includes(q) ?? false),
     );
-  }, [activeItems, search]);
+  }, [activeItems, search, categoryNameById]);
 
   const toggleSelect = (id: string) => {
     setSelected((prev) => {
@@ -61,7 +69,7 @@ export default function AdminPrintLabels() {
           <PageHeader
             title="Print Labels"
             description="Select items and print QR code labels for your collection"
-            breadcrumbs={[{ label: 'Admin', href: '/admin' }, { label: 'Print Labels' }]}
+            breadcrumbs={getAdminBreadcrumbs(searchQueryString ? `?${searchQueryString}` : '', [{ label: 'Print Labels' }])}
           >
             <Button onClick={handlePrint} disabled={selected.size === 0} className="gap-2">
               <Printer className="size-4" />
@@ -89,7 +97,7 @@ export default function AdminPrintLabels() {
           {/* Item list */}
           <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.map((item) => {
-              const cat = getCategoryById(item.categoryId);
+              const cat = categoryNameById.get(item.categoryId);
               const isSelected = selected.has(item.id);
               return (
                 <div
@@ -107,7 +115,7 @@ export default function AdminPrintLabels() {
                   />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">{item.title}</p>
-                    {cat && <Badge variant="secondary" className="mt-0.5 text-[10px]">{cat.name}</Badge>}
+                    {cat && <Badge variant="secondary" className="mt-0.5 text-[10px]">{cat}</Badge>}
                   </div>
                 </div>
               );
@@ -123,7 +131,7 @@ export default function AdminPrintLabels() {
           <div className="hidden print:block">
             <div className="grid grid-cols-3 gap-4 p-4" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
               {selectedItems.map((item) => {
-                const cat = getCategoryById(item.categoryId);
+                const cat = categoryNameById.get(item.categoryId);
                 return (
                   <div
                     key={item.id}
@@ -135,7 +143,7 @@ export default function AdminPrintLabels() {
                       includeMargin={false}
                     />
                     <p className="mt-1 text-[10px] font-semibold leading-tight line-clamp-2">{item.title}</p>
-                    {cat && <p className="text-[9px] text-gray-500">{cat.name}</p>}
+                    {cat && <p className="text-[9px] text-gray-500">{cat}</p>}
                   </div>
                 );
               })}
@@ -151,7 +159,7 @@ export default function AdminPrintLabels() {
               <CardContent className="p-4">
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
                   {selectedItems.map((item) => {
-                    const cat = getCategoryById(item.categoryId);
+                    const cat = categoryNameById.get(item.categoryId);
                     return (
                       <div key={item.id} className="flex flex-col items-center gap-1 rounded-lg border p-2 text-center">
                         <div className="rounded bg-white p-1">
@@ -162,7 +170,7 @@ export default function AdminPrintLabels() {
                           />
                         </div>
                         <p className="text-[9px] font-medium leading-tight line-clamp-2">{item.title}</p>
-                        {cat && <p className="text-[8px] text-muted-foreground">{cat.name}</p>}
+                        {cat && <p className="text-[8px] text-muted-foreground">{cat}</p>}
                       </div>
                     );
                   })}
