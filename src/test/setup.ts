@@ -2,6 +2,45 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
 import { afterEach, vi } from 'vitest';
 
+vi.mock('recharts', async () => {
+  const actual = await vi.importActual<typeof import('recharts')>('recharts');
+  const React = await vi.importActual<typeof import('react')>('react');
+
+  function ResponsiveContainer({
+    children,
+    width = '100%',
+    height = '100%',
+  }: {
+    children: import('react').ReactNode;
+    width?: number | string;
+    height?: number | string;
+  }) {
+    const resolvedWidth = typeof width === 'number' ? width : 800;
+    const resolvedHeight = typeof height === 'number' ? height : 320;
+
+    return React.createElement(
+      'div',
+      { style: { width: resolvedWidth, height: resolvedHeight } },
+      React.Children.map(children, (child) => (
+        React.isValidElement(child)
+          ? React.cloneElement(
+              child as import('react').ReactElement<{ width?: number; height?: number }>,
+              {
+                width: resolvedWidth,
+                height: resolvedHeight,
+              },
+            )
+          : child
+      )),
+    );
+  }
+
+  return {
+    ...actual,
+    ResponsiveContainer,
+  };
+});
+
 afterEach(() => {
   cleanup();
 });
@@ -44,11 +83,21 @@ Object.defineProperty(window, 'ResizeObserver', {
 });
 
 // Mock scrollTo
-window.scrollTo = vi.fn() as any;
+window.scrollTo = vi.fn() as unknown as typeof window.scrollTo;
+Element.prototype.scrollIntoView = vi.fn();
+
+// Pointer capture helpers used by Radix primitives in jsdom
+Element.prototype.hasPointerCapture = vi.fn().mockReturnValue(false);
+Element.prototype.setPointerCapture = vi.fn();
+Element.prototype.releasePointerCapture = vi.fn();
 
 // Mock canvas for image compression tests
-HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue({
+const mockCanvasContext = {
   drawImage: vi.fn(),
   toDataURL: vi.fn().mockReturnValue('data:image/jpeg;base64,mock'),
-}) as any;
+};
+
+HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue(
+  mockCanvasContext as unknown as RenderingContext,
+);
 HTMLCanvasElement.prototype.toDataURL = vi.fn().mockReturnValue('data:image/jpeg;base64,mock');
