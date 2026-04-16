@@ -106,6 +106,29 @@
     box-shadow: var(--shadow-surface-1);
     backdrop-filter: blur(20px);
   }
+
+  .desktop-app .desktop-titlebar-drag {
+    -webkit-app-region: drag;
+    app-region: drag;
+  }
+
+  .desktop-app .desktop-titlebar-drag :is(
+    a,
+    button,
+    input,
+    textarea,
+    select,
+    [role="button"],
+    [role="menuitem"],
+    [data-radix-popper-content-wrapper]
+  ) {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+  }
+
+  .desktop-app-mac .desktop-window-controls-spacer {
+    padding-left: 5.5rem;
+  }
 }
 
 @layer utilities {
