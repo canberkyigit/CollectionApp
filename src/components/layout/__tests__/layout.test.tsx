@@ -201,7 +201,7 @@ describe('layout components', () => {
   it('renders app layout, handles auth redirects, and reacts to connectivity changes', async () => {
     const user = userEvent.setup();
     const init = vi.fn(() => vi.fn());
-    const loadFromFirestore = vi.fn(async () => undefined);
+    const loadFromFirestore = vi.fn(async () => true);
     const subscribeToFirestore = vi.fn(() => vi.fn());
     const resetForUser = vi.fn();
     const upsertContributorProfile = vi.fn();

@@ -16,7 +16,7 @@ describe('App shell', () => {
     vi.clearAllMocks();
     seedCollectionStore(buildSeedData());
     useCollectionStore.setState({
-      loadFromFirestore: vi.fn(async () => undefined),
+      loadFromFirestore: vi.fn(async () => true),
       subscribeToFirestore: vi.fn(() => vi.fn()),
       resetForUser: vi.fn(),
       upsertContributorProfile: vi.fn(),

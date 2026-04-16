@@ -132,7 +132,11 @@ export interface CollectionDataSlice extends CollectionStoreBaseState {
   logActivity: (entry: Omit<ActivityLogEntry, 'id' | 'timestamp' | 'userId'>) => void;
   clearActivityLog: () => void;
 
-  restoreBackupBundle: (backup: BackupBundle, mode: BackupRestoreMode) => Promise<void>;
+  restoreBackupBundle: (
+    backup: BackupBundle,
+    mode: BackupRestoreMode,
+    options?: { skipRemoteSync?: boolean },
+  ) => Promise<void>;
 
   getCategoryById: (id: string) => Category | undefined;
   getCategoryBySlug: (slug: string) => Category | undefined;
@@ -150,7 +154,7 @@ export interface CollectionDataSlice extends CollectionStoreBaseState {
   getValueOverTime: () => { date: string; value: number }[];
 
   applyRemoteState: (userId: string, snapshot: FirestoreSnapshot) => void;
-  loadFromFirestore: (userId: string) => Promise<void>;
+  loadFromFirestore: (userId: string) => Promise<boolean>;
   subscribeToFirestore: (userId: string) => () => void;
   syncAllToFirestore: (userId: string) => Promise<void>;
 }

@@ -1062,7 +1062,7 @@ export function createCollectionDataSlice(
       }
     },
 
-    restoreBackupBundle: async (backup, mode) => {
+    restoreBackupBundle: async (backup, mode, options) => {
       if (!dependencies.ensurePermission('catalog:manage')) return;
 
       const currentState = get();
@@ -1106,7 +1106,7 @@ export function createCollectionDataSlice(
       dependencies.applyThemeToDocument(restored.settings.theme);
 
       const userId = get().ownerUserId;
-      if (userId && firestoreService.isAvailable()) {
+      if (userId && firestoreService.isAvailable() && !options?.skipRemoteSync) {
         await collectionSyncService.perform(
           mode === 'replace' ? 'Restore backup and replace Firestore data' : 'Restore backup and merge Firestore data',
           async () => {
@@ -1170,7 +1170,7 @@ export function createCollectionDataSlice(
     },
 
     loadFromFirestore: async (userId) => {
-      if (!firestoreService.isAvailable()) return;
+      if (!firestoreService.isAvailable()) return false;
 
       set({ isRemoteDataLoading: true });
       try {
@@ -1182,13 +1182,16 @@ export function createCollectionDataSlice(
 
         if (hasRemoteSnapshotData(data)) {
           get().applyRemoteState(userId, data);
+          return true;
         } else {
           await get().syncAllToFirestore(userId);
           set({ isRemoteDataLoading: false });
+          return true;
         }
       } catch (error) {
         set({ isRemoteDataLoading: false });
         logger.error('firestore.load', error, { userId });
+        return false;
       }
     },
 

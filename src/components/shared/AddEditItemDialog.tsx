@@ -10,6 +10,7 @@ import type { CategoryField, ItemSourceMetadata } from '@/types';
 import { useCollectionStore } from '@/store/useCollectionStore';
 import { useAuthStore } from '@/store/useAuthStore';
 import { Button } from '@/components/ui/button';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -800,7 +801,17 @@ export function AddEditItemDialog() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="dlg-pdate">Purchase Date</Label>
-                  <Input id="dlg-pdate" type="date" {...register('purchaseDate')} />
+                  <Controller name="purchaseDate" control={control}
+                    render={({ field }) => (
+                      <DatePicker
+                        id="dlg-pdate"
+                        name={field.name}
+                        value={field.value ?? ''}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        ref={field.ref}
+                      />
+                    )} />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="dlg-pprice">Purchase Price</Label>

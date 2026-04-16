@@ -17,6 +17,7 @@ import { PageHeader } from '@/components/shared/PageHeader';
 import { PageTransition } from '@/components/shared/motion';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { DatePicker } from '@/components/ui/date-picker';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -1421,10 +1422,19 @@ export default function ItemForm() {
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="purchaseDate">Purchase Date</Label>
-              <Input
-                id="purchaseDate"
-                type="date"
-                {...register('purchaseDate')}
+              <Controller
+                name="purchaseDate"
+                control={control}
+                render={({ field }) => (
+                  <DatePicker
+                    id="purchaseDate"
+                    name={field.name}
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    ref={field.ref}
+                  />
+                )}
               />
             </div>
 
