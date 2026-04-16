@@ -26,7 +26,7 @@ export function PageHeader({
   className,
 }: PageHeaderProps) {
   return (
-    <div className={cn('space-y-1.5 sm:space-y-2', className)}>
+    <div className={cn('space-y-2 sm:space-y-3', className)}>
       {breadcrumbs && breadcrumbs.length > 0 && (
         <nav className="flex items-center gap-1 text-xs text-muted-foreground sm:text-sm">
           {breadcrumbs.map((crumb, index) => (
@@ -47,11 +47,13 @@ export function PageHeader({
         </nav>
       )}
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-        <div className="min-w-0 space-y-0.5 sm:space-y-1">
-          <h1 className="truncate text-xl font-bold tracking-tight sm:text-2xl">{title}</h1>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+        <div className="min-w-0 max-w-3xl space-y-1.5 sm:space-y-2">
+          <h1 className="break-words text-2xl font-semibold leading-tight tracking-tight sm:text-3xl">{title}</h1>
           {description && (
-            <p className="text-sm text-muted-foreground sm:text-base">{description}</p>
+            <p className="max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base sm:leading-7">
+              {description}
+            </p>
           )}
         </div>
         {children && (

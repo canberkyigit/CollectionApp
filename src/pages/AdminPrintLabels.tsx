@@ -63,7 +63,7 @@ export default function AdminPrintLabels() {
 
   return (
     <PageTransition>
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6 md:space-y-8">
         {/* Screen-only header */}
         <div className="print:hidden">
           <PageHeader

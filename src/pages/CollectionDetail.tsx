@@ -250,7 +250,7 @@ function CollectionDetailContent({ categorySlug }: CollectionDetailContentProps)
 
   if (shouldShowLoadingState) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6 md:space-y-8">
         <PageHeader
           title="Loading Collection"
           breadcrumbs={[{ label: 'Collections', href: '/collections' }]}
@@ -262,7 +262,7 @@ function CollectionDetailContent({ categorySlug }: CollectionDetailContentProps)
 
   if (!category) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6 md:space-y-8">
         <PageHeader
           title="Category Not Found"
           breadcrumbs={[{ label: 'Collections', href: '/collections' }]}
@@ -646,7 +646,7 @@ function CollectionDetailContent({ categorySlug }: CollectionDetailContentProps)
         'min-w-0 flex-1',
         detailPanelItemId ? 'overflow-y-auto p-3 sm:p-4 md:p-6 scrollbar-thin' : '',
       )}>
-      <div className="space-y-4 sm:space-y-6">
+      <div className="space-y-4 sm:space-y-6 md:space-y-8">
       <PageHeader
         title={category.name}
         description={category.description}

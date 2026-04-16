@@ -131,7 +131,7 @@ export default function Profile() {
 
   return (
     <PageTransition>
-      <div className="mx-auto max-w-2xl space-y-6">
+      <div className="mx-auto max-w-2xl space-y-4 sm:space-y-6 md:space-y-8">
       <PageHeader title="Profile" description="Manage your account settings" />
 
       {isOffline && (

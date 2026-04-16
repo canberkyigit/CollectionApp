@@ -119,7 +119,7 @@ export default function AdminArchive() {
 
   return (
     <PageTransition>
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6 md:space-y-8">
       <PageHeader
         title="Archive"
         description={`${archived.length} archived item${archived.length !== 1 ? 's' : ''}`}

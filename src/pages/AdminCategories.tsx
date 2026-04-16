@@ -35,7 +35,7 @@ export default function AdminCategories() {
 
   return (
     <PageTransition>
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6 md:space-y-8">
       <PageHeader
         title="Categories"
         description="Manage your collection categories and their fields"

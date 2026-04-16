@@ -239,7 +239,7 @@ export default function ItemDetail() {
 
   if (shouldShowLoadingState) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6 md:space-y-8">
         <PageHeader
           title="Loading Item"
           breadcrumbs={[{ label: 'Collections', href: '/collections' }]}
@@ -251,7 +251,7 @@ export default function ItemDetail() {
 
   if (!item || !category) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6 md:space-y-8">
         <PageHeader
           title="Item Not Found"
           breadcrumbs={[{ label: 'Collections', href: '/collections' }]}
@@ -319,7 +319,7 @@ export default function ItemDetail() {
 
   return (
     <PageTransition>
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 md:space-y-8">
       <PageHeader
         title={item.title}
         breadcrumbs={[
