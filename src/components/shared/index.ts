@@ -1,4 +1,5 @@
 export { EmptyState } from './EmptyState';
+export { DesktopUpdatePrompt } from './DesktopUpdatePrompt';
 export { StatCard } from './StatCard';
 export { SearchBar } from './SearchBar';
 export { PageHeader } from './PageHeader';

@@ -2,6 +2,7 @@ import { Suspense, lazy, type ReactElement } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Layers } from 'lucide-react';
 import { PWAUpdatePrompt } from '@/components/shared/PWAUpdatePrompt';
+import { DesktopUpdatePrompt } from '@/components/shared/DesktopUpdatePrompt';
 import AppLayout from '@/components/layout/AppLayout';
 import { useAuthStore } from '@/store/useAuthStore';
 
@@ -65,6 +66,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <PWAUpdatePrompt />
+      <DesktopUpdatePrompt />
       <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/login" element={<Login />} />

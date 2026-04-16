@@ -1,3 +1,30 @@
+export interface UpdaterProgressInfo {
+  percent: number;
+  bytesPerSecond: number;
+  transferred: number;
+  total: number;
+}
+
+export interface UpdaterVersionInfo {
+  version: string;
+}
+
+export interface UpdaterErrorInfo {
+  message: string;
+}
+
+export interface CollectVaultUpdaterApi {
+  onAvailable: (cb: (info: UpdaterVersionInfo) => void) => void;
+  onProgress: (cb: (info: UpdaterProgressInfo) => void) => void;
+  onDownloaded: (cb: (info: UpdaterVersionInfo) => void) => void;
+  onNotAvailable: (cb: (info: UpdaterVersionInfo) => void) => void;
+  onError: (cb: (info: UpdaterErrorInfo) => void) => void;
+  removeListeners: () => void;
+  startDownload: () => Promise<void>;
+  install: () => Promise<void>;
+  dismiss: () => Promise<void>;
+}
+
 declare global {
   interface Window {
     collectVaultDesktop?: {
@@ -6,6 +33,7 @@ declare global {
       version?: string;
       openExternal?: (url: string) => Promise<boolean>;
       localSync?: CollectVaultLocalSyncApi;
+      updater?: CollectVaultUpdaterApi;
     };
   }
 }
