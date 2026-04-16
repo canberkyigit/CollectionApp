@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { useCollectionStore } from '../useCollectionStore';
+import { migrateCollectionStoreState, useCollectionStore } from '../useCollectionStore';
 import { createMockItem, createMockCategory } from '@/test/helpers';
 
 const mocks = vi.hoisted(() => ({
@@ -32,6 +32,37 @@ function resetStore() {
 describe('useCollectionStore', () => {
   beforeEach(() => {
     resetStore();
+  });
+
+  it('migrates legacy built-in custom field keys into canonical item data', () => {
+    const migrated = migrateCollectionStoreState({
+      categories: [],
+      contributors: [],
+      items: [
+        {
+          ...createMockItem({
+            title: 'Canonical Title',
+            condition: 'Good',
+            customFields: {
+              title: 'Legacy Title',
+              condition: 'Mint',
+              purchasePrice: 999,
+              author: 'Ursula K. Le Guin',
+            },
+          }),
+          id: 'item-legacy',
+          createdAt: '2024-01-01',
+          updatedAt: '2024-01-01',
+        },
+      ],
+    });
+
+    expect(migrated.items?.[0]).toMatchObject({
+      title: 'Canonical Title',
+      condition: 'Good',
+      customFields: { author: 'Ursula K. Le Guin' },
+      documents: [],
+    });
   });
 
   // ── Items ──────────────────────────────────────────

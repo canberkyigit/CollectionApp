@@ -21,6 +21,7 @@ describe('Sheet', () => {
 
     await user.click(screen.getByRole('button', { name: /open sheet/i }));
     expect(screen.getByText('Sheet Body')).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: /panel/i })).toBeInTheDocument();
 
     const closeButton = screen.getByRole('button', { name: /close/i });
     const sheetContent = closeButton.closest('[style*="width"]') as HTMLElement;

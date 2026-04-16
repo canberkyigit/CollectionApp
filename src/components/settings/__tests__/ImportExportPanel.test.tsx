@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -42,6 +42,15 @@ function mockFileReader(result: string) {
 describe('ImportExportPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn(() => 'blob:backup'),
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: vi.fn(),
+    });
+    HTMLAnchorElement.prototype.click = vi.fn();
     seedAuthStore({ uid: 'contrib-1', displayName: 'Ada Curator', role: 'admin' });
     seedCollectionStore(buildSeedData());
   });
@@ -112,10 +121,8 @@ describe('ImportExportPanel', () => {
     await user.upload(csvInput as HTMLInputElement, new File([''], 'missing-title.csv', { type: 'text/csv' }));
     await user.click(screen.getByRole('combobox'));
     await user.click(await screen.findByRole('option', { name: 'Books' }));
-    await user.click(screen.getByRole('button', { name: /import 1 items/i }));
-    expect(mocks.toastError).toHaveBeenCalledWith('No title column found', {
-      description: 'CSV must have a column matching "title" or "name".',
-    });
+    expect(await screen.findByText(/0 ready, 1 skipped/i)).toBeInTheDocument();
+    expect(screen.getByText(/missing title\/name column value/i)).toBeInTheDocument();
 
     mockFileReader('title,description,condition,price\nSnow Crash,Cyberpunk classic,Fair,42\nHyperion,Space opera,Mint,18');
     await user.upload(csvInput as HTMLInputElement, new File([''], 'books.csv', { type: 'text/csv' }));
@@ -130,6 +137,83 @@ describe('ImportExportPanel', () => {
         expect.objectContaining({ title: 'Snow Crash', condition: 'Fair' }),
         expect.objectContaining({ title: 'Hyperion', condition: 'Mint' }),
       ]);
+    });
+  });
+
+  it('previews full backup restores and requires a safety backup before replace', async () => {
+    const user = userEvent.setup();
+    const seed = buildSeedData();
+    const restoreBackupBundle = vi.fn(async () => undefined);
+    useCollectionStore.setState({ restoreBackupBundle });
+
+    const backup = {
+      schemaVersion: 1,
+      exportedAt: '2024-03-01T00:00:00.000Z',
+      ...seed,
+      items: [
+        {
+          ...seed.items[0],
+          title: `${seed.items[0].title} Restored`,
+          updatedAt: '2024-03-01T00:00:00.000Z',
+        },
+        {
+          ...seed.items[0],
+          id: 'backup-only-item',
+          title: 'Backup Only Item',
+        },
+      ],
+      settings: {
+        displayCurrency: 'EUR',
+        theme: 'dark',
+        sidebarOpen: true,
+        menuCollectionStyle: 'style2',
+        dashboardWidgets: [],
+        readNotificationIds: [],
+        notifications: {
+          valueChangeAlerts: true,
+          newItemReminders: true,
+          collectionMilestones: true,
+        },
+      },
+    };
+
+    mockFileReader(JSON.stringify(backup));
+
+    const view = render(
+      <ImportExportPanel
+        activeTab="import"
+        onTabChange={vi.fn()}
+      />,
+    );
+
+    const jsonInput = view.container.querySelector('input[accept=".json"]');
+    expect(jsonInput).not.toBeNull();
+    await user.upload(jsonInput as HTMLInputElement, new File(['{}'], 'backup.json', { type: 'application/json' }));
+
+    expect(await screen.findByText(/full backup restore preview/i)).toBeInTheDocument();
+    expect(screen.getByText(/1 same-id conflict/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^merge backup$/i }));
+    const mergeDialog = await screen.findByRole('dialog');
+    await user.click(within(mergeDialog).getByRole('button', { name: /^merge backup$/i }));
+
+    await waitFor(() => {
+      expect(restoreBackupBundle).toHaveBeenCalledWith(expect.objectContaining({ schemaVersion: 1 }), 'merge');
+    });
+
+    restoreBackupBundle.mockClear();
+    mockFileReader(JSON.stringify(backup));
+    await user.upload(jsonInput as HTMLInputElement, new File(['{}'], 'backup-again.json', { type: 'application/json' }));
+    await user.click(await screen.findByRole('button', { name: /replace all/i }));
+
+    expect(screen.getByRole('button', { name: /restore and replace all/i })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: /download current backup first/i }));
+    await user.click(screen.getByRole('button', { name: /restore and replace all/i }));
+    const replaceDialog = await screen.findByRole('dialog');
+    await user.click(within(replaceDialog).getByRole('button', { name: /replace all data/i }));
+
+    await waitFor(() => {
+      expect(restoreBackupBundle).toHaveBeenCalledWith(expect.objectContaining({ schemaVersion: 1 }), 'replace');
     });
   });
 });

@@ -35,6 +35,7 @@ import type {
 } from '@/types';
 import { collectionSyncService } from '@/services/collectionSyncService';
 import { firestoreService, type FirestoreSnapshot, type UserSettings } from '@/services/firestoreService';
+import { buildBackupRestoreState } from '@/services/backupRestoreService';
 import { logger } from '@/services/logger';
 import { generateId, slugify } from '@/lib/utils';
 import { getLibraryCategoryIds, libraryMatchesCategory, normalizeLibrary } from '@/lib/libraries';
@@ -197,18 +198,20 @@ export function createCollectionDataSlice(
       }));
 
       if (get().ownerUserId && firestoreService.isAvailable()) {
-        collectionSyncService.schedule(
-          'Delete category',
-          () => firestoreService.deleteCategory(get().ownerUserId!, id),
-          { scope: 'categories' },
-        );
+        collectionSyncService.scheduleFirestoreMutation('Delete category', {
+          action: 'deleteCategory',
+          userId: get().ownerUserId!,
+          payload: { id },
+          scope: 'categories',
+        });
 
         if (orphanedItemIds.length > 0) {
-          collectionSyncService.schedule(
-            'Delete orphaned items',
-            () => firestoreService.deleteItems(get().ownerUserId!, orphanedItemIds),
-            { scope: 'items' },
-          );
+          collectionSyncService.scheduleFirestoreMutation('Delete orphaned items', {
+            action: 'deleteItems',
+            userId: get().ownerUserId!,
+            payload: orphanedItemIds,
+            scope: 'items',
+          });
         }
 
         touchedLibraries.forEach((library) => dependencies.syncLibrary(library));
@@ -422,11 +425,12 @@ export function createCollectionDataSlice(
       set((state) => ({ items: [...state.items, ...newItems] }));
 
       if (get().ownerUserId && firestoreService.isAvailable()) {
-        collectionSyncService.schedule(
-          'Save imported items',
-          () => firestoreService.saveItems(get().ownerUserId!, newItems),
-          { scope: 'items' },
-        );
+        collectionSyncService.scheduleFirestoreMutation('Save imported items', {
+          action: 'saveItems',
+          userId: get().ownerUserId!,
+          payload: newItems,
+          scope: 'items',
+        });
       }
 
       get().logActivity({
@@ -544,11 +548,12 @@ export function createCollectionDataSlice(
 
       if (get().ownerUserId && firestoreService.isAvailable()) {
         const updatedItems = get().items.filter((item) => ids.includes(item.id));
-        collectionSyncService.schedule(
-          'Archive items',
-          () => firestoreService.saveItems(get().ownerUserId!, updatedItems),
-          { scope: 'items' },
-        );
+        collectionSyncService.scheduleFirestoreMutation('Archive items', {
+          action: 'saveItems',
+          userId: get().ownerUserId!,
+          payload: updatedItems,
+          scope: 'items',
+        });
       }
     },
 
@@ -571,11 +576,12 @@ export function createCollectionDataSlice(
 
       if (get().ownerUserId && firestoreService.isAvailable()) {
         const updatedItems = get().items.filter((item) => ids.includes(item.id));
-        collectionSyncService.schedule(
-          'Bulk move items',
-          () => firestoreService.saveItems(get().ownerUserId!, updatedItems),
-          { scope: 'items' },
-        );
+        collectionSyncService.scheduleFirestoreMutation('Bulk move items', {
+          action: 'saveItems',
+          userId: get().ownerUserId!,
+          payload: updatedItems,
+          scope: 'items',
+        });
       }
 
       const category = get().getCategoryById(targetCategoryId);
@@ -600,11 +606,12 @@ export function createCollectionDataSlice(
 
       if (get().ownerUserId && firestoreService.isAvailable()) {
         const updatedItems = get().items.filter((item) => ids.includes(item.id));
-        collectionSyncService.schedule(
-          'Bulk update condition',
-          () => firestoreService.saveItems(get().ownerUserId!, updatedItems),
-          { scope: 'items' },
-        );
+        collectionSyncService.scheduleFirestoreMutation('Bulk update condition', {
+          action: 'saveItems',
+          userId: get().ownerUserId!,
+          payload: updatedItems,
+          scope: 'items',
+        });
       }
 
       get().logActivity({
@@ -634,11 +641,12 @@ export function createCollectionDataSlice(
 
       if (get().ownerUserId && firestoreService.isAvailable()) {
         const updatedItems = get().items.filter((item) => ids.includes(item.id));
-        collectionSyncService.schedule(
-          'Bulk add tag',
-          () => firestoreService.saveItems(get().ownerUserId!, updatedItems),
-          { scope: 'items' },
-        );
+        collectionSyncService.scheduleFirestoreMutation('Bulk add tag', {
+          action: 'saveItems',
+          userId: get().ownerUserId!,
+          payload: updatedItems,
+          scope: 'items',
+        });
       }
 
       get().logActivity({
@@ -662,11 +670,12 @@ export function createCollectionDataSlice(
 
       if (get().ownerUserId && firestoreService.isAvailable()) {
         const updatedItems = get().items.filter((item) => ids.includes(item.id));
-        collectionSyncService.schedule(
-          'Bulk toggle favorite',
-          () => firestoreService.saveItems(get().ownerUserId!, updatedItems),
-          { scope: 'items' },
-        );
+        collectionSyncService.scheduleFirestoreMutation('Bulk toggle favorite', {
+          action: 'saveItems',
+          userId: get().ownerUserId!,
+          payload: updatedItems,
+          scope: 'items',
+        });
       }
 
       get().logActivity({
@@ -865,11 +874,12 @@ export function createCollectionDataSlice(
 
       set((state) => ({ wishlist: state.wishlist.filter((item) => item.id !== id) }));
       if (get().ownerUserId && firestoreService.isAvailable()) {
-        collectionSyncService.schedule(
-          'Delete wishlist item',
-          () => firestoreService.deleteWishlistItem(get().ownerUserId!, id),
-          { scope: 'wishlist' },
-        );
+        collectionSyncService.scheduleFirestoreMutation('Delete wishlist item', {
+          action: 'deleteWishlistItem',
+          userId: get().ownerUserId!,
+          payload: { id },
+          scope: 'wishlist',
+        });
       }
     },
 
@@ -937,11 +947,12 @@ export function createCollectionDataSlice(
 
       if (get().ownerUserId && firestoreService.isAvailable()) {
         const archivedItems = get().items.filter((item) => ids.includes(item.id));
-        collectionSyncService.schedule(
-          'Archive items',
-          () => firestoreService.saveItems(get().ownerUserId!, archivedItems),
-          { scope: 'items' },
-        );
+        collectionSyncService.scheduleFirestoreMutation('Archive items', {
+          action: 'saveItems',
+          userId: get().ownerUserId!,
+          payload: archivedItems,
+          scope: 'items',
+        });
       }
     },
 
@@ -986,11 +997,12 @@ export function createCollectionDataSlice(
 
       if (get().ownerUserId && firestoreService.isAvailable()) {
         const recoveredItems = get().items.filter((item) => ids.includes(item.id));
-        collectionSyncService.schedule(
-          'Recover items',
-          () => firestoreService.saveItems(get().ownerUserId!, recoveredItems),
-          { scope: 'items' },
-        );
+        collectionSyncService.scheduleFirestoreMutation('Recover items', {
+          action: 'saveItems',
+          userId: get().ownerUserId!,
+          payload: recoveredItems,
+          scope: 'items',
+        });
       }
     },
 
@@ -999,11 +1011,12 @@ export function createCollectionDataSlice(
 
       set((state) => ({ items: state.items.filter((item) => item.id !== id) }));
       if (get().ownerUserId && firestoreService.isAvailable()) {
-        collectionSyncService.schedule(
-          'Delete item permanently',
-          () => firestoreService.deleteItem(get().ownerUserId!, id),
-          { scope: 'items' },
-        );
+        collectionSyncService.scheduleFirestoreMutation('Delete item permanently', {
+          action: 'deleteItem',
+          userId: get().ownerUserId!,
+          payload: { id },
+          scope: 'items',
+        });
       }
     },
 
@@ -1012,11 +1025,12 @@ export function createCollectionDataSlice(
 
       set((state) => ({ items: state.items.filter((item) => !ids.includes(item.id)) }));
       if (get().ownerUserId && firestoreService.isAvailable()) {
-        collectionSyncService.schedule(
-          'Delete items permanently',
-          () => firestoreService.deleteItems(get().ownerUserId!, ids),
-          { scope: 'items' },
-        );
+        collectionSyncService.scheduleFirestoreMutation('Delete items permanently', {
+          action: 'deleteItems',
+          userId: get().ownerUserId!,
+          payload: ids,
+          scope: 'items',
+        });
       }
     },
 
@@ -1039,10 +1053,77 @@ export function createCollectionDataSlice(
 
       set({ activityLog: [] });
       if (get().ownerUserId && firestoreService.isAvailable()) {
-        collectionSyncService.schedule(
-          'Clear activity log',
-          () => firestoreService.clearActivityLog(get().ownerUserId!),
-          { scope: 'activity' },
+        collectionSyncService.scheduleFirestoreMutation('Clear activity log', {
+          action: 'clearActivityLog',
+          userId: get().ownerUserId!,
+          payload: {},
+          scope: 'activity',
+        });
+      }
+    },
+
+    restoreBackupBundle: async (backup, mode) => {
+      if (!dependencies.ensurePermission('catalog:manage')) return;
+
+      const currentState = get();
+      const restored = buildBackupRestoreState(
+        backup,
+        {
+          categories: currentState.categories,
+          items: currentState.items,
+          libraries: currentState.libraries,
+          wishlist: currentState.wishlist,
+          activityLog: currentState.activityLog,
+          contributors: currentState.contributors,
+          settings: buildUserSettings(currentState),
+        },
+        mode,
+      );
+
+      if (!restored) {
+        toast.error('Backup restore failed', {
+          description: 'The selected file is not a valid CollectVault backup.',
+        });
+        return;
+      }
+
+      set({
+        categories: restored.categories,
+        items: restored.items,
+        libraries: restored.libraries,
+        wishlist: restored.wishlist,
+        activityLog: restored.activityLog,
+        contributors: restored.contributors,
+        displayCurrency: restored.settings.displayCurrency,
+        theme: restored.settings.theme,
+        sidebarOpen: restored.settings.sidebarOpen,
+        menuCollectionStyle: restored.settings.menuCollectionStyle,
+        dashboardWidgets: restored.settings.dashboardWidgets,
+        readNotificationIds: restored.settings.readNotificationIds,
+        notifications: restored.settings.notifications,
+        isRemoteDataLoading: false,
+      });
+      dependencies.applyThemeToDocument(restored.settings.theme);
+
+      const userId = get().ownerUserId;
+      if (userId && firestoreService.isAvailable()) {
+        await collectionSyncService.perform(
+          mode === 'replace' ? 'Restore backup and replace Firestore data' : 'Restore backup and merge Firestore data',
+          async () => {
+            if (mode === 'replace') {
+              await firestoreService.wipeAllUserData(userId);
+            }
+            await firestoreService.syncAll(userId, {
+              categories: restored.categories,
+              items: restored.items,
+              libraries: restored.libraries,
+              wishlist: restored.wishlist,
+              activityLog: restored.activityLog,
+              contributors: restored.contributors,
+              settings: restored.settings,
+            });
+          },
+          { kind: 'mutation', scope: 'backup-restore' },
         );
       }
     },

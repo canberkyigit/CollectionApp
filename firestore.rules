@@ -2,17 +2,228 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
 
-    // Users can only read/write their own document and subcollections
+    function isString(value) {
+      return value is string && value.size() <= 5000;
+    }
+
+    function isOptionalString(data, key) {
+      return !(key in data) || isString(data[key]);
+    }
+
+    function isOptionalBool(data, key) {
+      return !(key in data) || data[key] is bool;
+    }
+
+    function hasDocId(data, docId) {
+      return data.id == docId;
+    }
+
+    function validUserSettings(data) {
+      return data.keys().hasOnly([
+        'role',
+        'displayCurrency',
+        'theme',
+        'sidebarOpen',
+        'menuCollectionStyle',
+        'dashboardWidgets',
+        'readNotificationIds',
+        'notifications',
+        'createdAt',
+        'updatedAt'
+      ])
+      && isOptionalString(data, 'role')
+      && isOptionalString(data, 'displayCurrency')
+      && isOptionalString(data, 'theme')
+      && isOptionalString(data, 'menuCollectionStyle')
+      && isOptionalBool(data, 'sidebarOpen');
+    }
+
+    function validCategory(data, docId) {
+      return hasDocId(data, docId)
+      && data.keys().hasAll(['id', 'name', 'slug', 'icon', 'description', 'fields', 'order', 'createdAt', 'updatedAt'])
+      && data.keys().hasOnly(['id', 'name', 'slug', 'icon', 'coverImage', 'description', 'fields', 'order', 'createdAt', 'updatedAt'])
+      && isString(data.name)
+      && isString(data.slug)
+      && isString(data.icon)
+      && isString(data.description)
+      && data.fields is list
+      && data.order is number
+      && isString(data.createdAt)
+      && isString(data.updatedAt)
+      && isOptionalString(data, 'coverImage');
+    }
+
+    function validItem(data, docId) {
+      return hasDocId(data, docId)
+      && data.keys().hasAll([
+        'id',
+        'categoryId',
+        'title',
+        'description',
+        'customFields',
+        'notes',
+        'tags',
+        'images',
+        'purchaseInfo',
+        'valuationInfo',
+        'contributorId',
+        'condition',
+        'isFavorite',
+        'maintenanceLog',
+        'lendingHistory',
+        'createdAt',
+        'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'id',
+        'categoryId',
+        'libraryId',
+        'title',
+        'description',
+        'customFields',
+        'notes',
+        'tags',
+        'images',
+        'purchaseInfo',
+        'valuationInfo',
+        'contributorId',
+        'condition',
+        'location',
+        'quantity',
+        'isRead',
+        'isFavorite',
+        'isArchived',
+        'archivedAt',
+        'maintenanceLog',
+        'lendingHistory',
+        'sourceMetadata',
+        'documents',
+        'lastMutationId',
+        'lastSyncedAt',
+        'createdAt',
+        'updatedAt'
+      ])
+      && isString(data.categoryId)
+      && isString(data.title)
+      && isString(data.description)
+      && data.customFields is map
+      && isString(data.notes)
+      && data.tags is list
+      && data.images is list
+      && data.purchaseInfo is map
+      && data.valuationInfo is map
+      && isString(data.contributorId)
+      && isString(data.condition)
+      && data.isFavorite is bool
+      && data.maintenanceLog is list
+      && data.lendingHistory is list
+      && isString(data.createdAt)
+      && isString(data.updatedAt)
+      && isOptionalString(data, 'libraryId')
+      && isOptionalString(data, 'location')
+      && (!('quantity' in data) || data.quantity is number)
+      && isOptionalBool(data, 'isRead')
+      && isOptionalBool(data, 'isArchived')
+      && isOptionalString(data, 'archivedAt')
+      && (!('sourceMetadata' in data) || data.sourceMetadata is map)
+      && (!('documents' in data) || data.documents is list)
+      && isOptionalString(data, 'lastMutationId')
+      && isOptionalString(data, 'lastSyncedAt');
+    }
+
+    function validWishlist(data, docId) {
+      return hasDocId(data, docId)
+      && data.keys().hasAll(['id', 'categoryId', 'title', 'description', 'priority', 'images', 'tags', 'addedBy', 'isAcquired', 'createdAt', 'updatedAt'])
+      && isString(data.categoryId)
+      && isString(data.title)
+      && isString(data.description)
+      && isString(data.priority)
+      && data.images is list
+      && data.tags is list
+      && isString(data.addedBy)
+      && data.isAcquired is bool
+      && isString(data.createdAt)
+      && isString(data.updatedAt);
+    }
+
+    function validActivity(data, docId) {
+      return hasDocId(data, docId)
+      && data.keys().hasAll(['id', 'action', 'entityType', 'entityId', 'entityTitle', 'userId', 'timestamp'])
+      && isString(data.action)
+      && isString(data.entityType)
+      && isString(data.entityId)
+      && isString(data.entityTitle)
+      && isString(data.userId)
+      && isString(data.timestamp)
+      && isOptionalString(data, 'details');
+    }
+
+    function validContributor(data, docId) {
+      return hasDocId(data, docId)
+      && data.keys().hasAll(['id', 'name', 'avatar', 'role', 'joinedAt', 'itemCount', 'totalContributionValue', 'lastContributionAt'])
+      && isString(data.name)
+      && isString(data.avatar)
+      && isString(data.role)
+      && isString(data.joinedAt)
+      && data.itemCount is number
+      && data.totalContributionValue is number
+      && isString(data.lastContributionAt);
+    }
+
+    function validLibrary(data, docId) {
+      return hasDocId(data, docId)
+      && data.keys().hasAll(['id', 'name', 'order', 'createdAt', 'updatedAt'])
+      && isString(data.name)
+      && data.order is number
+      && isString(data.createdAt)
+      && isString(data.updatedAt)
+      && (!('categoryIds' in data) || data.categoryIds is list)
+      && isOptionalString(data, 'categoryId');
+    }
+
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, delete: if isOwner(userId);
+      allow create, update: if isOwner(userId) && validUserSettings(request.resource.data);
 
-      match /{subcollection}/{docId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+      match /categories/{docId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && validCategory(request.resource.data, docId);
+      }
+
+      match /items/{docId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && validItem(request.resource.data, docId);
+      }
+
+      match /libraries/{docId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && validLibrary(request.resource.data, docId);
+      }
+
+      match /wishlist/{docId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && validWishlist(request.resource.data, docId);
+      }
+
+      match /activityLog/{docId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && validActivity(request.resource.data, docId);
+      }
+
+      match /contributors/{docId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && validContributor(request.resource.data, docId);
+      }
+
+      match /{document=**} {
+        allow read, write: if false;
       }
     }
 
-    // Deny everything else
     match /{document=**} {
       allow read, write: if false;
     }

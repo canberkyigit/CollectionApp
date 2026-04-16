@@ -6,7 +6,7 @@ import {
   Save, Plus, HelpCircle, ImagePlus, Trash2, Star,
   BookOpen, Search, Loader2, ExternalLink, ChevronRight, Upload, ScanBarcode, AlertTriangle,
 } from 'lucide-react';
-import type { CategoryField, CollectionItem } from '@/types';
+import type { CategoryField, ItemSourceMetadata } from '@/types';
 import { useCollectionStore } from '@/store/useCollectionStore';
 import { useAuthStore } from '@/store/useAuthStore';
 import { Button } from '@/components/ui/button';
@@ -29,19 +29,18 @@ import {
   ITEM_FORM_CONDITIONS,
   ITEM_FORM_CURRENCIES,
   ITEM_FORM_HIDDEN_CUSTOM_KEYS,
-  buildCurrencyEquivalents,
+  buildItemFormSubmission,
   buildPurchaseRatesMap,
   getEquivalentForDisplay,
   getHistoricalPurchaseRates,
+  getMissingItemFormFields,
   getPurchaseExchangeRateToUsd,
   itemToFormValues,
-  normalizeCustomFields,
-  persistItemImages,
-  resolveCurrentValuationInput,
   type ItemFormValues,
 } from '@/lib/itemForm';
 import { currencyService } from '@/services/currencyService';
 import { bookSearchService, type BookSearchResult } from '@/services/bookSearchService';
+import { catalogEnrichmentService } from '@/services/catalogEnrichmentService';
 import { BarcodeScannerDialog } from '@/components/shared/BarcodeScannerDialog';
 
 function DynamicFieldRenderer({
@@ -485,10 +484,14 @@ export function AddEditItemDialog() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [bookSearchOpen, setBookSearchOpen] = useState(false);
   const [barcodeScannerOpen, setBarcodeScannerOpen] = useState(false);
+  const [sourceMetadata, setSourceMetadata] = useState<ItemSourceMetadata | undefined>(
+    existingItem?.sourceMetadata,
+  );
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
       setItemImages(existingItem?.images ?? []);
+      setSourceMetadata(existingItem?.sourceMetadata);
       setCoverIndex(0);
       setBookSearchOpen(false);
     });
@@ -547,103 +550,37 @@ export function AddEditItemDialog() {
   }, []);
 
   const handleBookSelect = useCallback((book: BookSearchResult) => {
-    setValue('title', book.title);
-    setValue('description', `${book.title} by ${book.author}${book.publishYear ? ` (${book.publishYear})` : ''}`);
-    setValue('customFields.title', book.title);
-    setValue('customFields.author', book.author);
-    if (book.publishYear) setValue('customFields.publishYear', book.publishYear);
-    if (book.publisher) setValue('customFields.publisher', book.publisher);
-    if (book.isbn) setValue('customFields.isbn', book.isbn);
-    if (book.languages.length > 0) setValue('customFields.language', book.languages[0]);
-    if (book.pageCount) setValue('customFields.pageCount', book.pageCount);
-    if (book.coverUrlLarge) {
-      setItemImages((prev) => (prev.length === 0 ? [book.coverUrlLarge!] : [book.coverUrlLarge!, ...prev]));
+    const suggestion = catalogEnrichmentService.fromBookSearchResult(book);
+    setValue('title', suggestion.title);
+    setValue('description', suggestion.description);
+    for (const [key, value] of Object.entries(suggestion.customFields)) {
+      setValue(`customFields.${key}`, value);
+    }
+    if (suggestion.images[0]) {
+      setItemImages((prev) => (prev.length === 0 ? [suggestion.images[0]] : [suggestion.images[0], ...prev]));
       setCoverIndex(0);
     }
-    toast.success(`Filled form with "${book.title}"`);
+    setSourceMetadata(suggestion.sourceMetadata);
+    toast.success(`Filled form with "${suggestion.title}"`);
   }, [setValue]);
 
   const onSubmit = useCallback(
     async (data: ItemFormValues, addAnother = false) => {
       if (!category) return;
-      const missing: string[] = [];
-      if (!data.title?.trim()) missing.push('Title');
-      if (!data.condition?.trim()) missing.push('Condition');
-      for (const field of sortedFields) {
-        if (!field.required) continue;
-        const val = (data.customFields as Record<string, unknown>)[field.key];
-        const empty = val === undefined || val === null || val === '' || (typeof val === 'string' && !val.trim());
-        if (empty) missing.push(field.label);
-      }
+      const missing = getMissingItemFormFields(sortedFields, data);
       if (missing.length > 0) { toast.error(`Please fill in: ${missing.join(', ')}`); return; }
 
       try {
-        const customFields = normalizeCustomFields(sortedFields, data.customFields);
-
-        const tags = data.tags ? data.tags.split(',').map((s) => s.trim()).filter(Boolean) : [];
-        const now = new Date().toISOString();
-        const purchaseDateVal = data.purchaseDate || now;
-        const orderedImages = coverIndex === 0 ? itemImages : [itemImages[coverIndex], ...itemImages.filter((_, i) => i !== coverIndex)];
-        const finalImages = await persistItemImages(
-          currentUserId,
-          orderedImages,
-          existingItem?.images ?? [],
-        );
-
-        const purchaseAmt = Number(data.purchasePrice) || 0;
-        const ratesMap = buildPurchaseRatesMap(data);
-        const exchangeRate = getPurchaseExchangeRateToUsd(data.purchaseCurrency, ratesMap);
-        const currencyEquivalents = buildCurrencyEquivalents(
-          purchaseAmt,
-          data.purchaseCurrency,
-          ratesMap,
-        );
-        const resolvedCurrentValuation = resolveCurrentValuationInput(
+        const itemData = await buildItemFormSubmission({
+          category,
+          fields: sortedFields,
           data,
-          purchaseAmt,
-          existingItem ?? undefined,
-        );
-
-        const itemData: Omit<CollectionItem, 'id' | 'createdAt' | 'updatedAt'> = {
-          categoryId: category.id,
-          libraryId: data.libraryId || undefined,
-          title: data.title,
-          description: data.description ?? '',
-          customFields,
-          notes: data.notes ?? '',
-          tags,
-          images: finalImages,
-          quantity: Number(data.quantity) || 1,
-          purchaseInfo: {
-            purchasedAt: purchaseDateVal,
-            purchasePrice: purchaseAmt,
-            purchaseCurrency: data.purchaseCurrency,
-            exchangeRateAtPurchase: exchangeRate,
-            purchaseLocation: data.purchaseLocation,
-            currencyEquivalents,
-          },
-          valuationInfo: {
-            currentEstimatedValue: resolvedCurrentValuation.currentEstimatedValue,
-            currentValueCurrency: resolvedCurrentValuation.currentValueCurrency,
-            currentExchangeRate: resolvedCurrentValuation.currentExchangeRate,
-            targetYearProjection: data.targetYear,
-            targetEstimatedValue: data.targetValue ? Number(data.targetValue) || 0 : undefined,
-            valueHistory: existingItem?.valuationInfo.valueHistory ?? [
-              {
-                date: now.slice(0, 10),
-                value: resolvedCurrentValuation.currentEstimatedValue,
-                currency: resolvedCurrentValuation.currentValueCurrency,
-              },
-            ],
-          },
-          contributorId: existingItem?.contributorId ?? currentUserId ?? 'offline',
-          condition: data.condition,
-          location: data.location || undefined,
-          isRead: existingItem?.isRead ?? false,
-          isFavorite: existingItem?.isFavorite ?? false,
-          maintenanceLog: existingItem?.maintenanceLog ?? [],
-          lendingHistory: existingItem?.lendingHistory ?? [],
-        };
+          itemImages,
+          coverIndex,
+          currentUserId,
+          existingItem: existingItem ?? undefined,
+          sourceMetadata,
+        });
 
         if (isEditMode && existingItem) {
           updateItem(existingItem.id, itemData);
@@ -655,6 +592,7 @@ export function AddEditItemDialog() {
           if (addAnother) {
             reset(defaultValues);
             setItemImages([]);
+            setSourceMetadata(undefined);
             setCoverIndex(0);
           } else {
             closeItemDialog();
@@ -664,7 +602,7 @@ export function AddEditItemDialog() {
         toast.error('Failed to save item. Please try again.');
       }
     },
-    [category, sortedFields, existingItem, isEditMode, addItem, updateItem, closeItemDialog, reset, defaultValues, itemImages, coverIndex, currentUserId],
+    [category, sortedFields, existingItem, isEditMode, addItem, updateItem, closeItemDialog, reset, defaultValues, itemImages, coverIndex, currentUserId, sourceMetadata],
   );
 
   if (!itemDialogOpen) return null;
@@ -769,6 +707,17 @@ export function AddEditItemDialog() {
                   </p>
                 </div>
               )}
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="dlg-title">
+                Title <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="dlg-title"
+                placeholder="Item title"
+                {...register('title', { required: 'Title is required' })}
+              />
             </div>
 
             {/* Category-specific custom fields */}

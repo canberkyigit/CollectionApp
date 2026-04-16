@@ -89,6 +89,23 @@ export interface LendingRecord {
   condition: 'same' | 'better' | 'worse' | 'damaged' | 'pending';
 }
 
+export interface ItemSourceMetadata {
+  provider: string;
+  externalId?: string;
+  externalUrl?: string;
+  importedAt: string;
+  confidence?: number;
+  fields: string[];
+}
+
+export interface ProvenanceDocument {
+  id: string;
+  type: 'receipt' | 'certificate' | 'appraisal' | 'manual' | 'other';
+  title: string;
+  url: string;
+  uploadedAt: string;
+}
+
 export interface CollectionItem {
   id: string;
   categoryId: string;
@@ -111,6 +128,10 @@ export interface CollectionItem {
   archivedAt?: string;
   maintenanceLog: MaintenanceEntry[];
   lendingHistory: LendingRecord[];
+  sourceMetadata?: ItemSourceMetadata;
+  documents?: ProvenanceDocument[];
+  lastMutationId?: string;
+  lastSyncedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -190,6 +211,28 @@ export interface CurrencyRate {
   to: string;
   rate: number;
   date: string;
+}
+
+export interface ImportMapping {
+  categoryId: string;
+  builtInFields: Record<string, string>;
+  customFields: Record<string, string>;
+}
+
+export interface ImportValidationIssue {
+  rowIndex: number;
+  field?: string;
+  message: string;
+  severity: 'error' | 'warning';
+}
+
+export interface ImportPreviewRow {
+  rowIndex: number;
+  title: string;
+  categoryId: string;
+  values: Record<string, unknown>;
+  issues: ImportValidationIssue[];
+  canImport: boolean;
 }
 
 export type ViewMode = 'grid' | 'table' | 'covers' | 'names';

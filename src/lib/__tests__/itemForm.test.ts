@@ -131,4 +131,92 @@ describe('itemForm helpers', () => {
     expect(finalImages[0]).toContain('https://cdn.test/');
     expect(finalImages[1]).toBe('https://example.com/external.jpg');
   });
+
+  it('normalizes legacy built-in custom field keys without losing category fields', async () => {
+    vi.resetModules();
+    const { normalizeItemCustomFields, getMissingItemFormFields } = await import('@/lib/itemForm');
+    const { createMockCategory } = await import('@/test/helpers');
+
+    const category = createMockCategory({
+      fields: [
+        { id: 'title', key: 'title', label: 'Title', type: 'text', required: true, order: 0 },
+        { id: 'condition', key: 'condition', label: 'Condition', type: 'text', required: true, order: 1 },
+        { id: 'author', key: 'author', label: 'Author', type: 'text', required: true, order: 2 },
+      ],
+    });
+
+    expect(normalizeItemCustomFields({
+      title: 'Legacy Title',
+      condition: 'Mint',
+      purchasePrice: 20,
+      author: 'Octavia Butler',
+    })).toEqual({ author: 'Octavia Butler' });
+
+    expect(getMissingItemFormFields(category.fields, {
+      title: 'Kindred',
+      condition: 'Good',
+      customFields: { author: '' },
+    })).toEqual(['Author']);
+  });
+
+  it('builds the shared item submit payload with canonical fields, source metadata, and uploaded images', async () => {
+    vi.resetModules();
+    const { buildItemFormSubmission } = await import('@/lib/itemForm');
+    const { createMockCategory } = await import('@/test/helpers');
+
+    const category = {
+      ...createMockCategory({
+        fields: [
+          { id: 'title', key: 'title', label: 'Title', type: 'text', required: true, order: 0 },
+          { id: 'author', key: 'author', label: 'Author', type: 'text', required: true, order: 1 },
+          { id: 'isbn', key: 'isbn', label: 'ISBN', type: 'text', required: false, order: 2 },
+        ],
+      }),
+      id: 'cat-books',
+      order: 0,
+      createdAt: '2024-01-01',
+      updatedAt: '2024-01-01',
+    };
+
+    const payload = await buildItemFormSubmission({
+      category,
+      fields: category.fields,
+      data: {
+        title: 'Parable of the Sower',
+        description: 'Earthseed begins.',
+        condition: 'Good',
+        tags: 'sci-fi, signed',
+        customFields: {
+          title: 'Legacy duplicate',
+          author: 'Octavia Butler',
+          isbn: '9780446675505',
+        },
+        purchaseDate: '2024-02-01',
+        purchasePrice: 18,
+        purchaseCurrency: 'USD',
+        currentValueCurrency: 'USD',
+        targetYear: 2030,
+      },
+      itemImages: ['https://example.com/external.jpg', 'data:image/png;base64,cover'],
+      coverIndex: 1,
+      currentUserId: 'user-1',
+      sourceMetadata: {
+        provider: 'openlibrary',
+        externalId: 'isbn:9780446675505',
+        importedAt: '2024-02-01T00:00:00Z',
+        confidence: 0.9,
+        fields: ['title', 'isbn'],
+      },
+    });
+
+    expect(payload.title).toBe('Parable of the Sower');
+    expect(payload.customFields).toEqual({
+      author: 'Octavia Butler',
+      isbn: '9780446675505',
+    });
+    expect(payload.images[0]).toContain('https://cdn.test/');
+    expect(payload.images[1]).toBe('https://example.com/external.jpg');
+    expect(payload.sourceMetadata?.provider).toBe('openlibrary');
+    expect(payload.documents).toEqual([]);
+  });
 });

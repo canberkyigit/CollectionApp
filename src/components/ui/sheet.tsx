@@ -28,12 +28,14 @@ interface SheetContentProps
   defaultWidth?: number;
   minWidth?: number;
   maxWidth?: number;
+  title?: string;
+  description?: string;
 }
 
 const SheetContent = React.forwardRef<
   React.ComponentRef<typeof DialogPrimitive.Content>,
   SheetContentProps
->(({ className, children, defaultWidth = 680, minWidth = 420, maxWidth = 1200, ...props }, ref) => {
+>(({ className, children, defaultWidth = 680, minWidth = 420, maxWidth = 1200, title = 'Panel', description = 'Resizable side panel', ...props }, ref) => {
   const [width, setWidth] = React.useState(defaultWidth);
   const isDragging = React.useRef(false);
   const startX = React.useRef(0);
@@ -94,6 +96,8 @@ const SheetContent = React.forwardRef<
           <X className="size-5" />
           <span className="sr-only">Close</span>
         </DialogPrimitive.Close>
+        <DialogPrimitive.Title className="sr-only">{title}</DialogPrimitive.Title>
+        <DialogPrimitive.Description className="sr-only">{description}</DialogPrimitive.Description>
         {children}
       </DialogPrimitive.Content>
     </SheetPortal>

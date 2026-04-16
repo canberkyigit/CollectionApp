@@ -9,7 +9,7 @@ import {
   ChevronRight, Search, Loader2, ExternalLink, AlertTriangle, ScanBarcode,
 } from 'lucide-react';
 import { getCategoryIcon } from '@/lib/icons';
-import type { CategoryField, CollectionItem } from '@/types';
+import type { CategoryField, ItemSourceMetadata } from '@/types';
 
 import { useCollectionStore } from '@/store/useCollectionStore';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -45,20 +45,19 @@ import {
   ITEM_FORM_CONDITIONS,
   ITEM_FORM_CURRENCIES,
   ITEM_FORM_HIDDEN_CUSTOM_KEYS,
-  buildCurrencyEquivalents,
+  buildItemFormSubmission,
   buildPurchaseRatesMap,
   getEquivalentForDisplay,
   getHistoricalPurchaseRates,
+  getMissingItemFormFields,
   getPurchaseExchangeRateToUsd,
   itemToFormValues,
-  normalizeCustomFields,
-  persistItemImages,
-  resolveCurrentValuationInput,
   type ItemFormValues,
 } from '@/lib/itemForm';
 import { canManageCatalog } from '@/lib/permissions';
 import { currencyService } from '@/services/currencyService';
 import { bookSearchService, type BookSearchResult } from '@/services/bookSearchService';
+import { catalogEnrichmentService } from '@/services/catalogEnrichmentService';
 import { BarcodeScannerDialog } from '@/components/shared/BarcodeScannerDialog';
 
 function DynamicFieldRenderer({
@@ -793,32 +792,28 @@ export default function ItemForm() {
 
   const [bookSearchOpen, setBookSearchOpen] = useState(false);
   const [barcodeScannerOpen, setBarcodeScannerOpen] = useState(false);
+  const [sourceMetadata, setSourceMetadata] = useState<ItemSourceMetadata | undefined>(
+    existingItem?.sourceMetadata,
+  );
   const isBookCategory = category?.id === 'cat-books';
 
   const handleBookSelect = useCallback(
     (book: BookSearchResult) => {
-      setValue('title', book.title);
-      setValue('description', `${book.title} by ${book.author}${book.publishYear ? ` (${book.publishYear})` : ''}`);
-      setValue('customFields.title', book.title);
-      setValue('customFields.author', book.author);
-      if (book.publishYear) setValue('customFields.publishYear', book.publishYear);
-      if (book.publisher) setValue('customFields.publisher', book.publisher);
-      if (book.isbn) setValue('customFields.isbn', book.isbn);
-      if (book.languages.length > 0) {
-        const lang = book.languages[0];
-        setValue('customFields.language', lang);
+      const suggestion = catalogEnrichmentService.fromBookSearchResult(book);
+      setValue('title', suggestion.title);
+      setValue('description', suggestion.description);
+      for (const [key, value] of Object.entries(suggestion.customFields)) {
+        setValue(`customFields.${key}`, value);
       }
-      if (book.pageCount) {
-        setValue('customFields.pageCount', book.pageCount);
-      }
-      if (book.coverUrlLarge) {
+      if (suggestion.images[0]) {
         setItemImages((prev) => {
-          if (prev.length === 0) return [book.coverUrlLarge!];
-          return [book.coverUrlLarge!, ...prev];
+          if (prev.length === 0) return [suggestion.images[0]];
+          return [suggestion.images[0], ...prev];
         });
         setCoverIndex(0);
       }
-      toast.success(`Filled form with "${book.title}"`);
+      setSourceMetadata(suggestion.sourceMetadata);
+      toast.success(`Filled form with "${suggestion.title}"`);
     },
     [setValue],
   );
@@ -826,6 +821,7 @@ export default function ItemForm() {
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
       setItemImages(existingItem?.images ?? []);
+      setSourceMetadata(existingItem?.sourceMetadata);
       setCoverIndex(0);
     });
     return () => window.cancelAnimationFrame(frame);
@@ -908,20 +904,7 @@ export default function ItemForm() {
     async (data: ItemFormValues, addAnother = false) => {
       if (!category) return;
 
-      const missing: string[] = [];
-      if (!data.title?.trim()) missing.push('Title');
-      if (!data.condition?.trim()) missing.push('Condition');
-
-      for (const field of sortedFields) {
-        if (!field.required) continue;
-        const val = (data.customFields as Record<string, unknown>)[field.key];
-        const empty =
-          val === undefined ||
-          val === null ||
-          val === '' ||
-          (typeof val === 'string' && !val.trim());
-        if (empty) missing.push(field.label);
-      }
+      const missing = getMissingItemFormFields(sortedFields, data);
 
       if (missing.length > 0) {
         toast.error(`Please fill in: ${missing.join(', ')}`);
@@ -929,76 +912,16 @@ export default function ItemForm() {
       }
 
       try {
-      const customFields = normalizeCustomFields(sortedFields, data.customFields);
-
-      const tags = data.tags
-        ? data.tags.split(',').map((s) => s.trim()).filter(Boolean)
-        : [];
-
-      const now = new Date().toISOString();
-      const purchaseDate = data.purchaseDate || now;
-
-      const orderedImages = coverIndex === 0 ? itemImages : [itemImages[coverIndex], ...itemImages.filter((_, i) => i !== coverIndex)];
-      const finalImages = await persistItemImages(
-        currentUserId,
-        orderedImages,
-        existingItem?.images ?? [],
-      );
-
-      const purchaseAmt = Number(data.purchasePrice) || 0;
-      const ratesMap = buildPurchaseRatesMap(data);
-      const exchangeRate = getPurchaseExchangeRateToUsd(data.purchaseCurrency, ratesMap);
-      const currencyEquivalents = buildCurrencyEquivalents(
-        purchaseAmt,
-        data.purchaseCurrency,
-        ratesMap,
-      );
-      const resolvedCurrentValuation = resolveCurrentValuationInput(
+      const itemData = await buildItemFormSubmission({
+        category,
+        fields: sortedFields,
         data,
-        purchaseAmt,
+        itemImages,
+        coverIndex,
+        currentUserId,
         existingItem,
-      );
-
-      const itemData: Omit<CollectionItem, 'id' | 'createdAt' | 'updatedAt'> = {
-        categoryId: category.id,
-        libraryId: data.libraryId || undefined,
-        title: data.title,
-        description: data.description ?? '',
-        customFields,
-        notes: data.notes ?? '',
-        tags,
-        images: finalImages,
-        quantity: Number(data.quantity) || 1,
-        purchaseInfo: {
-          purchasedAt: purchaseDate,
-          purchasePrice: purchaseAmt,
-          purchaseCurrency: data.purchaseCurrency,
-          exchangeRateAtPurchase: exchangeRate,
-          purchaseLocation: data.purchaseLocation,
-          currencyEquivalents,
-        },
-        valuationInfo: {
-          currentEstimatedValue: resolvedCurrentValuation.currentEstimatedValue,
-          currentValueCurrency: resolvedCurrentValuation.currentValueCurrency,
-          currentExchangeRate: resolvedCurrentValuation.currentExchangeRate,
-          targetYearProjection: data.targetYear,
-          targetEstimatedValue: data.targetValue ? Number(data.targetValue) || 0 : undefined,
-          valueHistory: existingItem?.valuationInfo.valueHistory ?? [
-            {
-              date: now.slice(0, 10),
-              value: resolvedCurrentValuation.currentEstimatedValue,
-              currency: resolvedCurrentValuation.currentValueCurrency,
-            },
-          ],
-        },
-        contributorId: existingItem?.contributorId ?? currentUserId ?? 'offline',
-        condition: data.condition,
-        location: data.location || undefined,
-        isRead: existingItem?.isRead ?? false,
-        isFavorite: existingItem?.isFavorite ?? false,
-        maintenanceLog: existingItem?.maintenanceLog ?? [],
-        lendingHistory: existingItem?.lendingHistory ?? [],
-      };
+        sourceMetadata,
+      });
 
       setIsFormSubmitted(true);
       setHasInteracted(false);
@@ -1013,6 +936,7 @@ export default function ItemForm() {
         if (addAnother) {
           setIsFormSubmitted(false);
           reset(defaultValues);
+          setSourceMetadata(undefined);
           window.scrollTo({ top: 0, behavior: 'smooth' });
         } else {
           navigate(`/items/${newItem.id}`);
@@ -1036,6 +960,7 @@ export default function ItemForm() {
       itemImages,
       coverIndex,
       currentUserId,
+      sourceMetadata,
     ],
   );
 
@@ -1334,17 +1259,30 @@ export default function ItemForm() {
         </CardContent>
       </Card>
 
-      {/* Category-Specific Fields */}
-      {sortedFields.length > 0 && (
+      {/* Item Details */}
         <Card>
           <CardHeader>
-            <CardTitle>{category.name} Details</CardTitle>
+            <CardTitle>Item Details</CardTitle>
             <CardDescription>
-              Fields specific to {category.name.toLowerCase()} items
+              Core details and fields specific to {category.name.toLowerCase()} items
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="title">
+                  Title <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="title"
+                  placeholder="Item title"
+                  {...register('title', { required: 'Title is required' })}
+                />
+                {errors.title && (
+                  <p className="text-xs text-destructive">{errors.title.message}</p>
+                )}
+              </div>
+
               {sortedFields.map((field) => {
                 const fullWidth =
                   field.type === 'textarea' ||
@@ -1425,7 +1363,6 @@ export default function ItemForm() {
             </div>
           </CardContent>
         </Card>
-      )}
 
       {/* Library & Quantity */}
       {(categoryLibraries.length > 0 || isBookCategory) && (
@@ -1549,7 +1486,7 @@ export default function ItemForm() {
                 {fetchingRates && <span className="text-xs font-normal text-muted-foreground animate-pulse">Fetching rates...</span>}
               </h4>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Tarih seçildiğinde kurlar otomatik dolar. İsterseniz manuel değiştirebilirsiniz.
+                Rates are filled automatically when you select a date. You can adjust them manually if needed.
               </p>
             </div>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">

@@ -133,4 +133,39 @@ describe('exportService', () => {
       expect(text).toContain('John Doe');
     });
   });
+
+  describe('exportBackupBundle', () => {
+    it('exports a full backup bundle with related collection data', async () => {
+      const service = await getService();
+      service.exportBackupBundle({
+        categories: [mockCategory],
+        items: [mockItem],
+        libraries: [],
+        wishlist: [],
+        activityLog: [],
+        contributors: [],
+        settings: {
+          displayCurrency: 'USD',
+          theme: 'light',
+          sidebarOpen: true,
+          menuCollectionStyle: 'style1',
+          dashboardWidgets: [],
+          readNotificationIds: [],
+          notifications: {
+            valueChangeAlerts: true,
+            newItemReminders: true,
+            collectionMilestones: true,
+          },
+        },
+      }, 'backup.json');
+
+      const blob = mockCreateObjectURL.mock.calls[0][0] as Blob;
+      const parsed = JSON.parse(await blob.text());
+
+      expect(parsed.schemaVersion).toBe(1);
+      expect(parsed.items[0].title).toBe('Test Book');
+      expect(parsed.categories[0].name).toBe('Books');
+      expect(parsed.settings.displayCurrency).toBe('USD');
+    });
+  });
 });

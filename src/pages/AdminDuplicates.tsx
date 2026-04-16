@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { AlertTriangle, Eye, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
+import { AlertTriangle, Eye, Trash2, ChevronDown, ChevronRight, GitMerge } from 'lucide-react';
+import type { CollectionItem } from '@/types';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { PageTransition } from '@/components/shared/motion';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -8,13 +9,14 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { getAdminBreadcrumbs } from '@/lib/adminNavigation';
+import { mergeDuplicateItems, normalizeISBNForDuplicate, normalizeTitleForDuplicate } from '@/lib/duplicates';
 import { useCollectionStore } from '@/store/useCollectionStore';
 import { formatDate } from '@/lib/utils';
 
 interface DuplicateGroup {
   key: string;
   reason: 'title' | 'isbn';
-  items: ReturnType<typeof useCollectionStore.getState>['items'];
+  items: CollectionItem[];
   categoryName: string;
 }
 
@@ -22,9 +24,11 @@ export default function AdminDuplicates() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const search = searchParams.toString();
-  const { items, categories, deleteItem } = useCollectionStore();
+  const { items, categories, deleteItem, updateItem, archiveItems } = useCollectionStore();
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [mergeGroup, setMergeGroup] = useState<DuplicateGroup | null>(null);
+  const [primaryId, setPrimaryId] = useState<string>('');
   const categoryNameById = useMemo(
     () => new Map(categories.map((category) => [category.id, category.name])),
     [categories],
@@ -48,7 +52,7 @@ export default function AdminDuplicates() {
       // Title duplicates
       const byTitle = new Map<string, typeof catItems>();
       for (const item of catItems) {
-        const key = item.title.trim().toLowerCase();
+        const key = normalizeTitleForDuplicate(item.title);
         const arr = byTitle.get(key) ?? [];
         arr.push(item);
         byTitle.set(key, arr);
@@ -62,7 +66,7 @@ export default function AdminDuplicates() {
       // ISBN duplicates (only items with isbn field)
       const byIsbn = new Map<string, typeof catItems>();
       for (const item of catItems) {
-        const isbn = (item.customFields?.isbn as string | undefined)?.trim();
+        const isbn = normalizeISBNForDuplicate(item.customFields?.isbn);
         if (!isbn) continue;
         const arr = byIsbn.get(isbn) ?? [];
         arr.push(item);
@@ -91,6 +95,26 @@ export default function AdminDuplicates() {
       else next.add(key);
       return next;
     });
+  };
+
+  const openMergeDialog = (group: DuplicateGroup) => {
+    const newest = [...group.items].sort(
+      (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
+    )[0];
+    setMergeGroup(group);
+    setPrimaryId(newest.id);
+  };
+
+  const confirmMerge = () => {
+    if (!mergeGroup || !primaryId) return;
+    const primary = mergeGroup.items.find((item) => item.id === primaryId);
+    if (!primary) return;
+
+    const duplicates = mergeGroup.items.filter((item) => item.id !== primaryId);
+    updateItem(primary.id, mergeDuplicateItems(primary, duplicates));
+    archiveItems(duplicates.map((item) => item.id));
+    setMergeGroup(null);
+    setPrimaryId('');
   };
 
   return (
@@ -138,6 +162,18 @@ export default function AdminDuplicates() {
                           </Badge>
                         </CardDescription>
                       </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0 gap-1.5"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openMergeDialog(group);
+                        }}
+                      >
+                        <GitMerge className="size-3.5" />
+                        Merge
+                      </Button>
                       {isExpanded ? <ChevronDown className="size-4 text-muted-foreground shrink-0" /> : <ChevronRight className="size-4 text-muted-foreground shrink-0" />}
                     </div>
                   </CardHeader>
@@ -194,6 +230,42 @@ export default function AdminDuplicates() {
           confirmLabel="Archive"
           destructive
         />
+
+        <ConfirmDialog
+          open={!!mergeGroup}
+          onClose={() => {
+            setMergeGroup(null);
+            setPrimaryId('');
+          }}
+          onConfirm={confirmMerge}
+          title="Merge Duplicate Items"
+          description={
+            mergeGroup
+              ? `Merge ${mergeGroup.items.length} duplicate items into the selected primary item and archive the rest.`
+              : ''
+          }
+          confirmLabel="Merge Duplicates"
+        >
+          {mergeGroup && (
+            <div className="space-y-2">
+              {mergeGroup.items.map((item) => (
+                <label key={item.id} className="flex cursor-pointer items-center gap-3 rounded-lg border p-3 text-sm">
+                  <input
+                    type="radio"
+                    name="primary-duplicate"
+                    value={item.id}
+                    checked={primaryId === item.id}
+                    onChange={() => setPrimaryId(item.id)}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">{item.title}</span>
+                    <span className="block text-xs text-muted-foreground">Updated {formatDate(item.updatedAt)}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
+        </ConfirmDialog>
       </div>
     </PageTransition>
   );

@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Package, Search, Trash2, FolderInput, Tag, Star, StarOff, Filter, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
-import { PageHeader, ConfirmDialog } from '@/components/shared';
+import { PageHeader, ConfirmDialog, VirtualList } from '@/components/shared';
 import { PageTransition } from '@/components/shared/motion';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -17,21 +17,20 @@ import { useCollectionStore } from '@/store/useCollectionStore';
 import { useSearchParams } from 'react-router-dom';
 
 const CONDITIONS = ['Mint', 'Near Mint', 'Very Good', 'Good', 'Fair', 'Poor'] as const;
+const VIRTUAL_THRESHOLD = 80;
 
 export default function AdminBulkActions() {
   const [searchParams] = useSearchParams();
   const search = searchParams.toString();
   const displayCurrency = useCollectionStore((s) => s.displayCurrency);
-  const {
-    items,
-    categories,
-    deleteItems,
-    bulkMoveItems,
-    bulkUpdateCondition,
-    bulkAddTag,
-    bulkToggleFavorite,
-    getCategoryById,
-  } = useCollectionStore();
+  const items = useCollectionStore((s) => s.items);
+  const categories = useCollectionStore((s) => s.categories);
+  const deleteItems = useCollectionStore((s) => s.deleteItems);
+  const bulkMoveItems = useCollectionStore((s) => s.bulkMoveItems);
+  const bulkUpdateCondition = useCollectionStore((s) => s.bulkUpdateCondition);
+  const bulkAddTag = useCollectionStore((s) => s.bulkAddTag);
+  const bulkToggleFavorite = useCollectionStore((s) => s.bulkToggleFavorite);
+  const getCategoryById = useCollectionStore((s) => s.getCategoryById);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
@@ -118,6 +117,67 @@ export default function AdminBulkActions() {
     toast.success(`Deleted ${count} items`);
     setSelectedIds(new Set());
     setShowDeleteDialog(false);
+  };
+
+  const renderBulkRow = (item: typeof filteredItems[number]) => {
+    const category = getCategoryById(item.categoryId);
+    const value = currencyService.convert(
+      item.valuationInfo.currentEstimatedValue,
+      item.valuationInfo.currentValueCurrency,
+      displayCurrency,
+    );
+    const isSelected = selectedIds.has(item.id);
+
+    return (
+      <div
+        onClick={() => toggleItem(item.id)}
+        className={cn(
+          'grid grid-cols-[48px_minmax(220px,1fr)_160px_120px_120px_minmax(180px,1fr)_80px] cursor-pointer border-b text-sm transition-colors hover:bg-muted/30',
+          isSelected && 'bg-primary/5',
+        )}
+      >
+        <div className="px-4 py-3">
+          <Checkbox
+            checked={isSelected}
+            onCheckedChange={() => toggleItem(item.id)}
+            aria-label={`Select ${item.title}`}
+          />
+        </div>
+        <div className="px-4 py-3 font-medium">{item.title}</div>
+        <div className="px-4 py-3 text-muted-foreground">
+          {category?.name ?? '—'}
+        </div>
+        <div className="px-4 py-3">
+          <Badge variant="outline" className="text-xs">
+            {item.condition}
+          </Badge>
+        </div>
+        <div className="px-4 py-3 text-right font-mono text-xs">
+          {formatCurrency(value, displayCurrency)}
+        </div>
+        <div className="px-4 py-3">
+          <div className="flex flex-wrap gap-1">
+            {item.tags.slice(0, 3).map((tag) => (
+              <Badge key={tag} variant="secondary" className="text-xs">
+                {tag}
+              </Badge>
+            ))}
+            {item.tags.length > 3 && (
+              <Badge variant="secondary" className="text-xs">
+                +{item.tags.length - 3}
+              </Badge>
+            )}
+          </div>
+        </div>
+        <div className="px-4 py-3 text-center">
+          {item.isFavorite ? (
+            <Star className="mx-auto size-4 fill-yellow-400 text-yellow-400" />
+          ) : (
+            <StarOff className="mx-auto size-4 text-muted-foreground/40" />
+          )}
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -249,7 +309,36 @@ export default function AdminBulkActions() {
       {/* Items Table */}
       <Card>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          {filteredItems.length > VIRTUAL_THRESHOLD ? (
+            <div className="min-w-[948px]">
+              <div className="grid grid-cols-[48px_minmax(220px,1fr)_160px_120px_120px_minmax(180px,1fr)_80px] border-b bg-muted/50 text-sm">
+                <div className="px-4 py-3">
+                  <Checkbox
+                    checked={allSelected}
+                    onCheckedChange={toggleSelectAll}
+                    aria-label="Select all"
+                  />
+                </div>
+                <div className="px-4 py-3 font-medium text-muted-foreground">Title</div>
+                <div className="px-4 py-3 font-medium text-muted-foreground">Category</div>
+                <div className="px-4 py-3 font-medium text-muted-foreground">Condition</div>
+                <div className="px-4 py-3 text-right font-medium text-muted-foreground">Value</div>
+                <div className="px-4 py-3 font-medium text-muted-foreground">Tags</div>
+                <div className="px-4 py-3 text-center font-medium text-muted-foreground">
+                  <Star className="mx-auto size-4" />
+                </div>
+              </div>
+              <VirtualList
+                items={filteredItems}
+                threshold={VIRTUAL_THRESHOLD}
+                estimateSize={57}
+                getItemKey={(item) => item.id}
+                renderItem={renderBulkRow}
+                viewportHeight="min(72vh, 720px)"
+              />
+            </div>
+          ) : (
+            <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/50">
                 <th className="w-12 px-4 py-3">
@@ -342,7 +431,8 @@ export default function AdminBulkActions() {
                 </tr>
               )}
             </tbody>
-          </table>
+            </table>
+          )}
         </div>
       </Card>
 

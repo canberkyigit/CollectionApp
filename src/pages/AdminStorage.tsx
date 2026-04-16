@@ -49,7 +49,7 @@ const LOCAL_STORAGE_LIMIT = 5 * 1024 * 1024; // 5 MB
 export default function AdminStorage() {
   const [searchParams] = useSearchParams();
   const search = searchParams.toString();
-  const { items, categories, wishlist, activityLog, clearActivityLog } =
+  const { items, categories, wishlist, activityLog, clearActivityLog, wipeAllData } =
     useCollectionStore();
 
   const [confirmAction, setConfirmAction] = useState<
@@ -116,17 +116,12 @@ export default function AdminStorage() {
     return { usedBytes, percentage: Math.min(percentage, 100), color, label };
   }, [sizeData.totalSize]);
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (confirmAction === 'clear-log') {
       clearActivityLog();
       toast.success('Activity log cleared');
     } else if (confirmAction === 'clear-all') {
-      useCollectionStore.setState({
-        items: [],
-        categories: [],
-        wishlist: [],
-        activityLog: [],
-      });
+      await wipeAllData();
       toast.success('All data cleared');
     }
     setConfirmAction(null);
@@ -419,7 +414,7 @@ export default function AdminStorage() {
       <ConfirmDialog
         open={confirmAction === 'clear-log'}
         onClose={() => setConfirmAction(null)}
-        onConfirm={handleConfirm}
+        onConfirm={() => void handleConfirm()}
         title="Clear Activity Log"
         description="This will permanently delete all activity log entries. This action cannot be undone."
         confirmLabel="Clear Log"
@@ -429,7 +424,7 @@ export default function AdminStorage() {
       <ConfirmDialog
         open={confirmAction === 'clear-all'}
         onClose={() => setConfirmAction(null)}
-        onConfirm={handleConfirm}
+        onConfirm={() => void handleConfirm()}
         title="Clear All Data"
         description="This will permanently delete ALL items, categories, wishlist entries, and activity logs. This action cannot be undone."
         confirmLabel="Delete Everything"

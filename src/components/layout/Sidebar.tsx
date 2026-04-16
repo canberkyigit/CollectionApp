@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useCallback, useMemo, useState, useEffect } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -26,6 +26,7 @@ import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { VirtualList } from '@/components/shared';
 import { useCollectionStore } from '@/store/useCollectionStore';
 import { useAuthStore } from '@/store/useAuthStore';
 
@@ -40,6 +41,8 @@ const baseNavItems = [
 ];
 
 import type { CollectionItem } from '@/types';
+
+const VIRTUAL_THRESHOLD = 80;
 
 function getDisplayRole(role?: string) {
   if (!role) return 'Workspace';
@@ -101,22 +104,40 @@ function SidebarItemList({
     return `${catPath}?${params.toString()}`;
   };
 
+  const renderItemButton = (item: CollectionItem) => (
+    <button
+      onClick={() => navigate(buildDetailPath(item.id))}
+      className={cn(
+        'group flex w-full items-start gap-2 rounded-lg border border-transparent px-2 py-1.5 text-xs transition-all duration-200',
+        activeItemId === item.id
+          ? 'surface-2 border-primary/15 text-primary'
+          : 'text-sidebar-foreground/70 hover:surface-1 hover:text-foreground',
+      )}
+    >
+      <BookOpen className="mt-0.5 size-3 shrink-0 opacity-50 transition-transform duration-200 group-hover:translate-x-0.5" />
+      <span className="text-left leading-snug">{item.title}</span>
+    </button>
+  );
+
+  if (listItems.length > VIRTUAL_THRESHOLD) {
+    return (
+      <VirtualList
+        items={listItems}
+        threshold={VIRTUAL_THRESHOLD}
+        estimateSize={34}
+        getItemKey={(item) => item.id}
+        renderItem={renderItemButton}
+        className="ml-3 border-l border-border/60 py-1 pl-3"
+        itemClassName="pb-1"
+        viewportHeight="min(46vh, 420px)"
+      />
+    );
+  }
+
   return (
     <div className="ml-3 space-y-1 border-l border-border/60 py-1 pl-3">
       {listItems.map((item) => (
-        <button
-          key={item.id}
-          onClick={() => navigate(buildDetailPath(item.id))}
-          className={cn(
-            'group flex w-full items-start gap-2 rounded-lg border border-transparent px-2 py-1.5 text-xs transition-all duration-200',
-            activeItemId === item.id
-              ? 'surface-2 border-primary/15 text-primary'
-              : 'text-sidebar-foreground/70 hover:surface-1 hover:text-foreground',
-          )}
-        >
-          <BookOpen className="mt-0.5 size-3 shrink-0 opacity-50 transition-transform duration-200 group-hover:translate-x-0.5" />
-          <span className="text-left leading-snug">{item.title}</span>
-        </button>
+        <div key={item.id}>{renderItemButton(item)}</div>
       ))}
     </div>
   );
@@ -127,7 +148,7 @@ const Sidebar = () => {
   const sidebarOpen = useCollectionStore((s) => s.sidebarOpen);
   const menuCollectionStyle = useCollectionStore((s) => s.menuCollectionStyle) ?? 'style1';
   const categories = useCollectionStore((s) => s.categories);
-  const getItemsByCategory = useCollectionStore((s) => s.getItemsByCategory);
+  const items = useCollectionStore((s) => s.items);
   const reorderCategories = useCollectionStore((s) => s.reorderCategories);
   const location = useLocation();
   const navigate = useNavigate();
@@ -143,6 +164,20 @@ const Sidebar = () => {
 
   const libraries = useCollectionStore((s) => s.libraries);
   const navItems = useMemo(() => baseNavItems, []);
+  const itemsByCategory = useMemo(() => {
+    const map = new Map<string, CollectionItem[]>();
+    for (const item of items) {
+      if (item.isArchived) continue;
+      const current = map.get(item.categoryId) ?? [];
+      current.push(item);
+      map.set(item.categoryId, current);
+    }
+    return map;
+  }, [items]);
+  const getCategoryItems = useCallback(
+    (categoryId: string) => itemsByCategory.get(categoryId) ?? [],
+    [itemsByCategory],
+  );
 
   useEffect(() => {
     if (window.matchMedia('(max-width: 767px)').matches && useCollectionStore.getState().sidebarOpen) {
@@ -155,7 +190,7 @@ const Sidebar = () => {
       [...categories]
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
         .map((cat) => {
-          const catItems = getItemsByCategory(cat.id);
+          const catItems = getCategoryItems(cat.id);
           return {
             ...cat,
             count: catItems.length,
@@ -169,7 +204,7 @@ const Sidebar = () => {
               })),
           };
         }),
-    [categories, libraries, getItemsByCategory],
+    [categories, libraries, getCategoryItems],
   );
 
   const handleMove = (index: number, direction: 'up' | 'down') => {
@@ -265,10 +300,10 @@ const Sidebar = () => {
           const lib = cat.libraries.find((l) => l.id === activeDrillLibId);
           const label = isAll ? 'All' : isUnassigned ? 'Unassigned' : lib?.name ?? '';
           const drillItems = isAll
-            ? getItemsByCategory(cat.id)
+            ? getCategoryItems(cat.id)
             : isUnassigned
-              ? getItemsByCategory(cat.id).filter((item) => isItemUnassignedForCategory(item, cat.id, libraries))
-              : getItemsByCategory(cat.id).filter((i) => i.libraryId === activeDrillLibId);
+              ? getCategoryItems(cat.id).filter((item) => isItemUnassignedForCategory(item, cat.id, libraries))
+              : getCategoryItems(cat.id).filter((i) => i.libraryId === activeDrillLibId);
 
           const textFields = (cat.fields ?? []).filter(
             (f) => (f.type === 'text' || f.type === 'select') && f.key !== 'title',
@@ -308,6 +343,20 @@ const Sidebar = () => {
                 return val === drillGroupValue;
               })
             : [];
+          const renderDrillItem = (item: CollectionItem) => (
+            <button
+              onClick={() => navigate(`${catPath}?library=${libraryParam}&detail=${item.id}`)}
+              className={cn(
+                'group flex w-full items-start gap-2 rounded-xl border px-3 py-2.5 text-sm transition-all duration-200',
+                activeDetailItemId === item.id
+                  ? 'surface-2 border-primary/18 text-primary'
+                  : 'border-transparent text-sidebar-foreground/80 hover:surface-1 hover:text-foreground',
+              )}
+            >
+              <BookOpen className="mt-0.5 size-3.5 shrink-0 opacity-50 transition-transform duration-200 group-hover:translate-x-0.5" />
+              <span className="text-left leading-snug">{item.title}</span>
+            </button>
+          );
 
           return (
             <>
@@ -374,21 +423,19 @@ const Sidebar = () => {
                 {showGroupItems ? (
                   groupItems.length === 0 ? (
                     <p className="px-3 py-3 text-xs text-muted-foreground/60 italic">No items</p>
+                  ) : groupItems.length > VIRTUAL_THRESHOLD ? (
+                    <VirtualList
+                      items={groupItems}
+                      threshold={VIRTUAL_THRESHOLD}
+                      estimateSize={45}
+                      getItemKey={(item) => item.id}
+                      renderItem={renderDrillItem}
+                      itemClassName="pb-1"
+                      viewportHeight="min(54vh, 520px)"
+                    />
                   ) : (
                     groupItems.map((item) => (
-                      <button
-                        key={item.id}
-                        onClick={() => navigate(`${catPath}?library=${libraryParam}&detail=${item.id}`)}
-                        className={cn(
-                          'group flex w-full items-start gap-2 rounded-xl border px-3 py-2.5 text-sm transition-all duration-200',
-                          activeDetailItemId === item.id
-                            ? 'surface-2 border-primary/18 text-primary'
-                            : 'border-transparent text-sidebar-foreground/80 hover:surface-1 hover:text-foreground',
-                        )}
-                      >
-                        <BookOpen className="mt-0.5 size-3.5 shrink-0 opacity-50 transition-transform duration-200 group-hover:translate-x-0.5" />
-                        <span className="text-left leading-snug">{item.title}</span>
-                      </button>
+                      <div key={item.id}>{renderDrillItem(item)}</div>
                     ))
                   )
                 ) : groupField ? (
@@ -411,21 +458,19 @@ const Sidebar = () => {
                   <p className="px-3 py-3 text-xs text-muted-foreground/60 italic">
                     {sidebarSearch ? 'No results' : 'No items in this library'}
                   </p>
+                ) : searchFiltered.length > VIRTUAL_THRESHOLD ? (
+                  <VirtualList
+                    items={searchFiltered}
+                    threshold={VIRTUAL_THRESHOLD}
+                    estimateSize={45}
+                    getItemKey={(item) => item.id}
+                    renderItem={renderDrillItem}
+                    itemClassName="pb-1"
+                    viewportHeight="min(54vh, 520px)"
+                  />
                 ) : (
                   searchFiltered.map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => navigate(`${catPath}?library=${libraryParam}&detail=${item.id}`)}
-                      className={cn(
-                        'group flex w-full items-start gap-2 rounded-xl border px-3 py-2.5 text-sm transition-all duration-200',
-                        activeDetailItemId === item.id
-                          ? 'surface-2 border-primary/18 text-primary'
-                          : 'border-transparent text-sidebar-foreground/80 hover:surface-1 hover:text-foreground',
-                      )}
-                    >
-                      <BookOpen className="mt-0.5 size-3.5 shrink-0 opacity-50 transition-transform duration-200 group-hover:translate-x-0.5" />
-                      <span className="text-left leading-snug">{item.title}</span>
-                    </button>
+                    <div key={item.id}>{renderDrillItem(item)}</div>
                   ))
                 )}
               </nav>
@@ -620,7 +665,7 @@ const Sidebar = () => {
                       </button>
                     </div>
                     {isExpanded && (() => {
-                      const catItems = getItemsByCategory(cat.id);
+                      const catItems = getCategoryItems(cat.id);
                       const allExpanded = expandedLibId === '_all_' + cat.id;
                       const unassignedExpanded = expandedLibId === '_unassigned_' + cat.id;
                       return (

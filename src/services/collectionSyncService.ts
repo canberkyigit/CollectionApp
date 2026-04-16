@@ -1,5 +1,15 @@
 import { logger } from '@/services/logger';
+import { firestoreService } from '@/services/firestoreService';
 import { useSyncStore } from '@/store/useSyncStore';
+import type {
+  ActivityLogEntry,
+  Category,
+  CollectionItem,
+  Contributor,
+  Library,
+  WishlistItem,
+} from '@/types';
+import type { UserSettings } from '@/services/firestoreService';
 
 type SyncOperation<T = void> = () => Promise<T>;
 
@@ -15,6 +25,30 @@ type PerformOptions = {
   scope?: string;
 };
 
+type FirestoreMutationAction =
+  | 'saveCategory'
+  | 'deleteCategory'
+  | 'saveItem'
+  | 'saveItems'
+  | 'deleteItem'
+  | 'deleteItems'
+  | 'saveWishlistItem'
+  | 'deleteWishlistItem'
+  | 'addActivityEntry'
+  | 'clearActivityLog'
+  | 'saveLibrary'
+  | 'deleteLibrary'
+  | 'saveContributor'
+  | 'saveUserSettings';
+
+interface FirestoreMutationSpec {
+  action: FirestoreMutationAction;
+  userId: string;
+  payload: unknown;
+  scope?: string;
+  maxAttempts?: number;
+}
+
 interface SyncJob {
   id: string;
   label: string;
@@ -24,10 +58,120 @@ interface SyncJob {
   rollbackOnPermanentFailure: boolean;
   maxAttempts: number;
   attempts: number;
+  persistedSpec?: FirestoreMutationSpec;
 }
 
 const pendingJobs = new Map<string, SyncJob>();
 let processing = false;
+const OUTBOX_STORAGE_KEY = 'collectvault-sync-outbox-v1';
+
+type PersistedJob = Omit<SyncJob, 'operation' | 'rollback'> & {
+  persistedSpec: FirestoreMutationSpec;
+};
+
+function readOutbox(): PersistedJob[] {
+  if (typeof localStorage === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(OUTBOX_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as PersistedJob[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeOutbox(jobs: PersistedJob[]): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(OUTBOX_STORAGE_KEY, JSON.stringify(jobs));
+  } catch (error) {
+    logger.warn('sync.outbox', 'Failed to persist sync outbox', error);
+  }
+}
+
+function upsertOutboxJob(job: SyncJob): void {
+  if (!job.persistedSpec) return;
+  const persistedJob: PersistedJob = {
+    id: job.id,
+    label: job.label,
+    scope: job.scope,
+    rollbackOnPermanentFailure: job.rollbackOnPermanentFailure,
+    maxAttempts: job.maxAttempts,
+    attempts: job.attempts,
+    persistedSpec: job.persistedSpec,
+  };
+  const next = [
+    persistedJob,
+    ...readOutbox().filter((entry) => entry.id !== job.id),
+  ];
+  writeOutbox(next);
+}
+
+function removeOutboxJob(id: string): void {
+  writeOutbox(readOutbox().filter((entry) => entry.id !== id));
+}
+
+function getPayloadId(payload: unknown): string {
+  if (payload && typeof payload === 'object' && 'id' in payload) {
+    const id = (payload as { id?: unknown }).id;
+    if (typeof id === 'string') return id;
+  }
+  return '';
+}
+
+function createFirestoreOperation(spec: FirestoreMutationSpec): SyncOperation<void> {
+  return async () => {
+    switch (spec.action) {
+      case 'saveCategory':
+        return firestoreService.saveCategory(spec.userId, spec.payload as Category);
+      case 'deleteCategory':
+        return firestoreService.deleteCategory(spec.userId, getPayloadId(spec.payload));
+      case 'saveItem':
+        return firestoreService.saveItem(spec.userId, spec.payload as CollectionItem);
+      case 'saveItems':
+        return firestoreService.saveItems(spec.userId, spec.payload as CollectionItem[]);
+      case 'deleteItem':
+        return firestoreService.deleteItem(spec.userId, getPayloadId(spec.payload));
+      case 'deleteItems':
+        return firestoreService.deleteItems(spec.userId, spec.payload as string[]);
+      case 'saveWishlistItem':
+        return firestoreService.saveWishlistItem(spec.userId, spec.payload as WishlistItem);
+      case 'deleteWishlistItem':
+        return firestoreService.deleteWishlistItem(spec.userId, getPayloadId(spec.payload));
+      case 'addActivityEntry':
+        return firestoreService.addActivityEntry(spec.userId, spec.payload as ActivityLogEntry);
+      case 'clearActivityLog':
+        return firestoreService.clearActivityLog(spec.userId);
+      case 'saveLibrary':
+        return firestoreService.saveLibrary(spec.userId, spec.payload as Library);
+      case 'deleteLibrary':
+        return firestoreService.deleteLibrary(spec.userId, getPayloadId(spec.payload));
+      case 'saveContributor':
+        return firestoreService.saveContributor(spec.userId, spec.payload as Contributor);
+      case 'saveUserSettings':
+        return firestoreService.saveUserSettings(spec.userId, spec.payload as Partial<UserSettings>);
+    }
+  };
+}
+
+function enqueuePersistedJob(entry: PersistedJob): void {
+  if (pendingJobs.has(entry.id)) return;
+  pendingJobs.set(entry.id, {
+    ...entry,
+    operation: createFirestoreOperation(entry.persistedSpec),
+    rollbackOnPermanentFailure: entry.rollbackOnPermanentFailure ?? false,
+    maxAttempts: entry.maxAttempts ?? entry.persistedSpec.maxAttempts ?? 3,
+    attempts: entry.attempts ?? 0,
+  });
+  useSyncStore.getState().queueMutation({
+    id: entry.id,
+    label: entry.label,
+    scope: entry.scope,
+  });
+}
+
+function hydratePersistentJobs(): void {
+  readOutbox().forEach(enqueuePersistedJob);
+}
 
 function isOnline() {
   return useSyncStore.getState().isOnline;
@@ -65,9 +209,11 @@ async function processQueue(): Promise<void> {
       try {
         await nextJob.operation();
         pendingJobs.delete(nextJob.id);
+        removeOutboxJob(nextJob.id);
         useSyncStore.getState().resolveMutation(nextJob.id, nextJob.label);
       } catch (error) {
         nextJob.attempts += 1;
+        upsertOutboxJob(nextJob);
         useSyncStore.getState().failMutation(nextJob.id, nextJob.label, error);
         logger.error('sync', error, {
           label: nextJob.label,
@@ -80,6 +226,7 @@ async function processQueue(): Promise<void> {
           try {
             await nextJob.rollback();
             pendingJobs.delete(nextJob.id);
+            removeOutboxJob(nextJob.id);
             useSyncStore.getState().removeMutation(nextJob.id);
             useSyncStore.getState().pushEvent({
               level: 'warn',
@@ -123,6 +270,29 @@ export const collectionSyncService = {
     void processQueue();
   },
 
+  scheduleFirestoreMutation(label: string, spec: FirestoreMutationSpec): void {
+    const job: SyncJob = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      label,
+      scope: spec.scope ?? 'unknown',
+      operation: createFirestoreOperation(spec),
+      rollbackOnPermanentFailure: false,
+      maxAttempts: spec.maxAttempts ?? 3,
+      attempts: 0,
+      persistedSpec: spec,
+    };
+
+    pendingJobs.set(job.id, job);
+    upsertOutboxJob(job);
+    useSyncStore.getState().queueMutation({
+      id: job.id,
+      label: job.label,
+      scope: job.scope,
+    });
+
+    void processQueue();
+  },
+
   async perform<T>(
     label: string,
     operation: () => Promise<T>,
@@ -151,6 +321,7 @@ export const collectionSyncService = {
   },
 
   async retryPending(): Promise<void> {
+    hydratePersistentJobs();
     await processQueue();
   },
 
@@ -167,8 +338,22 @@ export const collectionSyncService = {
     }));
   },
 
+  getPersistedOutbox(): PersistedJob[] {
+    return readOutbox();
+  },
+
   resetForTests(): void {
+    pendingJobs.clear();
+    processing = false;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(OUTBOX_STORAGE_KEY);
+    }
+  },
+
+  clearRuntimeQueueForTests(): void {
     pendingJobs.clear();
     processing = false;
   },
 };
+
+hydratePersistentJobs();

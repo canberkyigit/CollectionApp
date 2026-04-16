@@ -7,6 +7,7 @@ import {
   onAuthStateChanged,
   updateProfile,
   updatePassword,
+  sendPasswordResetEmail,
   type User,
   type Unsubscribe,
 } from 'firebase/auth';
@@ -133,5 +134,10 @@ export const authService = {
     const user = auth.currentUser;
     if (!user) throw new Error('Not authenticated');
     await updatePassword(user, newPassword);
+  },
+
+  async sendPasswordReset(email: string): Promise<void> {
+    if (!isFirebaseConfigured()) throw new Error('Firebase not configured');
+    await sendPasswordResetEmail(auth, email);
   },
 };

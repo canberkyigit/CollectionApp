@@ -40,6 +40,8 @@ import {
   ConfirmDialog,
   AdvancedFilters,
   DEFAULT_FILTERS,
+  VirtualGrid,
+  VirtualList,
 } from '@/components/shared';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -86,6 +88,8 @@ import {
   SORT_OPTIONS,
 } from './collectionDetail-helpers';
 
+const VIRTUAL_THRESHOLD = 80;
+
 export default function CollectionDetail() {
   const { categorySlug = '' } = useParams<{ categorySlug: string }>();
 
@@ -99,21 +103,19 @@ interface CollectionDetailContentProps {
 function CollectionDetailContent({ categorySlug }: CollectionDetailContentProps) {
   const navigate = useNavigate();
 
-  const {
-    categories,
-    items,
-    libraries,
-    viewMode,
-    setViewMode,
-    sortField,
-    setSortField,
-    sortOrder,
-    setSortOrder,
-    deleteItem,
-    deleteItems,
-    bulkTransferToLibrary,
-    openItemDialog,
-  } = useCollectionStore();
+  const categories = useCollectionStore((s) => s.categories);
+  const items = useCollectionStore((s) => s.items);
+  const libraries = useCollectionStore((s) => s.libraries);
+  const viewMode = useCollectionStore((s) => s.viewMode);
+  const setViewMode = useCollectionStore((s) => s.setViewMode);
+  const sortField = useCollectionStore((s) => s.sortField);
+  const setSortField = useCollectionStore((s) => s.setSortField);
+  const sortOrder = useCollectionStore((s) => s.sortOrder);
+  const setSortOrder = useCollectionStore((s) => s.setSortOrder);
+  const deleteItem = useCollectionStore((s) => s.deleteItem);
+  const deleteItems = useCollectionStore((s) => s.deleteItems);
+  const bulkTransferToLibrary = useCollectionStore((s) => s.bulkTransferToLibrary);
+  const openItemDialog = useCollectionStore((s) => s.openItemDialog);
   const displayCurrency = useCollectionStore((s) => s.displayCurrency);
   const isRemoteDataLoading = useCollectionStore((s) => s.isRemoteDataLoading);
   const ownerUserId = useCollectionStore((s) => s.ownerUserId);
@@ -278,181 +280,296 @@ function CollectionDetailContent({ categorySlug }: CollectionDetailContentProps)
   const CategoryIcon = getCategoryIcon(category.icon);
   const isBookCategory = category.id === 'cat-books';
 
-  const renderGridView = () => (
-    <MotionGrid
-      className="grid gap-4"
-      style={{
-        gridTemplateColumns: `repeat(auto-fill, minmax(${isBookCategory ? '200px' : '260px'}, 1fr))`,
-      }}
-      variants={staggerContainer}
-      initial="hidden"
-      animate="visible"
-      key={categorySlug}
-    >
-      {filteredItems.map((item) => {
-        const keyFields = getKeyFields(category, item);
-        const condBadge = getConditionBadgeProps(item.condition);
-        const isSelected = selectedItems.includes(item.id);
-        const qty = (item.customFields?.quantity as number) || item.quantity || 1;
+  const renderGridCard = (item: typeof filteredItems[number]) => {
+    const keyFields = getKeyFields(category, item);
+    const condBadge = getConditionBadgeProps(item.condition);
+    const isSelected = selectedItems.includes(item.id);
+    const qty = (item.customFields?.quantity as number) || item.quantity || 1;
 
-        return (
-          <MotionItem key={item.id} variants={staggerItem}>
-            <Card
+    return (
+      <Card
+        className={cn(
+          'group cursor-pointer overflow-hidden transition-shadow duration-300',
+          'hover:shadow-xl hover:shadow-primary/5',
+          isSelected && 'ring-2 ring-primary',
+        )}
+        onClick={() => updateSearchParam('detail', item.id)}
+      >
+        <div className="flex items-center gap-1.5 border-b px-2.5 py-1.5" onClick={(e) => e.stopPropagation()}>
+          <Checkbox
+            checked={isSelected}
+            onCheckedChange={() => toggleSelectItem(item.id)}
+            className="size-4 shrink-0"
+          />
+          {qty > 1 && (
+            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">x{qty}</Badge>
+          )}
+          <div className="ml-auto flex items-center gap-1">
+            {item.isRead && (
+              <Badge variant="outline" className="text-[10px] gap-0.5 border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-400 px-1.5 py-0">
+                <Check className="size-2.5" /> Read
+              </Badge>
+            )}
+            <Badge variant={condBadge.variant} className={cn('text-[10px] px-1.5 py-0', condBadge.className)}>{item.condition}</Badge>
+          </div>
+        </div>
+
+        <div className={cn(
+          'relative overflow-hidden bg-gradient-to-br from-primary/20 via-primary/10 to-transparent',
+          isBookCategory ? 'aspect-[2/3]' : 'aspect-[4/3]',
+        )}>
+          {item.images.length > 0 ? (
+            <img
+              src={item.images[0]}
+              alt={item.title}
               className={cn(
-                'group cursor-pointer overflow-hidden transition-shadow duration-300',
-                'hover:shadow-xl hover:shadow-primary/5',
-                isSelected && 'ring-2 ring-primary',
+                'h-full w-full transition-transform duration-500 group-hover:scale-105',
+                isBookCategory ? 'object-contain' : 'object-cover',
               )}
-              onClick={() => updateSearchParam('detail', item.id)}
-            >
-              <div className="flex items-center gap-1.5 border-b px-2.5 py-1.5" onClick={(e) => e.stopPropagation()}>
-                <Checkbox
-                  checked={isSelected}
-                  onCheckedChange={() => toggleSelectItem(item.id)}
-                  className="size-4 shrink-0"
-                />
-                {qty > 1 && (
-                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0">x{qty}</Badge>
-                )}
-                <div className="ml-auto flex items-center gap-1">
-                  {item.isRead && (
-                    <Badge variant="outline" className="text-[10px] gap-0.5 border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-400 px-1.5 py-0">
-                      <Check className="size-2.5" /> Read
-                    </Badge>
-                  )}
-                  <Badge variant={condBadge.variant} className={cn('text-[10px] px-1.5 py-0', condBadge.className)}>{item.condition}</Badge>
-                </div>
-              </div>
+            />
+          ) : (
+            <CategoryIcon className="absolute inset-0 m-auto size-14 text-primary/20 transition-transform duration-500 group-hover:scale-110" />
+          )}
+        </div>
 
-              <div className={cn(
-                'relative overflow-hidden bg-gradient-to-br from-primary/20 via-primary/10 to-transparent',
-                isBookCategory ? 'aspect-[2/3]' : 'aspect-[4/3]',
-              )}>
-                {item.images.length > 0 ? (
-                  <img
-                    src={item.images[0]}
-                    alt={item.title}
-                    className={cn(
-                      'h-full w-full transition-transform duration-500 group-hover:scale-105',
-                      isBookCategory ? 'object-contain' : 'object-cover',
-                    )}
-                  />
-                ) : (
-                  <CategoryIcon className="absolute inset-0 m-auto size-14 text-primary/20 transition-transform duration-500 group-hover:scale-110" />
-                )}
-              </div>
+        <CardContent className="space-y-1 p-2.5 pt-2">
+          <h3 className="text-sm font-semibold leading-tight tracking-tight line-clamp-2">
+            {item.title}
+          </h3>
+          {keyFields.map((kf) => (
+            <p key={kf.label} className="text-xs text-muted-foreground line-clamp-1">
+              {kf.value}
+            </p>
+          ))}
+        </CardContent>
+      </Card>
+    );
+  };
 
-              <CardContent className="space-y-1 p-2.5 pt-2">
-                <h3 className="text-sm font-semibold leading-tight tracking-tight line-clamp-2">
-                  {item.title}
-                </h3>
-                {keyFields.map((kf) => (
-                  <p key={kf.label} className="text-xs text-muted-foreground line-clamp-1">
-                    {kf.value}
-                  </p>
-                ))}
-              </CardContent>
-            </Card>
+  const renderGridView = () => (
+    filteredItems.length > VIRTUAL_THRESHOLD ? (
+      <VirtualGrid
+        items={filteredItems}
+        threshold={VIRTUAL_THRESHOLD}
+        minColumnWidth={isBookCategory ? 200 : 260}
+        estimateRowHeight={isBookCategory ? 390 : 310}
+        getItemKey={(item) => item.id}
+        renderItem={renderGridCard}
+        gapClassName="gap-4"
+      />
+    ) : (
+      <MotionGrid
+        className="grid gap-4"
+        style={{
+          gridTemplateColumns: `repeat(auto-fill, minmax(${isBookCategory ? '200px' : '260px'}, 1fr))`,
+        }}
+        variants={staggerContainer}
+        initial="hidden"
+        animate="visible"
+        key={categorySlug}
+      >
+        {filteredItems.map((item) => (
+          <MotionItem key={item.id} variants={staggerItem}>
+            {renderGridCard(item)}
           </MotionItem>
-        );
-      })}
-    </MotionGrid>
+        ))}
+      </MotionGrid>
+    )
   );
+
+  const renderCoverTile = (item: typeof filteredItems[number]) => {
+    const isSelected = selectedItems.includes(item.id);
+    return (
+      <div
+        className={cn(
+          'group relative cursor-pointer overflow-hidden rounded-lg',
+          'hover:shadow-lg',
+          isSelected && 'ring-2 ring-primary',
+        )}
+        onClick={() => updateSearchParam('detail', item.id)}
+      >
+        <div className={cn(isBookCategory ? 'aspect-[2/3]' : 'aspect-square', 'bg-muted')}>
+          {item.images.length > 0 ? (
+            <img src={item.images[0]} alt={item.title} className="h-full w-full object-contain" />
+          ) : (
+            <div className="flex h-full items-center justify-center">
+              <CategoryIcon className="size-8 text-muted-foreground/30" />
+            </div>
+          )}
+        </div>
+        <div className="absolute left-1.5 bottom-1.5" onClick={(e) => e.stopPropagation()}>
+          <Checkbox
+            checked={isSelected}
+            onCheckedChange={() => toggleSelectItem(item.id)}
+            className="size-4 border-2 border-white/60 bg-black/30 data-[state=checked]:bg-primary"
+          />
+        </div>
+        {item.isRead && (
+          <div className="absolute right-1.5 top-1.5">
+            <Check className="size-4 text-green-400 drop-shadow" />
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const renderCoversView = () => (
-    <MotionGrid
-      className="grid gap-3"
-      style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))' }}
-      variants={staggerContainer}
-      initial="hidden"
-      animate="visible"
-      key={`covers-${categorySlug}`}
-    >
-      {filteredItems.map((item) => {
-        const isSelected = selectedItems.includes(item.id);
-        return (
-          <MotionItem
-            key={item.id}
-            variants={staggerItem}
-            className={cn(
-              'group relative cursor-pointer overflow-hidden rounded-lg',
-              'hover:shadow-lg',
-              isSelected && 'ring-2 ring-primary',
-            )}
-            onClick={() => updateSearchParam('detail', item.id)}
-          >
-            <div className={cn(isBookCategory ? 'aspect-[2/3]' : 'aspect-square', 'bg-muted')}>
-              {item.images.length > 0 ? (
-                <img src={item.images[0]} alt={item.title} className="h-full w-full object-contain" />
-              ) : (
-                <div className="flex h-full items-center justify-center">
-                  <CategoryIcon className="size-8 text-muted-foreground/30" />
-                </div>
-              )}
-            </div>
-            <div className="absolute left-1.5 bottom-1.5" onClick={(e) => e.stopPropagation()}>
-              <Checkbox
-                checked={isSelected}
-                onCheckedChange={() => toggleSelectItem(item.id)}
-                className="size-4 border-2 border-white/60 bg-black/30 data-[state=checked]:bg-primary"
-              />
-            </div>
-            {item.isRead && (
-              <div className="absolute right-1.5 top-1.5">
-                <Check className="size-4 text-green-400 drop-shadow" />
-              </div>
-            )}
+    filteredItems.length > VIRTUAL_THRESHOLD ? (
+      <VirtualGrid
+        items={filteredItems}
+        threshold={VIRTUAL_THRESHOLD}
+        minColumnWidth={120}
+        estimateRowHeight={isBookCategory ? 230 : 150}
+        getItemKey={(item) => item.id}
+        renderItem={renderCoverTile}
+        gapClassName="gap-3"
+      />
+    ) : (
+      <MotionGrid
+        className="grid gap-3"
+        style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))' }}
+        variants={staggerContainer}
+        initial="hidden"
+        animate="visible"
+        key={`covers-${categorySlug}`}
+      >
+        {filteredItems.map((item) => (
+          <MotionItem key={item.id} variants={staggerItem}>
+            {renderCoverTile(item)}
           </MotionItem>
-        );
-      })}
-    </MotionGrid>
+        ))}
+      </MotionGrid>
+    )
   );
+
+  const renderNameRow = (item: typeof filteredItems[number]) => {
+    const isSelected = selectedItems.includes(item.id);
+    return (
+      <div
+        className={cn(
+          'flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors hover:bg-muted/50',
+          isSelected && 'bg-primary/5',
+        )}
+        onClick={() => updateSearchParam('detail', item.id)}
+      >
+        <div onClick={(e) => e.stopPropagation()}>
+          <Checkbox
+            checked={isSelected}
+            onCheckedChange={() => toggleSelectItem(item.id)}
+          />
+        </div>
+        <span className="flex-1 text-sm font-medium truncate">{item.title}</span>
+        {item.isRead && <Check className="size-4 text-green-500" />}
+        {item.customFields?.author != null && item.customFields.author !== '' && (
+          <span className="text-xs text-muted-foreground truncate max-w-[200px]">
+            {String(item.customFields.author)}
+          </span>
+        )}
+        <span className="text-xs font-medium shrink-0">
+          {formatCurrency(getCollectionItemPurchasePrice(item, displayCurrency), displayCurrency)}
+        </span>
+      </div>
+    );
+  };
 
   const renderNamesView = () => (
     <Card>
-      <div className="divide-y">
-        {filteredItems.map((item) => {
-          const isSelected = selectedItems.includes(item.id);
-          return (
-            <div
-              key={item.id}
-              className={cn(
-                'flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors hover:bg-muted/50',
-                isSelected && 'bg-primary/5',
-              )}
-              onClick={() => updateSearchParam('detail', item.id)}
-            >
-              <div onClick={(e) => e.stopPropagation()}>
-                <Checkbox
-                  checked={isSelected}
-                  onCheckedChange={() => toggleSelectItem(item.id)}
-                />
-              </div>
-              <span className="flex-1 text-sm font-medium truncate">{item.title}</span>
-              {item.isRead && <Check className="size-4 text-green-500" />}
-              {item.customFields?.author != null && item.customFields.author !== '' && (
-                <span className="text-xs text-muted-foreground truncate max-w-[200px]">
-                  {String(item.customFields.author)}
-                </span>
-              )}
-              <span className="text-xs font-medium shrink-0">
-                {formatCurrency(getCollectionItemPurchasePrice(item, displayCurrency), displayCurrency)}
-              </span>
-            </div>
-          );
-        })}
-      </div>
+      <VirtualList
+        items={filteredItems}
+        threshold={VIRTUAL_THRESHOLD}
+        estimateSize={46}
+        getItemKey={(item) => item.id}
+        renderItem={renderNameRow}
+        className="divide-y"
+        viewportHeight="min(72vh, 720px)"
+      />
     </Card>
   );
+
+  const renderTableRow = (item: typeof filteredItems[number]) => {
+    const condBadge = getConditionBadgeProps(item.condition);
+    const isSelected = selectedItems.includes(item.id);
+
+    return (
+      <div
+        className={cn(
+          'grid grid-cols-[48px_minmax(220px,1fr)_140px_140px_48px] border-b transition-colors hover:bg-muted/30 cursor-pointer text-sm',
+          isSelected && 'bg-primary/5',
+        )}
+        onClick={() => updateSearchParam('detail', item.id)}
+      >
+        <div className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+          <Checkbox checked={isSelected} onCheckedChange={() => toggleSelectItem(item.id)} />
+        </div>
+        <div className="px-4 py-3">
+          <div className="flex items-center gap-3">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+              <CategoryIcon className="size-4 text-primary" />
+            </div>
+            <span className="font-medium">{item.title}</span>
+          </div>
+        </div>
+        <div className="px-4 py-3"><Badge {...condBadge}>{item.condition}</Badge></div>
+        <div className="px-4 py-3 text-muted-foreground">{formatDate(item.createdAt)}</div>
+        <div className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="size-8">
+                <MoreHorizontal className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => updateSearchParam('detail', item.id)}>
+                <Eye className="mr-2 size-4" /> View
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => openItemDialog(item.categoryId, item)}>
+                <Pencil className="mr-2 size-4" /> Edit
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => openSingleDelete(item.id)}>
+                <Trash2 className="mr-2 size-4" /> Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+    );
+  };
 
   const renderTableView = () => (
     <Card>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        {filteredItems.length > VIRTUAL_THRESHOLD ? (
+          <div className="min-w-[640px]">
+            <div className="grid grid-cols-[48px_minmax(220px,1fr)_140px_140px_48px] border-b bg-muted/50 text-sm">
+              <div className="px-4 py-3">
+                <Checkbox
+                  aria-label="Select all items"
+                  checked={filteredItems.length > 0 && selectedItems.length === filteredItems.length}
+                  onCheckedChange={toggleSelectAll}
+                />
+              </div>
+              <div className="px-4 py-3 font-medium text-muted-foreground">Title</div>
+              <div className="px-4 py-3 font-medium text-muted-foreground">Condition</div>
+              <div className="px-4 py-3 font-medium text-muted-foreground">Date Added</div>
+              <div className="px-4 py-3" />
+            </div>
+            <VirtualList
+              items={filteredItems}
+              threshold={VIRTUAL_THRESHOLD}
+              estimateSize={65}
+              getItemKey={(item) => item.id}
+              renderItem={renderTableRow}
+              viewportHeight="min(72vh, 720px)"
+            />
+          </div>
+        ) : (
+          <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-muted/50">
               <th className="w-12 px-4 py-3 text-left">
                 <Checkbox
+                  aria-label="Select all items"
                   checked={filteredItems.length > 0 && selectedItems.length === filteredItems.length}
                   onCheckedChange={toggleSelectAll}
                 />
@@ -515,7 +632,8 @@ function CollectionDetailContent({ categorySlug }: CollectionDetailContentProps)
               );
             })}
           </tbody>
-        </table>
+          </table>
+        )}
       </div>
     </Card>
   );
