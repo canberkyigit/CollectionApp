@@ -50,7 +50,9 @@ export function DesktopUpdatePrompt() {
   }, []);
 
   const handleDownload = async () => {
-    if (!api.current) return;
+    if (!api.current || phase.kind !== 'available') return;
+    const { version } = phase;
+    setPhase({ kind: 'downloading', version, progress: { percent: 0, bytesPerSecond: 0, transferred: 0, total: 0 } });
     await api.current.startDownload();
   };
 
