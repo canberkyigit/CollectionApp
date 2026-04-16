@@ -131,7 +131,7 @@ const AppLayout = () => {
 
   if (isLoading) {
     return (
-      <div className="surface-page flex h-screen items-center justify-center">
+      <div className="desktop-content-shell surface-page flex h-screen items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="flex size-14 items-center justify-center rounded-xl border border-primary/20 bg-primary/10">
             <Layers className="size-7 animate-pulse text-primary" />
@@ -148,7 +148,7 @@ const AppLayout = () => {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="surface-page flex h-screen overflow-hidden text-foreground">
+      <div className="desktop-content-shell surface-page flex h-screen overflow-hidden text-foreground">
         <Sidebar />
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <Topbar />

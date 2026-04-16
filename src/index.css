@@ -126,8 +126,22 @@
     app-region: no-drag;
   }
 
-  .desktop-app-mac .desktop-window-controls-spacer {
-    padding-left: 5.5rem;
+  .desktop-app-mac body::before {
+    content: "";
+    position: fixed;
+    inset: 0 0 auto;
+    z-index: 60;
+    height: 2rem;
+    border-bottom: 1px solid color-mix(in oklab, var(--color-border) 72%, transparent);
+    background-color: color-mix(in oklab, var(--color-surface-2) 90%, transparent);
+    backdrop-filter: blur(20px);
+    -webkit-app-region: drag;
+    app-region: drag;
+  }
+
+  .desktop-app-mac .desktop-content-shell {
+    height: calc(100vh - 2rem);
+    margin-top: 2rem;
   }
 }
 
