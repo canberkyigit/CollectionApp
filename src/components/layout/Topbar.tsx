@@ -212,7 +212,6 @@ function SearchDropdown({
 
 const Topbar = () => {
   const toggleSidebar = useCollectionStore((s) => s.toggleSidebar);
-  const sidebarOpen = useCollectionStore((s) => s.sidebarOpen);
   const theme = useCollectionStore((s) => s.theme);
   const toggleTheme = useCollectionStore((s) => s.toggleTheme);
   const searchQuery = useCollectionStore((s) => s.searchQuery);
@@ -330,10 +329,7 @@ const Topbar = () => {
   ]);
 
   return (
-    <header className={cn(
-      'desktop-titlebar-drag surface-chrome sticky top-0 z-30 flex h-14 shrink-0 items-center gap-1.5 border-b px-2 sm:h-16 sm:gap-3 sm:px-4 md:px-6',
-      !sidebarOpen && 'desktop-window-controls-spacer',
-    )}>
+    <header className="desktop-titlebar-drag surface-chrome sticky top-0 z-30 flex h-14 shrink-0 items-center gap-1.5 border-b px-2 sm:h-16 sm:gap-3 sm:px-4 md:px-6">
       <Tooltip>
         <TooltipTrigger asChild>
           <Button

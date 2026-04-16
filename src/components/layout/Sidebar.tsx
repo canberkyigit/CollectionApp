@@ -263,7 +263,7 @@ const Sidebar = () => {
         sidebarOpen ? 'w-64' : 'w-0 overflow-hidden',
       )}
     >
-      <div className="desktop-titlebar-drag desktop-window-controls-spacer relative flex h-16 items-center overflow-hidden border-b border-border/70 px-4">
+      <div className="desktop-titlebar-drag relative flex h-16 items-center overflow-hidden border-b border-border/70 px-4">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(99,102,241,0.18),transparent_42%),linear-gradient(180deg,rgba(255,255,255,0.03),transparent)]" />
         <div className="relative flex w-full items-center gap-3">
           <div className="surface-brand flex h-9 w-9 items-center justify-center rounded-2xl border border-primary/25">
