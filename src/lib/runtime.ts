@@ -19,6 +19,7 @@ export interface CollectVaultUpdaterApi {
   onDownloaded: (cb: (info: UpdaterVersionInfo) => void) => void;
   onNotAvailable: (cb: (info: UpdaterVersionInfo) => void) => void;
   onError: (cb: (info: UpdaterErrorInfo) => void) => void;
+  onInstallFailed: (cb: (info: UpdaterErrorInfo) => void) => void;
   removeListeners: () => void;
   startDownload: () => Promise<void>;
   install: () => Promise<void>;

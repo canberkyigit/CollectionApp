@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowDownToLine, CheckCircle2, RefreshCw, X, Zap } from 'lucide-react';
+import { ArrowDownToLine, CheckCircle2, ExternalLink, RefreshCw, X, Zap } from 'lucide-react';
 import { isDesktopApp } from '@/lib/runtime';
 import type { UpdaterProgressInfo } from '@/lib/runtime';
 
@@ -8,6 +8,7 @@ type UpdatePhase =
   | { kind: 'available'; version: string }
   | { kind: 'downloading'; version: string; progress: UpdaterProgressInfo }
   | { kind: 'downloaded'; version: string }
+  | { kind: 'installFailed'; version: string }
   | { kind: 'error'; message: string };
 
 function formatBytes(bytes: number): string {
@@ -43,7 +44,14 @@ export function DesktopUpdatePrompt() {
 
     u.onError((info) => {
       setPhase({ kind: 'error', message: info.message });
-      setTimeout(() => setVisible(false), 4000);
+      setTimeout(() => setVisible(false), 5000);
+    });
+
+    u.onInstallFailed((_info) => {
+      setPhase((prev) => ({
+        kind: 'installFailed',
+        version: prev.kind === 'downloaded' ? prev.version : '',
+      }));
     });
 
     return () => u.removeListeners();
@@ -71,6 +79,7 @@ export function DesktopUpdatePrompt() {
 
   const isDownloading = phase.kind === 'downloading';
   const isDownloaded = phase.kind === 'downloaded';
+  const isInstallFailed = phase.kind === 'installFailed';
   const isError = phase.kind === 'error';
   const percent = isDownloading ? Math.round(phase.progress.percent) : 0;
 
@@ -100,19 +109,19 @@ export function DesktopUpdatePrompt() {
             <div
               className="flex size-11 shrink-0 items-center justify-center rounded-xl"
               style={{
-                background: isError
+                background: isError || isInstallFailed
                   ? 'oklch(0.4 0.15 25 / 0.15)'
                   : isDownloaded
                     ? 'oklch(0.55 0.15 145 / 0.15)'
                     : 'oklch(0.65 0.18 265 / 0.12)',
-                border: isError
+                border: isError || isInstallFailed
                   ? '1px solid oklch(0.5 0.15 25 / 0.3)'
                   : isDownloaded
                     ? '1px solid oklch(0.55 0.15 145 / 0.3)'
                     : '1px solid oklch(0.65 0.18 265 / 0.25)',
               }}
             >
-              {isError ? (
+              {isError || isInstallFailed ? (
                 <X className="size-5" style={{ color: 'oklch(0.65 0.15 25)' }} />
               ) : isDownloaded ? (
                 <CheckCircle2 className="size-5" style={{ color: 'oklch(0.7 0.15 145)' }} />
@@ -127,20 +136,24 @@ export function DesktopUpdatePrompt() {
               <p className="text-sm font-semibold leading-tight" style={{ color: 'oklch(0.95 0.01 260)' }}>
                 {isError
                   ? 'Update failed'
-                  : isDownloaded
-                    ? 'Ready to install'
-                    : isDownloading
-                      ? 'Downloading update…'
-                      : `Version ${(phase as { version: string }).version} is available`}
+                  : isInstallFailed
+                    ? 'Auto-install unavailable'
+                    : isDownloaded
+                      ? 'Ready to install'
+                      : isDownloading
+                        ? 'Downloading update…'
+                        : `Version ${(phase as { version: string }).version} is available`}
               </p>
               <p className="mt-0.5 text-xs leading-relaxed" style={{ color: 'oklch(0.58 0.02 260)' }}>
                 {isError
                   ? phase.message
-                  : isDownloaded
-                    ? `CollectVault ${(phase as { version: string }).version} is ready. Restart to apply.`
-                    : isDownloading
-                      ? `${percent}% · ${formatBytes(phase.progress.bytesPerSecond)}/s · ${formatBytes(phase.progress.transferred)} of ${formatBytes(phase.progress.total)}`
-                      : 'A new CollectVault build is available. Install it now?'}
+                  : isInstallFailed
+                    ? 'This build is unsigned. Download the new version manually from GitHub.'
+                    : isDownloaded
+                      ? `CollectVault ${(phase as { version: string }).version} is ready. Restart to apply.`
+                      : isDownloading
+                        ? `${percent}% · ${formatBytes(phase.progress.bytesPerSecond)}/s · ${formatBytes(phase.progress.transferred)} of ${formatBytes(phase.progress.total)}`
+                        : 'A new CollectVault build is available. Install it now?'}
               </p>
             </div>
 
@@ -184,7 +197,35 @@ export function DesktopUpdatePrompt() {
           {/* Action buttons */}
           {!isError && (
             <div className="flex gap-2.5">
-              {isDownloaded ? (
+              {isInstallFailed ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => window.collectVaultDesktop?.openExternal?.('https://github.com/canberkyigit/CollectionApp-Desktop/releases/latest')}
+                    className="flex h-9 flex-1 items-center justify-center gap-2 rounded-xl text-xs font-semibold transition-all duration-150"
+                    style={{
+                      background: 'linear-gradient(135deg, oklch(0.58 0.18 265), oklch(0.52 0.2 265))',
+                      color: 'oklch(0.98 0 0)',
+                      boxShadow: '0 2px 12px oklch(0.55 0.18 265 / 0.35)',
+                    }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.opacity = '0.88'; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = '1'; }}
+                  >
+                    <ExternalLink className="size-3.5" />
+                    Open GitHub Releases
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDismiss}
+                    className="flex h-9 items-center justify-center rounded-xl px-4 text-xs font-medium transition-colors"
+                    style={{ background: 'oklch(0.2 0.01 260)', color: 'oklch(0.6 0.02 260)', border: '1px solid oklch(0.28 0.01 260)' }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'oklch(0.8 0.02 260)'; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'oklch(0.6 0.02 260)'; }}
+                  >
+                    Dismiss
+                  </button>
+                </>
+              ) : isDownloaded ? (
                 <>
                   <button
                     type="button"
