@@ -381,7 +381,7 @@ export default function Favorites() {
         'min-w-0 flex-1',
         detailPanelItemId ? 'overflow-y-auto p-3 sm:p-4 md:p-6 scrollbar-thin' : '',
       )}>
-    <div className="space-y-4 sm:space-y-6">
+    <div className="space-y-4 sm:space-y-6 md:space-y-8">
       <PageHeader
         title="Favorites"
         description="Your starred collection items"

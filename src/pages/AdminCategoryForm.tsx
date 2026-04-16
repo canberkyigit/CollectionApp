@@ -215,7 +215,7 @@ export default function AdminCategoryForm() {
 
   if (isEdit && !existingCategory) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6 md:space-y-8">
         <PageHeader
           title="Category Not Found"
           breadcrumbs={getAdminBreadcrumbs(searchSuffix, [{ label: 'Categories', href: categoriesPath }])}
@@ -232,7 +232,7 @@ export default function AdminCategoryForm() {
 
   return (
     <PageTransition>
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6 pb-24">
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pb-24 sm:space-y-6 md:space-y-8">
       <PageHeader
         title={isEdit ? 'Edit Category' : 'New Category'}
         description={isEdit ? 'Update category details and custom fields' : 'Create a new collection category with custom fields'}

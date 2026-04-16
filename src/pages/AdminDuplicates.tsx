@@ -119,7 +119,7 @@ export default function AdminDuplicates() {
 
   return (
     <PageTransition>
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6 md:space-y-8">
         <PageHeader
           title="Duplicate Detection"
           description="Items that may be duplicates based on title or ISBN"
