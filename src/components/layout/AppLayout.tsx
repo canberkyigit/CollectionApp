@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { Outlet, Navigate } from 'react-router-dom';
 import { Toaster, toast } from 'sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -13,7 +13,11 @@ import {
 } from '@/store/useCollectionStore';
 import { useSyncStore } from '@/store/useSyncStore';
 import { collectionSyncService } from '@/services/collectionSyncService';
+import { isBackupBundle, type BackupBundle } from '@/services/backupRestoreService';
+import { getDesktopLocalSyncApi } from '@/lib/runtime';
 import { Layers } from 'lucide-react';
+
+const LOCAL_AUTO_SYNC_DELAY_MS = 10_000;
 
 const AppLayout = () => {
   const { user, isAuthenticated, isLoading, init } = useAuthStore();
@@ -22,10 +26,30 @@ const AppLayout = () => {
   const resetForUser = useCollectionStore((s) => s.resetForUser);
   const upsertContributorProfile = useCollectionStore((s) => s.upsertContributorProfile);
   const getLentItems = useCollectionStore((s) => s.getLentItems);
+  const restoreBackupBundle = useCollectionStore((s) => s.restoreBackupBundle);
+  const isRemoteDataLoading = useCollectionStore((s) => s.isRemoteDataLoading);
+  const categories = useCollectionStore((s) => s.categories);
+  const items = useCollectionStore((s) => s.items);
+  const libraries = useCollectionStore((s) => s.libraries);
+  const wishlist = useCollectionStore((s) => s.wishlist);
+  const activityLog = useCollectionStore((s) => s.activityLog);
+  const contributors = useCollectionStore((s) => s.contributors);
+  const displayCurrency = useCollectionStore((s) => s.displayCurrency);
+  const theme = useCollectionStore((s) => s.theme);
+  const sidebarOpen = useCollectionStore((s) => s.sidebarOpen);
+  const menuCollectionStyle = useCollectionStore((s) => s.menuCollectionStyle);
+  const dashboardWidgets = useCollectionStore((s) => s.dashboardWidgets);
+  const readNotificationIds = useCollectionStore((s) => s.readNotificationIds);
+  const notifications = useCollectionStore((s) => s.notifications);
   const setOnlineState = useSyncStore((s) => s.setOnlineState);
+  const isOnline = useSyncStore((s) => s.isOnline);
+  const pushSyncEvent = useSyncStore((s) => s.pushEvent);
   const loadedUidRef = useRef<string | null>(null);
   const overdueNotifiedRef = useRef(false);
   const remoteUnsubRef = useRef<(() => void) | null>(null);
+  const localFallbackAttemptRef = useRef<string | null>(null);
+  const localAutoSyncTimerRef = useRef<number | null>(null);
+  const lastLocalAutoSyncFingerprintRef = useRef('');
 
   useEffect(() => {
     const unsub = init();
@@ -47,6 +71,38 @@ const AppLayout = () => {
       window.removeEventListener('offline', handleOffline);
     };
   }, [setOnlineState]);
+
+  const loadDesktopLocalFallback = useCallback(async (reason: string) => {
+    const api = getDesktopLocalSyncApi();
+    if (!api) return false;
+
+    const attemptKey = `${user?.uid ?? 'anonymous'}:${reason}`;
+    if (localFallbackAttemptRef.current === attemptKey) return false;
+    localFallbackAttemptRef.current = attemptKey;
+
+    try {
+      const snapshot = await api.restoreSnapshot();
+      if (!isBackupBundle(snapshot)) return false;
+
+      await restoreBackupBundle(snapshot, 'replace', { skipRemoteSync: true });
+      pushSyncEvent({
+        level: 'warn',
+        message: reason === 'offline'
+          ? 'Loaded desktop local copy while offline'
+          : 'Loaded desktop local copy after cloud load failed',
+      });
+      toast.success('Loaded desktop local copy', {
+        description: 'CollectVault is using the saved local snapshot on this Mac.',
+      });
+      return true;
+    } catch {
+      pushSyncEvent({
+        level: 'warn',
+        message: 'Desktop local copy was not available',
+      });
+      return false;
+    }
+  }, [user?.uid, restoreBackupBundle, pushSyncEvent]);
 
   useEffect(() => {
     remoteUnsubRef.current?.();
@@ -70,13 +126,29 @@ const AppLayout = () => {
         lastContributionAt: new Date().toISOString(),
       });
       if (loadedUidRef.current !== user.uid) {
-        loadedUidRef.current = user.uid;
         resetForUser(user.uid, 'empty');
-        void loadFromFirestore(user.uid).finally(() => {
-          remoteUnsubRef.current = subscribeToFirestore(user.uid);
+        if (!isOnline) {
+          void loadDesktopLocalFallback('offline');
+          return;
+        }
+
+        void loadFromFirestore(user.uid).then(async (loadedRemote) => {
+          if (loadedRemote) {
+            loadedUidRef.current = user.uid;
+          } else {
+            await loadDesktopLocalFallback('cloud-failed');
+          }
+        }).finally(() => {
+          if (isOnline) {
+            remoteUnsubRef.current = subscribeToFirestore(user.uid);
+          }
         });
       } else {
-        remoteUnsubRef.current = subscribeToFirestore(user.uid);
+        if (isOnline) {
+          remoteUnsubRef.current = subscribeToFirestore(user.uid);
+        } else {
+          void loadDesktopLocalFallback('offline');
+        }
       }
     } else if (user?.uid === 'offline') {
       setFirebaseUserId(null);
@@ -97,6 +169,7 @@ const AppLayout = () => {
         totalContributionValue: 0,
         lastContributionAt: new Date().toISOString(),
       });
+      void loadDesktopLocalFallback('offline');
     } else {
       setFirebaseUserId(null);
       setCurrentCollectionActor(null);
@@ -109,7 +182,105 @@ const AppLayout = () => {
       remoteUnsubRef.current?.();
       remoteUnsubRef.current = null;
     };
-  }, [user, loadFromFirestore, subscribeToFirestore, resetForUser, upsertContributorProfile]);
+  }, [
+    user,
+    isOnline,
+    loadFromFirestore,
+    subscribeToFirestore,
+    resetForUser,
+    upsertContributorProfile,
+    restoreBackupBundle,
+    pushSyncEvent,
+    loadDesktopLocalFallback,
+  ]);
+
+  useEffect(() => {
+    const api = getDesktopLocalSyncApi();
+    if (!api || !isAuthenticated || isRemoteDataLoading) return;
+
+    const snapshot: BackupBundle = {
+      schemaVersion: 1,
+      exportedAt: new Date().toISOString(),
+      categories,
+      items,
+      libraries,
+      wishlist,
+      activityLog,
+      contributors,
+      settings: {
+        displayCurrency,
+        theme,
+        sidebarOpen,
+        menuCollectionStyle,
+        dashboardWidgets,
+        readNotificationIds,
+        notifications,
+      },
+    };
+
+    const fingerprint = JSON.stringify({
+      categories,
+      items,
+      libraries,
+      wishlist,
+      activityLog,
+      contributors,
+      displayCurrency,
+      theme,
+      sidebarOpen,
+      menuCollectionStyle,
+      dashboardWidgets,
+      readNotificationIds,
+      notifications,
+    });
+
+    if (fingerprint === lastLocalAutoSyncFingerprintRef.current) return;
+
+    if (localAutoSyncTimerRef.current) {
+      window.clearTimeout(localAutoSyncTimerRef.current);
+    }
+
+    localAutoSyncTimerRef.current = window.setTimeout(() => {
+      void api.syncSnapshot(snapshot).then(() => {
+        lastLocalAutoSyncFingerprintRef.current = fingerprint;
+        pushSyncEvent({
+          level: 'info',
+          message: 'Desktop local copy auto-synced',
+        });
+      }).catch((error) => {
+        pushSyncEvent({
+          level: 'error',
+          message: error instanceof Error
+            ? `Desktop local auto-sync failed: ${error.message}`
+            : 'Desktop local auto-sync failed',
+        });
+      });
+    }, LOCAL_AUTO_SYNC_DELAY_MS);
+
+    return () => {
+      if (localAutoSyncTimerRef.current) {
+        window.clearTimeout(localAutoSyncTimerRef.current);
+        localAutoSyncTimerRef.current = null;
+      }
+    };
+  }, [
+    isAuthenticated,
+    isRemoteDataLoading,
+    categories,
+    items,
+    libraries,
+    wishlist,
+    activityLog,
+    contributors,
+    displayCurrency,
+    theme,
+    sidebarOpen,
+    menuCollectionStyle,
+    dashboardWidgets,
+    readNotificationIds,
+    notifications,
+    pushSyncEvent,
+  ]);
 
   useEffect(() => {
     if (!isAuthenticated || overdueNotifiedRef.current) return;

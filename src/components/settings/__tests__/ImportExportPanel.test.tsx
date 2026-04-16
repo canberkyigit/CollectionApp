@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ImportExportPanel } from '@/components/settings/ImportExportPanel';
 import { seedAuthStore, seedCollectionStore } from '@/test/render';
@@ -40,8 +40,12 @@ function mockFileReader(result: string) {
 }
 
 describe('ImportExportPanel', () => {
+  let originalDesktopBridge: typeof window.collectVaultDesktop;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    originalDesktopBridge = window.collectVaultDesktop;
+    window.collectVaultDesktop = undefined;
     Object.defineProperty(URL, 'createObjectURL', {
       configurable: true,
       value: vi.fn(() => 'blob:backup'),
@@ -53,6 +57,10 @@ describe('ImportExportPanel', () => {
     HTMLAnchorElement.prototype.click = vi.fn();
     seedAuthStore({ uid: 'contrib-1', displayName: 'Ada Curator', role: 'admin' });
     seedCollectionStore(buildSeedData());
+  });
+
+  afterEach(() => {
+    window.collectVaultDesktop = originalDesktopBridge;
   });
 
   it('rejects invalid and partially invalid JSON imports', async () => {
@@ -214,6 +222,100 @@ describe('ImportExportPanel', () => {
 
     await waitFor(() => {
       expect(restoreBackupBundle).toHaveBeenCalledWith(expect.objectContaining({ schemaVersion: 1 }), 'replace');
+    });
+  });
+
+  it('disables local sync in the web app and uses the desktop bridge when available', async () => {
+    const seed = buildSeedData();
+    const localStatus = {
+      exists: true,
+      path: '/Users/test/Documents/CollectVault/Local Sync',
+      sizeBytes: 4096,
+      syncedAt: '2026-04-16T12:00:00.000Z',
+      counts: {
+        categories: seed.categories.length,
+        items: seed.items.length,
+        libraries: seed.libraries.length,
+        wishlist: seed.wishlist.length,
+        activityLog: seed.activityLog.length,
+        contributors: seed.contributors.length,
+      },
+      assetCount: 2,
+      failedAssets: [],
+    };
+
+    const webView = render(
+      <ImportExportPanel
+        activeTab="local-sync"
+        onTabChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/desktop app required/i)).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /sync with local/i })).toBeDisabled();
+    webView.unmount();
+
+    const restoreBackupBundle = vi.fn(async () => undefined);
+    useCollectionStore.setState({ restoreBackupBundle });
+    const syncSnapshot = vi.fn(async () => localStatus);
+    const restoreSnapshot = vi.fn(async () => ({
+      schemaVersion: 1,
+      exportedAt: '2026-04-16T12:00:00.000Z',
+      ...seed,
+      settings: {
+        displayCurrency: 'USD',
+        theme: 'light',
+        sidebarOpen: true,
+        menuCollectionStyle: 'style1',
+        dashboardWidgets: [],
+        readNotificationIds: [],
+        notifications: {
+          valueChangeAlerts: true,
+          newItemReminders: true,
+          collectionMilestones: true,
+        },
+      },
+    }));
+
+    window.collectVaultDesktop = {
+      isDesktop: true,
+      platform: 'darwin',
+      localSync: {
+        getStatus: vi.fn(async () => localStatus),
+        syncSnapshot,
+        restoreSnapshot,
+        openFolder: vi.fn(async () => true),
+      },
+    };
+
+    const user = userEvent.setup();
+    render(
+      <ImportExportPanel
+        activeTab="local-sync"
+        onTabChange={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText(/local copy status/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /^sync with local$/i }));
+
+    await waitFor(() => {
+      expect(syncSnapshot).toHaveBeenCalledWith(expect.objectContaining({
+        schemaVersion: 1,
+        items: expect.any(Array),
+      }));
+    });
+
+    await user.click(screen.getByRole('button', { name: /load local copy/i }));
+    expect(await screen.findByText(/local restore preview/i)).toBeInTheDocument();
+
+    const mergeButtons = screen.getAllByRole('button', { name: /merge local copy/i });
+    await user.click(mergeButtons[mergeButtons.length - 1]);
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: /merge local copy/i }));
+
+    await waitFor(() => {
+      expect(restoreBackupBundle).toHaveBeenCalledWith(expect.objectContaining({ schemaVersion: 1 }), 'merge');
     });
   });
 });

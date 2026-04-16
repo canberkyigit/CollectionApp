@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useCallback } from 'react';
+import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 
 import {
   Download,
@@ -15,6 +15,9 @@ import {
   ShieldCheck,
   GitMerge,
   RotateCcw,
+  HardDrive,
+  RefreshCw,
+  Lock,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -39,6 +42,10 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { formatCurrency, formatNumber, generateId } from '@/lib/utils';
+import {
+  getDesktopLocalSyncApi,
+  type LocalSyncStatus,
+} from '@/lib/runtime';
 import { currencyService } from '@/services/currencyService';
 import {
   buildBackupRestorePreview,
@@ -59,10 +66,23 @@ import { useCollectionStore } from '@/store/useCollectionStore';
 import { canManageCatalog } from '@/lib/permissions';
 import type { CollectionItem } from '@/types';
 
-type ImportExportTab = 'export' | 'import';
+type ImportExportTab = 'export' | 'import' | 'local-sync';
 
 function buildTimestampedExportName(slug: string): string {
   return `${slug}-export-${Date.now()}.json`;
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  return `${(kb / 1024).toFixed(2)} MB`;
+}
+
+function formatLocalSyncDate(value: string | null | undefined): string {
+  if (!value) return 'Never';
+  return new Date(value).toLocaleString();
 }
 
 function buildDefaultItem(
@@ -147,8 +167,18 @@ export function ImportExportPanel({
   const [csvCategoryId, setCsvCategoryId] = useState<string>('');
   const [csvFileName, setCsvFileName] = useState<string>('');
 
+  const [localSyncStatus, setLocalSyncStatus] = useState<LocalSyncStatus | null>(null);
+  const [isLocalSyncing, setIsLocalSyncing] = useState(false);
+  const [isLocalStatusLoading, setIsLocalStatusLoading] = useState(false);
+  const [localRestoreBundle, setLocalRestoreBundle] = useState<BackupBundle | null>(null);
+  const [localRestoreMode, setLocalRestoreMode] = useState<BackupRestoreMode>('merge');
+  const [localRestoreConfirmOpen, setLocalRestoreConfirmOpen] = useState(false);
+  const [localPreRestoreBackupDownloaded, setLocalPreRestoreBackupDownloaded] = useState(false);
+  const [isLocalRestoring, setIsLocalRestoring] = useState(false);
+
   const jsonInputRef = useRef<HTMLInputElement>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
+  const localSyncAvailable = Boolean(getDesktopLocalSyncApi());
 
   const totalValueUSD = useMemo(
     () =>
@@ -217,7 +247,75 @@ export function ImportExportPanel({
     [backupBundle, currentBackupState, restoreMode],
   );
 
-  function logExportActivity(details: string) {
+  const localRestorePreview = useMemo(
+    () => localRestoreBundle
+      ? buildBackupRestorePreview(localRestoreBundle, currentBackupState, localRestoreMode)
+      : null,
+    [localRestoreBundle, currentBackupState, localRestoreMode],
+  );
+
+  const buildFullBackupBundle = useCallback(() => ({
+    schemaVersion: 1,
+    exportedAt: new Date().toISOString(),
+    categories,
+    items,
+    wishlist,
+    activityLog,
+    contributors,
+    libraries,
+    settings: {
+      displayCurrency,
+      theme,
+      sidebarOpen,
+      menuCollectionStyle,
+      dashboardWidgets,
+      readNotificationIds,
+      notifications,
+    },
+  }), [
+    categories,
+    items,
+    wishlist,
+    activityLog,
+    contributors,
+    libraries,
+    displayCurrency,
+    theme,
+    sidebarOpen,
+    menuCollectionStyle,
+    dashboardWidgets,
+    readNotificationIds,
+    notifications,
+  ]);
+
+  const refreshLocalSyncStatus = useCallback(async () => {
+    const api = getDesktopLocalSyncApi();
+    if (!api) {
+      setLocalSyncStatus(null);
+      return null;
+    }
+
+    setIsLocalStatusLoading(true);
+    try {
+      const status = await api.getStatus();
+      setLocalSyncStatus(status);
+      return status;
+    } catch (error) {
+      toast.error('Failed to read local sync status', {
+        description: error instanceof Error ? error.message : 'Desktop local sync is unavailable.',
+      });
+      return null;
+    } finally {
+      setIsLocalStatusLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!localSyncAvailable) return;
+    void refreshLocalSyncStatus();
+  }, [localSyncAvailable, refreshLocalSyncStatus]);
+
+  const logExportActivity = useCallback((details: string) => {
     logActivity({
       action: 'export_created',
       entityType: 'system',
@@ -225,7 +323,7 @@ export function ImportExportPanel({
       entityTitle: 'Collection Export',
       details,
     });
-  }
+  }, [logActivity]);
 
   function handleFullCSV() {
     exportService.exportToCSV(items, categories);
@@ -243,25 +341,18 @@ export function ImportExportPanel({
     });
   }
 
-  function downloadFullBackup(filename?: string) {
+  const downloadFullBackup = useCallback((filename?: string) => {
+    const bundle = buildFullBackupBundle();
     exportService.exportBackupBundle({
-      categories,
-      items,
-      wishlist,
-      activityLog,
-      contributors,
-      libraries,
-      settings: {
-        displayCurrency,
-        theme,
-        sidebarOpen,
-        menuCollectionStyle,
-        dashboardWidgets,
-        readNotificationIds,
-        notifications,
-      },
+      categories: bundle.categories,
+      items: bundle.items,
+      wishlist: bundle.wishlist,
+      activityLog: bundle.activityLog,
+      contributors: bundle.contributors,
+      libraries: bundle.libraries,
+      settings: bundle.settings!,
     }, filename);
-  }
+  }, [buildFullBackupBundle]);
 
   function handleFullBackup() {
     downloadFullBackup();
@@ -478,6 +569,133 @@ export function ImportExportPanel({
     if (csvInputRef.current) csvInputRef.current.value = '';
   }, [csvData, selectedCsvCategory, csvMappingPreview, bulkAddItems, currentContributorId]);
 
+  const handleLocalSync = useCallback(async () => {
+    const api = getDesktopLocalSyncApi();
+    if (!api) {
+      toast.error('Desktop app required', {
+        description: 'Local sync can only write to disk from the desktop app.',
+      });
+      return;
+    }
+
+    setIsLocalSyncing(true);
+    try {
+      const status = await api.syncSnapshot(buildFullBackupBundle());
+      setLocalSyncStatus(status);
+      setLocalRestoreBundle(null);
+      logExportActivity('Desktop local sync snapshot');
+      toast.success('Local copy updated', {
+        description: `${status.counts?.items ?? items.length} items saved to ${status.path}`,
+      });
+      if (status.failedAssets.length > 0) {
+        toast.warning(`${status.failedAssets.length} asset${status.failedAssets.length === 1 ? '' : 's'} could not be copied`, {
+          description: 'The data snapshot was saved, but a few remote files still need internet access.',
+        });
+      }
+    } catch (error) {
+      toast.error('Local sync failed', {
+        description: error instanceof Error ? error.message : 'Unable to write the local desktop copy.',
+      });
+    } finally {
+      setIsLocalSyncing(false);
+    }
+  }, [buildFullBackupBundle, items.length, logExportActivity]);
+
+  const handleOpenLocalSyncFolder = useCallback(async () => {
+    const api = getDesktopLocalSyncApi();
+    if (!api) return;
+
+    try {
+      await api.openFolder();
+    } catch (error) {
+      toast.error('Could not open local folder', {
+        description: error instanceof Error ? error.message : 'The folder could not be opened.',
+      });
+    }
+  }, []);
+
+  const handleLoadLocalSnapshot = useCallback(async () => {
+    const api = getDesktopLocalSyncApi();
+    if (!api) {
+      toast.error('Desktop app required');
+      return;
+    }
+
+    try {
+      const snapshot = await api.restoreSnapshot();
+      if (!isBackupBundle(snapshot)) {
+        toast.error('Local copy is invalid', {
+          description: 'The saved desktop copy is not a valid CollectVault backup bundle.',
+        });
+        return;
+      }
+
+      const preview = buildBackupRestorePreview(snapshot, currentBackupState, localRestoreMode);
+      setLocalRestoreBundle(snapshot);
+      setLocalPreRestoreBackupDownloaded(false);
+
+      if (preview.errors.length > 0) {
+        toast.error('Local copy cannot be restored', {
+          description: preview.errors[0],
+        });
+      } else {
+        toast.success('Local copy loaded', {
+          description: `${preview.incomingCounts.items} items and ${preview.incomingCounts.categories} categories are ready to restore.`,
+        });
+      }
+    } catch (error) {
+      toast.error('No local copy found', {
+        description: error instanceof Error ? error.message : 'Run Sync With Local first.',
+      });
+    }
+  }, [currentBackupState, localRestoreMode]);
+
+  const handleLocalPreRestoreBackup = useCallback(() => {
+    downloadFullBackup(`collectvault-pre-local-restore-${Date.now()}.json`);
+    setLocalPreRestoreBackupDownloaded(true);
+    toast.success('Current backup downloaded', {
+      description: 'Replace restore is now unlocked for the local copy.',
+    });
+  }, [downloadFullBackup]);
+
+  const handleLocalRestore = useCallback(async () => {
+    if (!localRestoreBundle || !localRestorePreview?.canRestore) return;
+    if (!canRestoreBackups) {
+      toast.error('Only admins can restore backups');
+      return;
+    }
+    if (localRestoreMode === 'replace' && !localPreRestoreBackupDownloaded) {
+      toast.error('Download a current backup first', {
+        description: 'Replace restore is destructive, so a fresh safety backup is required.',
+      });
+      return;
+    }
+
+    setIsLocalRestoring(true);
+    try {
+      await restoreBackupBundle(localRestoreBundle, localRestoreMode);
+      toast.success(localRestoreMode === 'replace' ? 'Local copy restored' : 'Local copy merged', {
+        description: localRestoreMode === 'replace'
+          ? 'Your collection now matches the desktop local copy.'
+          : 'Desktop local copy records were merged into your current collection.',
+      });
+      setLocalRestoreConfirmOpen(false);
+      setLocalPreRestoreBackupDownloaded(false);
+      setLocalRestoreBundle(null);
+      await refreshLocalSyncStatus();
+    } finally {
+      setIsLocalRestoring(false);
+    }
+  }, [
+    localRestoreBundle,
+    localRestorePreview,
+    canRestoreBackups,
+    localRestoreMode,
+    localPreRestoreBackupDownloaded,
+    restoreBackupBundle,
+    refreshLocalSyncStatus,
+  ]);
+
   const handleDrop = useCallback(
     (e: React.DragEvent<HTMLDivElement>, type: 'json' | 'csv') => {
       e.preventDefault();
@@ -505,6 +723,14 @@ export function ImportExportPanel({
           <TabsTrigger value="import">
             <Upload className="mr-2 size-4" />
             Import
+          </TabsTrigger>
+          <TabsTrigger
+            value="local-sync"
+            disabled={!localSyncAvailable}
+            title={localSyncAvailable ? undefined : 'Available in the desktop app only'}
+          >
+            <HardDrive className="mr-2 size-4" />
+            Sync With Local
           </TabsTrigger>
         </TabsList>
 
@@ -1180,6 +1406,320 @@ export function ImportExportPanel({
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="local-sync" className="space-y-6">
+          {!localSyncAvailable ? (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-3">
+                  <div className="rounded-xl bg-muted p-3">
+                    <Lock className="size-6 text-muted-foreground" />
+                  </div>
+                  <div className="space-y-1">
+                    <CardTitle>Desktop App Required</CardTitle>
+                    <CardDescription>
+                      Local disk sync is disabled in the web app because browsers cannot write silently to your Documents folder.
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground">
+                Open CollectVault Desktop to save an offline copy with collection data, notes, photos, wishlist records, activity history, contributors, and settings.
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-xl bg-primary/10 p-3">
+                        <HardDrive className="size-6 text-primary" />
+                      </div>
+                      <div className="space-y-1">
+                        <CardTitle>Sync With Local</CardTitle>
+                        <CardDescription>
+                          Save a complete desktop copy to your Mac for offline recovery.
+                        </CardDescription>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-5">
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <div className="rounded-lg border bg-muted/30 p-3">
+                        <p className="text-xs text-muted-foreground">Current App Data</p>
+                        <p className="mt-1 text-lg font-semibold">{formatNumber(items.length)}</p>
+                        <p className="text-xs text-muted-foreground">items</p>
+                      </div>
+                      <div className="rounded-lg border bg-muted/30 p-3">
+                        <p className="text-xs text-muted-foreground">Categories</p>
+                        <p className="mt-1 text-lg font-semibold">{formatNumber(categories.length)}</p>
+                        <p className="text-xs text-muted-foreground">schemas</p>
+                      </div>
+                      <div className="rounded-lg border bg-muted/30 p-3">
+                        <p className="text-xs text-muted-foreground">Estimated Value</p>
+                        <p className="mt-1 text-lg font-semibold">{formatCurrency(totalValue)}</p>
+                        <p className="text-xs text-muted-foreground">{displayCurrency}</p>
+                      </div>
+                    </div>
+
+                    <Separator />
+
+                    <div className="space-y-2 text-sm text-muted-foreground">
+                      <p>
+                        CollectVault Desktop keeps this local copy updated automatically after collection changes. Use Sync With Local for an immediate refresh.
+                      </p>
+                      <p>
+                        The desktop copy stores a full backup bundle plus local asset files under your Documents folder.
+                      </p>
+                      <ul className="grid gap-2 sm:grid-cols-2">
+                        {[
+                          'Collections, libraries, and custom fields',
+                          'Items, notes, tags, lending, and maintenance',
+                          'Wishlist and activity history',
+                          'Photos and documents when they can be copied',
+                        ].map((text) => (
+                          <li key={text} className="flex items-start gap-2">
+                            <Check className="mt-0.5 size-4 shrink-0 text-green-500" />
+                            <span>{text}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <Button className="flex-1" disabled={isLocalSyncing} onClick={handleLocalSync}>
+                        <RefreshCw className={`size-4 ${isLocalSyncing ? 'animate-spin' : ''}`} />
+                        {isLocalSyncing ? 'Syncing...' : 'Sync With Local'}
+                      </Button>
+                      <Button variant="outline" className="flex-1" onClick={handleOpenLocalSyncFolder}>
+                        <FolderOpen className="size-4" />
+                        Open Local Folder
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <ShieldCheck className="size-5 text-primary" />
+                      Local Copy Status
+                    </CardTitle>
+                    <CardDescription>
+                      The latest desktop snapshot stored on this Mac.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-2 rounded-lg border bg-muted/30 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-sm text-muted-foreground">Status</span>
+                        <Badge variant={localSyncStatus?.exists ? 'secondary' : 'outline'}>
+                          {isLocalStatusLoading ? 'Checking...' : localSyncStatus?.exists ? 'Available' : 'Not synced'}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-sm text-muted-foreground">Auto-sync</span>
+                        <Badge variant="secondary">Enabled on desktop</Badge>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-sm text-muted-foreground">Last synced</span>
+                        <span className="text-right text-sm font-medium">
+                          {formatLocalSyncDate(localSyncStatus?.syncedAt)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-sm text-muted-foreground">Local size</span>
+                        <span className="text-sm font-medium">{formatBytes(localSyncStatus?.sizeBytes ?? 0)}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-sm text-muted-foreground">Copied assets</span>
+                        <span className="text-sm font-medium">{formatNumber(localSyncStatus?.assetCount ?? 0)}</span>
+                      </div>
+                    </div>
+
+                    {localSyncStatus?.counts && (
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        {Object.entries(localSyncStatus.counts).map(([label, count]) => (
+                          <div key={label} className="rounded-md bg-background px-3 py-2">
+                            <span className="capitalize text-muted-foreground">{label}</span>
+                            <p className="mt-1 font-medium">{formatNumber(count)}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {(localSyncStatus?.failedAssets.length ?? 0) > 0 && (
+                      <div className="space-y-2 rounded-lg border border-amber-500/25 bg-amber-500/5 p-3">
+                        <div className="flex items-center gap-2 text-sm font-medium">
+                          <AlertCircle className="size-4 text-amber-500" />
+                          {localSyncStatus?.failedAssets.length} asset issue{localSyncStatus?.failedAssets.length === 1 ? '' : 's'}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Some remote files could not be copied. Their original URLs stayed in the snapshot.
+                        </p>
+                      </div>
+                    )}
+
+                    <Button variant="outline" className="w-full" onClick={() => void refreshLocalSyncStatus()}>
+                      <RefreshCw className="size-4" />
+                      Refresh Status
+                    </Button>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-xl bg-primary/10 p-3">
+                      <RotateCcw className="size-6 text-primary" />
+                    </div>
+                    <div className="space-y-1">
+                      <CardTitle>Restore From Local Copy</CardTitle>
+                      <CardDescription>
+                        Load the saved desktop snapshot and restore it into the current collection.
+                      </CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      disabled={!localSyncStatus?.exists}
+                      onClick={handleLoadLocalSnapshot}
+                    >
+                      <Upload className="size-4" />
+                      Load Local Copy
+                    </Button>
+                    <Button variant="outline" className="flex-1" onClick={handleOpenLocalSyncFolder}>
+                      <FolderOpen className="size-4" />
+                      Open Folder
+                    </Button>
+                  </div>
+
+                  {localRestorePreview && (
+                    <div className="space-y-4 rounded-lg border bg-muted/30 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium">Local Restore Preview</p>
+                          <p className="text-xs text-muted-foreground">
+                            {localRestorePreview.exportedAt
+                              ? `Snapshot exported ${new Date(localRestorePreview.exportedAt).toLocaleString()}`
+                              : 'Snapshot export date not available'}
+                          </p>
+                        </div>
+                        <Badge variant={localRestorePreview.errors.length > 0 ? 'destructive' : 'secondary'}>
+                          Schema v{localRestorePreview.schemaVersion ?? 'unknown'}
+                        </Badge>
+                      </div>
+
+                      <div className="grid gap-2 text-xs sm:grid-cols-3">
+                        <div className="rounded-md bg-background px-3 py-2">
+                          <span className="text-muted-foreground">Current</span>
+                          <p className="mt-1 font-medium">
+                            {localRestorePreview.currentCounts.items} items
+                          </p>
+                        </div>
+                        <div className="rounded-md bg-background px-3 py-2">
+                          <span className="text-muted-foreground">Local Copy</span>
+                          <p className="mt-1 font-medium">
+                            {localRestorePreview.incomingCounts.items} items
+                          </p>
+                        </div>
+                        <div className="rounded-md bg-background px-3 py-2">
+                          <span className="text-muted-foreground">Conflicts</span>
+                          <p className="mt-1 font-medium">
+                            {localRestorePreview.conflicts.length}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLocalRestoreMode('merge');
+                            setLocalPreRestoreBackupDownloaded(false);
+                          }}
+                          className={`rounded-lg border p-3 text-left transition-colors ${localRestoreMode === 'merge' ? 'border-primary bg-primary/10' : 'hover:bg-background'}`}
+                        >
+                          <span className="flex items-center gap-2 text-sm font-medium">
+                            <GitMerge className="size-4" />
+                            Merge Local Copy
+                          </span>
+                          <span className="mt-1 block text-xs text-muted-foreground">
+                            Adds local records and overwrites same-ID conflicts with local versions.
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLocalRestoreMode('replace');
+                            setLocalPreRestoreBackupDownloaded(false);
+                          }}
+                          className={`rounded-lg border p-3 text-left transition-colors ${localRestoreMode === 'replace' ? 'border-destructive bg-destructive/10' : 'hover:bg-background'}`}
+                        >
+                          <span className="flex items-center gap-2 text-sm font-medium">
+                            <RotateCcw className="size-4" />
+                            Replace With Local
+                          </span>
+                          <span className="mt-1 block text-xs text-muted-foreground">
+                            Replaces the current collection and cloud data with the local snapshot.
+                          </span>
+                        </button>
+                      </div>
+
+                      {(localRestorePreview.errors.length > 0 || localRestorePreview.warnings.length > 0) && (
+                        <div className="space-y-1">
+                          {[...localRestorePreview.errors, ...localRestorePreview.warnings].slice(0, 4).map((message) => (
+                            <div key={message} className="flex items-start gap-2 text-xs text-muted-foreground">
+                              <AlertCircle className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
+                              <span>{message}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {localRestoreMode === 'replace' && (
+                        <div className="space-y-2 rounded-md border border-destructive/25 bg-destructive/5 p-3">
+                          <p className="text-xs text-muted-foreground">
+                            Replace mode is destructive. Download a fresh backup of the current state before continuing.
+                          </p>
+                          <Button variant="outline" className="w-full" onClick={handleLocalPreRestoreBackup}>
+                            <Download className="size-4" />
+                            {localPreRestoreBackupDownloaded ? 'Current Backup Downloaded' : 'Download Current Backup First'}
+                          </Button>
+                        </div>
+                      )}
+
+                      <Button
+                        className="w-full"
+                        variant={localRestoreMode === 'replace' ? 'destructive' : 'default'}
+                        disabled={
+                          !localRestorePreview.canRestore
+                          || !canRestoreBackups
+                          || isLocalRestoring
+                          || (localRestoreMode === 'replace' && !localPreRestoreBackupDownloaded)
+                        }
+                        onClick={() => setLocalRestoreConfirmOpen(true)}
+                      >
+                        <Upload className="size-4" />
+                        {isLocalRestoring
+                          ? 'Restoring...'
+                          : localRestoreMode === 'replace'
+                            ? 'Restore and Replace All'
+                            : 'Merge Local Copy'}
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </>
+          )}
+        </TabsContent>
       </Tabs>
 
       <ConfirmDialog
@@ -1210,6 +1750,40 @@ export function ImportExportPanel({
             {restorePreview.skipped.length > 0 && (
               <p className="text-xs text-muted-foreground">
                 {restorePreview.skipped.length} invalid backup record{restorePreview.skipped.length === 1 ? '' : 's'} will be skipped.
+              </p>
+            )}
+          </div>
+        )}
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={localRestoreConfirmOpen}
+        onClose={() => setLocalRestoreConfirmOpen(false)}
+        onConfirm={handleLocalRestore}
+        title={localRestoreMode === 'replace' ? 'Replace All Data From Local Copy?' : 'Merge Local Copy Into Collection?'}
+        description={
+          localRestoreMode === 'replace'
+            ? `This will replace your current local and Firestore collection data with ${localRestorePreview?.incomingCounts.items ?? 0} locally synced items.`
+            : `This will merge ${localRestorePreview?.incomingCounts.items ?? 0} locally synced items into your current collection. Same-ID conflicts will use the local copy.`
+        }
+        confirmLabel={isLocalRestoring ? 'Restoring...' : localRestoreMode === 'replace' ? 'Replace All Data' : 'Merge Local Copy'}
+        destructive={localRestoreMode === 'replace'}
+      >
+        {localRestorePreview && (
+          <div className="space-y-2 text-sm">
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="rounded-md bg-muted/40 px-3 py-2">
+                <span className="text-muted-foreground">After restore</span>
+                <p className="mt-1 font-medium">{localRestorePreview.resultCounts.items} items</p>
+              </div>
+              <div className="rounded-md bg-muted/40 px-3 py-2">
+                <span className="text-muted-foreground">Conflicts</span>
+                <p className="mt-1 font-medium">{localRestorePreview.conflicts.length}</p>
+              </div>
+            </div>
+            {localRestorePreview.skipped.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {localRestorePreview.skipped.length} invalid local record{localRestorePreview.skipped.length === 1 ? '' : 's'} will be skipped.
               </p>
             )}
           </div>

@@ -58,7 +58,7 @@ const sectionContent = {
   data: {
     title: 'Data & Recovery',
     description: 'Handle imports, exports, backups, and destructive actions with a clear safety boundary.',
-    chips: ['Import', 'Export', 'Recovery'],
+    chips: ['Import', 'Export', 'Local Sync'],
   },
 } satisfies Record<SettingsSection, { title: string; description: string; chips: string[] }>;
 
@@ -104,7 +104,10 @@ export default function Settings() {
     ? 'appearance'
     : (requestedSection ?? fallbackSection);
   const activeSectionMeta = sectionContent[activeSection];
-  const dataTab = searchParams.get('dataTab') === 'import' ? 'import' : 'export';
+  const requestedDataTab = searchParams.get('dataTab');
+  const dataTab: ImportExportTab = requestedDataTab === 'import' || requestedDataTab === 'local-sync'
+    ? requestedDataTab
+    : 'export';
 
   const updateSearchParams = (updates: Partial<{ section: SettingsSection; dataTab: ImportExportTab }>) => {
     const nextParams = new URLSearchParams(searchParams);
@@ -410,6 +413,7 @@ export default function Settings() {
                 <Badge variant="secondary" className="h-6 px-2.5 text-[11px]">Export</Badge>
                 <Badge variant="secondary" className="h-6 px-2.5 text-[11px]">Import</Badge>
                 <Badge variant="secondary" className="h-6 px-2.5 text-[11px]">Backup</Badge>
+                <Badge variant="secondary" className="h-6 px-2.5 text-[11px]">Local Sync</Badge>
               </div>
               <p className="text-sm text-muted-foreground">
                 Use the tools below to create backups, move data between devices, or import spreadsheets directly into your collection.
