@@ -1,4 +1,12 @@
-import type { Category, CollectionItem } from '@/types';
+import type {
+  ActivityLogEntry,
+  Category,
+  CollectionItem,
+  Contributor,
+  DashboardWidgetConfig,
+  Library,
+  WishlistItem,
+} from '@/types';
 import { getItemCurrentValueCurrency, getItemGainLoss } from '@/lib/valuation';
 
 function escapeCSV(value: string): string {
@@ -125,5 +133,35 @@ export const exportService = {
     const csv = [toCSVRow(headers), ...rows.map(toCSVRow)].join('\n');
     const name = filename ?? `${category.slug}-export-${Date.now()}.csv`;
     downloadFile(csv, name, 'text/csv;charset=utf-8;');
+  },
+
+  exportBackupBundle(data: {
+    categories: Category[];
+    items: CollectionItem[];
+    libraries: Library[];
+    wishlist: WishlistItem[];
+    activityLog: ActivityLogEntry[];
+    contributors: Contributor[];
+    settings: {
+      displayCurrency: string;
+      theme: 'light' | 'dark';
+      sidebarOpen: boolean;
+      menuCollectionStyle: 'style1' | 'style2';
+      dashboardWidgets: DashboardWidgetConfig[];
+      readNotificationIds: string[];
+      notifications: { valueChangeAlerts: boolean; newItemReminders: boolean; collectionMilestones: boolean };
+    };
+  }, filename?: string): void {
+    const backup = {
+      schemaVersion: 1,
+      exportedAt: new Date().toISOString(),
+      ...data,
+    };
+
+    downloadFile(
+      JSON.stringify(backup, null, 2),
+      filename ?? `collectvault-backup-${Date.now()}.json`,
+      'application/json',
+    );
   },
 };

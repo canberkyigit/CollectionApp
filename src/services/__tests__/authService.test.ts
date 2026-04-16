@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   createUserWithEmailAndPassword: vi.fn(),
   signInWithPopup: vi.fn(),
   signOut: vi.fn(),
+  sendPasswordResetEmail: vi.fn(),
   onAuthStateChanged: vi.fn(),
   updateProfile: vi.fn(),
   updatePassword: vi.fn(),
@@ -21,6 +22,7 @@ vi.mock('firebase/auth', () => ({
   signInWithPopup: mocks.signInWithPopup,
   GoogleAuthProvider: class {},
   signOut: mocks.signOut,
+  sendPasswordResetEmail: mocks.sendPasswordResetEmail,
   onAuthStateChanged: mocks.onAuthStateChanged,
   updateProfile: mocks.updateProfile,
   updatePassword: mocks.updatePassword,
@@ -133,6 +135,17 @@ describe('authService', () => {
 
     expect(mocks.signOut).toHaveBeenCalledTimes(1);
     expect(mocks.updatePassword).toHaveBeenCalledWith(user, 'new-secret');
+  });
+
+  it('sends password reset emails', async () => {
+    mocks.sendPasswordResetEmail.mockResolvedValue(undefined);
+
+    await authService.sendPasswordReset('tester@example.com');
+
+    expect(mocks.sendPasswordResetEmail).toHaveBeenCalledWith(
+      expect.any(Object),
+      'tester@example.com',
+    );
   });
 
   it('throws when Firebase is unavailable or no user is authenticated', async () => {

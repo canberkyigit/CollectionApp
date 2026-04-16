@@ -13,7 +13,7 @@ import { mockContributors } from '@/data/contributors';
 import { mockActivityLog, mockItems, mockWishlistItems } from '@/data/items';
 import type { CollectionStore, CollectionStoreResetOptions } from '@/store/collectionStore.types';
 
-export const STORE_VERSION = 4;
+export const STORE_VERSION = 5;
 
 export const DEFAULT_NOTIFICATIONS = {
   valueChangeAlerts: true,

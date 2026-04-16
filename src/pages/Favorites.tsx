@@ -26,6 +26,8 @@ import {
   StatCard,
   AdvancedFilters,
   DEFAULT_FILTERS,
+  VirtualGrid,
+  VirtualList,
 } from '@/components/shared';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -59,6 +61,7 @@ import {
 } from '@/pages/favorites-helpers';
 
 type SortKey = FavoritesSortKey;
+const VIRTUAL_THRESHOLD = 80;
 
 const SORT_OPTIONS: { label: string; value: SortKey }[] = [
   { label: 'Title', value: 'title' },
@@ -68,14 +71,12 @@ const SORT_OPTIONS: { label: string; value: SortKey }[] = [
 
 export default function Favorites() {
   const navigate = useNavigate();
-  const {
-    getCategoryById,
-    toggleFavorite,
-    items,
-    openItemDialog,
-    ownerUserId,
-    isRemoteDataLoading,
-  } = useCollectionStore();
+  const getCategoryById = useCollectionStore((s) => s.getCategoryById);
+  const toggleFavorite = useCollectionStore((s) => s.toggleFavorite);
+  const items = useCollectionStore((s) => s.items);
+  const openItemDialog = useCollectionStore((s) => s.openItemDialog);
+  const ownerUserId = useCollectionStore((s) => s.ownerUserId);
+  const isRemoteDataLoading = useCollectionStore((s) => s.isRemoteDataLoading);
   const displayCurrency = useCollectionStore((s) => s.displayCurrency);
   const shouldShowLoadingState = selectIsColdLoading(
     { ownerUserId, isRemoteDataLoading },
@@ -120,91 +121,184 @@ export default function Favorites() {
     [favorites, displayCurrency],
   );
 
-  const renderGridView = () => (
-    <div
-      className="grid gap-3 sm:gap-4"
-      style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 170px), 1fr))' }}
-    >
-      {filtered.map((item) => {
-        const cat = getCategoryById(item.categoryId);
-        const Icon = cat ? getCategoryIcon(cat.icon) : Package;
-        const condBadge = getConditionBadgeProps(item.condition);
-        const keyFields = getKeyFields(cat, item);
-        const isBookCategory = cat?.id === 'cat-books';
-        const qty = (item.customFields?.quantity as number) || item.quantity || 1;
+  const renderFavoriteCard = (item: typeof filtered[number]) => {
+    const cat = getCategoryById(item.categoryId);
+    const Icon = cat ? getCategoryIcon(cat.icon) : Package;
+    const condBadge = getConditionBadgeProps(item.condition);
+    const keyFields = getKeyFields(cat, item);
+    const isBookCategory = cat?.id === 'cat-books';
+    const qty = (item.customFields?.quantity as number) || item.quantity || 1;
 
-        return (
-          <Card
-            key={item.id}
-            className={cn(
-              'group cursor-pointer overflow-hidden transition-all duration-300',
-              'hover:scale-[1.02] hover:shadow-xl hover:shadow-primary/5',
-            )}
-            onClick={() => setDetailPanelItemId(item.id)}
-          >
-            <div className={cn(
-              'relative overflow-hidden bg-gradient-to-br from-amber-500/20 via-amber-500/10 to-transparent',
-              isBookCategory ? 'aspect-[2/3]' : 'aspect-[4/3]',
-            )}>
-              {item.images.length > 0 ? (
-                <img
-                  src={item.images[0]}
-                  alt={item.title}
-                  className={cn(
-                    'h-full w-full transition-transform duration-500 group-hover:scale-105',
-                    isBookCategory ? 'object-contain' : 'object-cover',
-                  )}
-                />
-              ) : (
-                <Icon className="absolute inset-0 m-auto size-14 text-amber-500/20 transition-transform duration-500 group-hover:scale-110" />
+    return (
+      <Card
+        className={cn(
+          'group cursor-pointer overflow-hidden transition-all duration-300',
+          'hover:scale-[1.02] hover:shadow-xl hover:shadow-primary/5',
+        )}
+        onClick={() => setDetailPanelItemId(item.id)}
+      >
+        <div className={cn(
+          'relative overflow-hidden bg-gradient-to-br from-amber-500/20 via-amber-500/10 to-transparent',
+          isBookCategory ? 'aspect-[2/3]' : 'aspect-[4/3]',
+        )}>
+          {item.images.length > 0 ? (
+            <img
+              src={item.images[0]}
+              alt={item.title}
+              className={cn(
+                'h-full w-full transition-transform duration-500 group-hover:scale-105',
+                isBookCategory ? 'object-contain' : 'object-cover',
               )}
-              <div className="absolute right-2 top-2 flex flex-col gap-1">
-                <Badge variant={condBadge.variant} className={cn('text-[10px]', condBadge.className)}>{item.condition}</Badge>
-                {item.isRead && (
-                  <Badge variant="success" className="text-[10px] gap-0.5">
-                    <Check className="size-2.5" /> Read
-                  </Badge>
-                )}
-              </div>
-              <div className="absolute left-2 top-2 flex items-center gap-1.5">
-                <button
-                  type="button"
-                  className="rounded-full bg-background/80 p-1.5 backdrop-blur-sm transition-colors hover:bg-background"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleFavorite(item.id);
-                  }}
-                >
-                  <Star className="size-4 fill-amber-500 text-amber-500" />
-                </button>
-                {qty > 1 && (
-                  <Badge variant="secondary" className="text-[10px]">x{qty}</Badge>
-                )}
-              </div>
-            </div>
+            />
+          ) : (
+            <Icon className="absolute inset-0 m-auto size-14 text-amber-500/20 transition-transform duration-500 group-hover:scale-110" />
+          )}
+          <div className="absolute right-2 top-2 flex flex-col gap-1">
+            <Badge variant={condBadge.variant} className={cn('text-[10px]', condBadge.className)}>{item.condition}</Badge>
+            {item.isRead && (
+              <Badge variant="success" className="text-[10px] gap-0.5">
+                <Check className="size-2.5" /> Read
+              </Badge>
+            )}
+          </div>
+          <div className="absolute left-2 top-2 flex items-center gap-1.5">
+            <button
+              type="button"
+              className="rounded-full bg-background/80 p-1.5 backdrop-blur-sm transition-colors hover:bg-background"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleFavorite(item.id);
+              }}
+            >
+              <Star className="size-4 fill-amber-500 text-amber-500" />
+            </button>
+            {qty > 1 && (
+              <Badge variant="secondary" className="text-[10px]">x{qty}</Badge>
+            )}
+          </div>
+        </div>
 
-            <CardContent className="relative space-y-2 p-3">
-              <div>
-                <h3 className="text-sm font-semibold leading-tight tracking-tight line-clamp-2">
-                  {item.title}
-                </h3>
-                {keyFields.map((kf) => (
-                  <p key={kf.label} className="mt-0.5 text-xs text-muted-foreground line-clamp-1">
-                    {kf.value}
-                  </p>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        );
-      })}
-    </div>
+        <CardContent className="relative space-y-2 p-3">
+          <div>
+            <h3 className="text-sm font-semibold leading-tight tracking-tight line-clamp-2">
+              {item.title}
+            </h3>
+            {keyFields.map((kf) => (
+              <p key={kf.label} className="mt-0.5 text-xs text-muted-foreground line-clamp-1">
+                {kf.value}
+              </p>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  const renderGridView = () => (
+    filtered.length > VIRTUAL_THRESHOLD ? (
+      <VirtualGrid
+        items={filtered}
+        threshold={VIRTUAL_THRESHOLD}
+        minColumnWidth={170}
+        estimateRowHeight={340}
+        getItemKey={(item) => item.id}
+        renderItem={renderFavoriteCard}
+        gapClassName="gap-3 sm:gap-4"
+      />
+    ) : (
+      <div
+        className="grid gap-3 sm:gap-4"
+        style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 170px), 1fr))' }}
+      >
+        {filtered.map((item) => (
+          <div key={item.id}>
+            {renderFavoriteCard(item)}
+          </div>
+        ))}
+      </div>
+    )
   );
+
+  const renderFavoriteListRow = (item: typeof filtered[number]) => {
+    const cat = getCategoryById(item.categoryId);
+    const Icon = cat ? getCategoryIcon(cat.icon) : Package;
+    const condBadge = getConditionBadgeProps(item.condition);
+
+    return (
+      <div
+        className="grid grid-cols-[minmax(260px,1fr)_160px_140px_120px_48px] border-b cursor-pointer text-sm transition-colors hover:bg-muted/30"
+        onClick={() => setDetailPanelItemId(item.id)}
+      >
+        <div className="px-4 py-3">
+          <div className="flex items-center gap-3">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/10">
+              {item.images[0] ? (
+                <img src={item.images[0]} alt="" className="size-9 rounded-lg object-cover" />
+              ) : (
+                <Icon className="size-4 text-amber-500" />
+              )}
+            </div>
+            <div className="min-w-0">
+              <p className="truncate font-medium">{item.title}</p>
+            </div>
+            <Star className="size-3.5 shrink-0 fill-amber-500 text-amber-500" />
+          </div>
+        </div>
+        <div className="px-4 py-3">
+          {cat && <Badge variant="secondary" className="text-xs">{cat.name}</Badge>}
+        </div>
+        <div className="px-4 py-3">
+          <Badge variant={condBadge.variant} className={cn(condBadge.className)}>{item.condition}</Badge>
+        </div>
+        <div className="px-4 py-3 text-muted-foreground">{formatDate(item.createdAt)}</div>
+        <div className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="size-8">
+                <MoreHorizontal className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setDetailPanelItemId(item.id)}>
+                <Eye className="mr-2 size-4" /> View
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => openItemDialog(item.categoryId, item)}>
+                <Pencil className="mr-2 size-4" /> Edit
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => toggleFavorite(item.id)}>
+                <Star className="mr-2 size-4" /> Remove Favorite
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+    );
+  };
 
   const renderListView = () => (
     <Card>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        {filtered.length > VIRTUAL_THRESHOLD ? (
+          <div className="min-w-[728px]">
+            <div className="grid grid-cols-[minmax(260px,1fr)_160px_140px_120px_48px] border-b bg-muted/50 text-sm">
+              <div className="px-4 py-3 font-medium text-muted-foreground">Item</div>
+              <div className="px-4 py-3 font-medium text-muted-foreground">Category</div>
+              <div className="px-4 py-3 font-medium text-muted-foreground">Condition</div>
+              <div className="px-4 py-3 font-medium text-muted-foreground">Added</div>
+              <div className="px-4 py-3" />
+            </div>
+            <VirtualList
+              items={filtered}
+              threshold={VIRTUAL_THRESHOLD}
+              estimateSize={65}
+              getItemKey={(item) => item.id}
+              renderItem={renderFavoriteListRow}
+              viewportHeight="min(72vh, 720px)"
+            />
+          </div>
+        ) : (
+          <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-muted/50">
               <th className="px-4 py-3 text-left font-medium text-muted-foreground">Item</th>
@@ -273,7 +367,8 @@ export default function Favorites() {
               );
             })}
           </tbody>
-        </table>
+          </table>
+        )}
       </div>
     </Card>
   );

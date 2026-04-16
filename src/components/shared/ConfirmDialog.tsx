@@ -1,4 +1,5 @@
 import { AlertTriangle } from 'lucide-react';
+import type { ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -18,6 +19,7 @@ interface ConfirmDialogProps {
   description: string;
   confirmLabel?: string;
   destructive?: boolean;
+  children?: ReactNode;
 }
 
 export function ConfirmDialog({
@@ -28,6 +30,7 @@ export function ConfirmDialog({
   description,
   confirmLabel = 'Confirm',
   destructive = false,
+  children,
 }: ConfirmDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
@@ -47,6 +50,7 @@ export function ConfirmDialog({
             </div>
           </div>
         </DialogHeader>
+        {children && <div className="mt-2">{children}</div>}
         <DialogFooter className="mt-2">
           <Button variant="outline" onClick={onClose}>
             Cancel

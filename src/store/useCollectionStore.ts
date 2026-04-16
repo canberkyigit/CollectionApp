@@ -32,6 +32,7 @@ import { getPermissionDeniedMessage, hasPermission, type CollectionPermission } 
 import { normalizeLibrary } from '@/lib/libraries';
 import { firestoreService } from '@/services/firestoreService';
 import { collectionSyncService } from '@/services/collectionSyncService';
+import { normalizeItemCustomFields } from '@/lib/itemForm';
 
 let currentUserId: string | null = null;
 let currentActor: CollectionActor = {
@@ -65,74 +66,82 @@ function applyThemeToDocument(theme: 'dark' | 'light') {
 
 function syncCategory(category: Category) {
   if (!currentUserId || !firestoreService.isAvailable()) return;
-  collectionSyncService.schedule(
-    'Save category',
-    () => firestoreService.saveCategory(currentUserId!, category),
-    { scope: 'categories' },
-  );
+  collectionSyncService.scheduleFirestoreMutation('Save category', {
+    action: 'saveCategory',
+    userId: currentUserId,
+    payload: category,
+    scope: 'categories',
+  });
 }
 
 function syncItem(item: CollectionItem) {
   if (!currentUserId || !firestoreService.isAvailable()) return;
-  collectionSyncService.schedule(
-    'Save item',
-    () => firestoreService.saveItem(currentUserId!, item),
-    { scope: 'items' },
-  );
+  collectionSyncService.scheduleFirestoreMutation('Save item', {
+    action: 'saveItem',
+    userId: currentUserId,
+    payload: item,
+    scope: 'items',
+  });
 }
 
 function syncWishlist(item: WishlistItem) {
   if (!currentUserId || !firestoreService.isAvailable()) return;
-  collectionSyncService.schedule(
-    'Save wishlist item',
-    () => firestoreService.saveWishlistItem(currentUserId!, item),
-    { scope: 'wishlist' },
-  );
+  collectionSyncService.scheduleFirestoreMutation('Save wishlist item', {
+    action: 'saveWishlistItem',
+    userId: currentUserId,
+    payload: item,
+    scope: 'wishlist',
+  });
 }
 
 function syncActivity(entry: ActivityLogEntry) {
   if (!currentUserId || !firestoreService.isAvailable()) return;
-  collectionSyncService.schedule(
-    'Save activity entry',
-    () => firestoreService.addActivityEntry(currentUserId!, entry),
-    { scope: 'activity' },
-  );
+  collectionSyncService.scheduleFirestoreMutation('Save activity entry', {
+    action: 'addActivityEntry',
+    userId: currentUserId,
+    payload: entry,
+    scope: 'activity',
+  });
 }
 
 function syncLibrary(library: Library) {
   if (!currentUserId || !firestoreService.isAvailable()) return;
-  collectionSyncService.schedule(
-    'Save library',
-    () => firestoreService.saveLibrary(currentUserId!, library),
-    { scope: 'libraries' },
-  );
+  collectionSyncService.scheduleFirestoreMutation('Save library', {
+    action: 'saveLibrary',
+    userId: currentUserId,
+    payload: library,
+    scope: 'libraries',
+  });
 }
 
 function syncContributor(contributor: Contributor) {
   if (!currentUserId || !firestoreService.isAvailable()) return;
-  collectionSyncService.schedule(
-    'Save contributor',
-    () => firestoreService.saveContributor(currentUserId!, contributor),
-    { scope: 'contributors' },
-  );
+  collectionSyncService.scheduleFirestoreMutation('Save contributor', {
+    action: 'saveContributor',
+    userId: currentUserId,
+    payload: contributor,
+    scope: 'contributors',
+  });
 }
 
 function deleteLibraryFromFirestore(libraryId: string) {
   if (!currentUserId || !firestoreService.isAvailable()) return;
-  collectionSyncService.schedule(
-    'Delete library',
-    () => firestoreService.deleteLibrary(currentUserId!, libraryId),
-    { scope: 'libraries' },
-  );
+  collectionSyncService.scheduleFirestoreMutation('Delete library', {
+    action: 'deleteLibrary',
+    userId: currentUserId,
+    payload: { id: libraryId },
+    scope: 'libraries',
+  });
 }
 
 function syncSettings(partial: Partial<UserSettings>) {
   if (!currentUserId || !firestoreService.isAvailable()) return;
-  collectionSyncService.schedule(
-    'Save settings',
-    () => firestoreService.saveUserSettings(currentUserId!, partial),
-    { scope: 'settings' },
-  );
+  collectionSyncService.scheduleFirestoreMutation('Save settings', {
+    action: 'saveUserSettings',
+    userId: currentUserId,
+    payload: partial,
+    scope: 'settings',
+  });
 }
 
 function ensurePermission(permission: CollectionPermission): boolean {
@@ -154,6 +163,54 @@ const dependencies: CollectionStoreDependencies = {
   deleteLibraryFromFirestore,
   syncSettings,
 };
+
+export function migrateCollectionStoreState(persistedState: unknown): Partial<CollectionStore> {
+  const state = (persistedState ?? {}) as Partial<CollectionStore>;
+  const mockFieldsById = new Map(mockCategories.map((category) => [category.id, category.fields]));
+  const starterData = createStarterCollectionData();
+
+  return {
+    ...state,
+    ownerUserId: state.ownerUserId ?? null,
+    isRemoteDataLoading: false,
+    categories: (state.categories ?? starterData.categories).map((category) => {
+      if (category.fields && category.fields.length > 0) return category;
+      const fields = mockFieldsById.get(category.id);
+      return fields ? { ...category, fields } : category;
+    }),
+    contributors: (state.contributors ?? starterData.contributors).map((contributor) => ({
+      ...contributor,
+      role: contributor.role ?? 'viewer',
+    })),
+    libraries: (state.libraries ?? []).map((library) => normalizeLibrary(library)),
+    items: (state.items ?? starterData.items).map((item) => ({
+      ...item,
+      customFields: normalizeItemCustomFields(item.customFields),
+      purchaseInfo: {
+        ...item.purchaseInfo,
+        currencyEquivalents: item.purchaseInfo.currencyEquivalents ?? [],
+      },
+      documents: item.documents ?? [],
+    })),
+    dashboardWidgets: state.dashboardWidgets?.length
+      ? state.dashboardWidgets
+      : cloneDefaultWidgets(),
+    notifications: state.notifications ?? cloneDefaultNotifications(),
+    readNotificationIds: state.readNotificationIds ?? [],
+    sidebarOpen: state.sidebarOpen ?? true,
+    menuCollectionStyle: state.menuCollectionStyle ?? 'style1',
+    viewMode: state.viewMode ?? 'grid',
+    searchQuery: state.searchQuery ?? '',
+    sortField: state.sortField ?? 'createdAt',
+    sortOrder: state.sortOrder ?? 'desc',
+    selectedTags: state.selectedTags ?? [],
+    theme: state.theme ?? 'light',
+    displayCurrency: state.displayCurrency ?? 'USD',
+    itemDialogOpen: false,
+    itemDialogCategoryId: null,
+    itemDialogItem: null,
+  } satisfies Partial<CollectionStore>;
+}
 
 export const useCollectionStore = create<CollectionStore>()(
   persist(
@@ -183,60 +240,7 @@ export const useCollectionStore = create<CollectionStore>()(
         readNotificationIds: state.readNotificationIds,
         notifications: state.notifications,
       }),
-      migrate: (persistedState: unknown) => {
-        const state = (persistedState ?? {}) as Partial<CollectionStore>;
-        const mockFieldsById = new Map(mockCategories.map((category) => [category.id, category.fields]));
-        const deprecatedKeys = new Set(['firstEdition', 'purchaseDate', 'purchasePrice', 'purchaseCurrency', 'currentValue']);
-        const starterData = createStarterCollectionData();
-
-        return {
-          ...state,
-          ownerUserId: state.ownerUserId ?? null,
-          isRemoteDataLoading: false,
-          categories: (state.categories ?? starterData.categories).map((category) => {
-            if (category.fields && category.fields.length > 0) return category;
-            const fields = mockFieldsById.get(category.id);
-            return fields ? { ...category, fields } : category;
-          }),
-          contributors: (state.contributors ?? starterData.contributors).map((contributor) => ({
-            ...contributor,
-            role: contributor.role ?? 'viewer',
-          })),
-          libraries: (state.libraries ?? []).map((library) => normalizeLibrary(library)),
-          items: (state.items ?? starterData.items).map((item) => {
-            const cleanedCustomFields = { ...(item.customFields ?? {}) };
-            for (const key of deprecatedKeys) {
-              delete cleanedCustomFields[key];
-            }
-
-            return {
-              ...item,
-              customFields: cleanedCustomFields,
-              purchaseInfo: {
-                ...item.purchaseInfo,
-                currencyEquivalents: item.purchaseInfo.currencyEquivalents ?? [],
-              },
-            };
-          }),
-          dashboardWidgets: state.dashboardWidgets?.length
-            ? state.dashboardWidgets
-            : cloneDefaultWidgets(),
-          notifications: state.notifications ?? cloneDefaultNotifications(),
-          readNotificationIds: state.readNotificationIds ?? [],
-          sidebarOpen: state.sidebarOpen ?? true,
-          menuCollectionStyle: state.menuCollectionStyle ?? 'style1',
-          viewMode: state.viewMode ?? 'grid',
-          searchQuery: state.searchQuery ?? '',
-          sortField: state.sortField ?? 'createdAt',
-          sortOrder: state.sortOrder ?? 'desc',
-          selectedTags: state.selectedTags ?? [],
-          theme: state.theme ?? 'light',
-          displayCurrency: state.displayCurrency ?? 'USD',
-          itemDialogOpen: false,
-          itemDialogCategoryId: null,
-          itemDialogItem: null,
-        } satisfies Partial<CollectionStore>;
-      },
+      migrate: migrateCollectionStoreState,
       onRehydrateStorage: () => (state) => {
         if (!state) return;
 
@@ -255,19 +259,9 @@ export const useCollectionStore = create<CollectionStore>()(
 
         state.libraries = state.libraries.map((library) => normalizeLibrary(library));
 
-        const deprecatedKeys = new Set(['firstEdition', 'purchaseDate', 'purchasePrice', 'purchaseCurrency', 'currentValue']);
         state.items = state.items.map((item) => {
-          if (!item.customFields) return item;
-
-          const hasDeprecatedKey = Object.keys(item.customFields).some((key) => deprecatedKeys.has(key));
-          if (!hasDeprecatedKey) return item;
-
-          const cleanedCustomFields = { ...item.customFields };
-          for (const key of deprecatedKeys) {
-            delete cleanedCustomFields[key];
-          }
-
-          return { ...item, customFields: cleanedCustomFields };
+          const customFields = normalizeItemCustomFields(item.customFields);
+          return { ...item, customFields, documents: item.documents ?? [] };
         });
       },
     },

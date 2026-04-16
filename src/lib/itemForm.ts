@@ -1,4 +1,4 @@
-import type { CategoryField, CollectionItem, CurrencyEquivalent } from '@/types';
+import type { Category, CategoryField, CollectionItem, CurrencyEquivalent, ItemSourceMetadata } from '@/types';
 import { currencyService } from '@/services/currencyService';
 import { storageService } from '@/services/storageService';
 import { getItemCurrentValueCurrency } from '@/lib/valuation';
@@ -6,14 +6,22 @@ import { getItemCurrentValueCurrency } from '@/lib/valuation';
 export const ITEM_FORM_CONDITIONS = ['Mint', 'Near Mint', 'Very Good', 'Good', 'Fair', 'Poor'] as const;
 export const ITEM_FORM_CURRENCIES = ['USD', 'EUR', 'TRY', 'GBP', 'JPY', 'CHF'] as const;
 
-export const ITEM_FORM_HIDDEN_CUSTOM_KEYS = new Set([
+export const ITEM_FORM_BUILT_IN_CUSTOM_KEYS = new Set([
+  'title',
+  'condition',
+  'quantity',
   'purchaseDate',
   'purchasePrice',
   'purchaseCurrency',
   'currentValue',
+  'estimatedValue',
   'isFirstEdition',
-  'condition',
+  'firstEdition',
   'notes',
+]);
+
+export const ITEM_FORM_HIDDEN_CUSTOM_KEYS = new Set([
+  ...ITEM_FORM_BUILT_IN_CUSTOM_KEYS,
 ]);
 
 export interface ItemFormValues {
@@ -98,6 +106,7 @@ export function normalizeCustomFields(
 ): Record<string, unknown> {
   const normalized: Record<string, unknown> = {};
   for (const field of fields) {
+    if (ITEM_FORM_BUILT_IN_CUSTOM_KEYS.has(field.key)) continue;
     const value = values[field.key];
     if (field.type === 'tags' || field.type === 'multi-select') {
       normalized[field.key] =
@@ -109,6 +118,38 @@ export function normalizeCustomFields(
     }
   }
   return normalized;
+}
+
+export function normalizeItemCustomFields(
+  customFields: Record<string, unknown> | null | undefined,
+): Record<string, unknown> {
+  const normalized = { ...(customFields ?? {}) };
+  for (const key of ITEM_FORM_BUILT_IN_CUSTOM_KEYS) {
+    delete normalized[key];
+  }
+  return normalized;
+}
+
+export function getMissingItemFormFields(
+  fields: CategoryField[],
+  values: Pick<ItemFormValues, 'title' | 'condition' | 'customFields'>,
+): string[] {
+  const missing: string[] = [];
+  if (!values.title?.trim()) missing.push('Title');
+  if (!values.condition?.trim()) missing.push('Condition');
+
+  for (const field of fields) {
+    if (!field.required || ITEM_FORM_BUILT_IN_CUSTOM_KEYS.has(field.key)) continue;
+    const val = values.customFields[field.key];
+    const empty =
+      val === undefined ||
+      val === null ||
+      val === '' ||
+      (typeof val === 'string' && !val.trim());
+    if (empty) missing.push(field.label);
+  }
+
+  return missing;
 }
 
 export function buildPurchaseRatesMap(values: Pick<ItemFormValues, 'gbpRate' | 'usdRate' | 'eurRate'>): Record<string, number> {
@@ -254,4 +295,99 @@ export async function persistItemImages(
   }
 
   return finalImages;
+}
+
+export interface BuildItemFormSubmissionArgs {
+  category: Category;
+  fields: CategoryField[];
+  data: ItemFormValues;
+  itemImages: string[];
+  coverIndex: number;
+  currentUserId: string | null;
+  existingItem?: CollectionItem;
+  sourceMetadata?: ItemSourceMetadata;
+}
+
+export async function buildItemFormSubmission({
+  category,
+  fields,
+  data,
+  itemImages,
+  coverIndex,
+  currentUserId,
+  existingItem,
+  sourceMetadata,
+}: BuildItemFormSubmissionArgs): Promise<Omit<CollectionItem, 'id' | 'createdAt' | 'updatedAt'>> {
+  const customFields = normalizeCustomFields(fields, data.customFields);
+  const tags = data.tags
+    ? data.tags.split(',').map((s) => s.trim()).filter(Boolean)
+    : [];
+  const now = new Date().toISOString();
+  const purchaseDate = data.purchaseDate || now;
+  const orderedImages = coverIndex === 0
+    ? itemImages
+    : [itemImages[coverIndex], ...itemImages.filter((_, index) => index !== coverIndex)];
+  const finalImages = await persistItemImages(
+    currentUserId,
+    orderedImages.filter(Boolean),
+    existingItem?.images ?? [],
+  );
+  const purchaseAmt = Number(data.purchasePrice) || 0;
+  const ratesMap = buildPurchaseRatesMap(data);
+  const exchangeRate = getPurchaseExchangeRateToUsd(data.purchaseCurrency, ratesMap);
+  const currencyEquivalents = buildCurrencyEquivalents(
+    purchaseAmt,
+    data.purchaseCurrency,
+    ratesMap,
+  );
+  const resolvedCurrentValuation = resolveCurrentValuationInput(
+    data,
+    purchaseAmt,
+    existingItem,
+  );
+
+  return {
+    categoryId: category.id,
+    libraryId: data.libraryId || undefined,
+    title: data.title,
+    description: data.description ?? '',
+    customFields,
+    notes: data.notes ?? '',
+    tags,
+    images: finalImages,
+    quantity: Number(data.quantity) || 1,
+    purchaseInfo: {
+      purchasedAt: purchaseDate,
+      purchasePrice: purchaseAmt,
+      purchaseCurrency: data.purchaseCurrency,
+      exchangeRateAtPurchase: exchangeRate,
+      purchaseLocation: data.purchaseLocation,
+      currencyEquivalents,
+    },
+    valuationInfo: {
+      currentEstimatedValue: resolvedCurrentValuation.currentEstimatedValue,
+      currentValueCurrency: resolvedCurrentValuation.currentValueCurrency,
+      currentExchangeRate: resolvedCurrentValuation.currentExchangeRate,
+      targetYearProjection: data.targetYear,
+      targetEstimatedValue: data.targetValue ? Number(data.targetValue) || 0 : undefined,
+      valueHistory: existingItem?.valuationInfo.valueHistory ?? [
+        {
+          date: now.slice(0, 10),
+          value: resolvedCurrentValuation.currentEstimatedValue,
+          currency: resolvedCurrentValuation.currentValueCurrency,
+        },
+      ],
+    },
+    contributorId: existingItem?.contributorId ?? currentUserId ?? 'offline',
+    condition: data.condition,
+    location: data.location || undefined,
+    isRead: existingItem?.isRead ?? false,
+    isFavorite: existingItem?.isFavorite ?? false,
+    maintenanceLog: existingItem?.maintenanceLog ?? [],
+    lendingHistory: existingItem?.lendingHistory ?? [],
+    sourceMetadata: sourceMetadata ?? existingItem?.sourceMetadata,
+    documents: existingItem?.documents ?? [],
+    lastMutationId: existingItem?.lastMutationId,
+    lastSyncedAt: existingItem?.lastSyncedAt,
+  };
 }

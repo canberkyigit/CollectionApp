@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import {
   Layers,
   ArrowRight,
@@ -34,7 +35,7 @@ const floatingIcons = [
 
 export default function Login() {
   const navigate = useNavigate();
-  const { loginWithEmail, registerWithEmail, loginWithGoogle, loginOffline, firebaseReady, error, clearError } = useAuthStore();
+  const { loginWithEmail, registerWithEmail, loginWithGoogle, loginOffline, sendPasswordReset, firebaseReady, error, clearError } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -76,6 +77,25 @@ export default function Login() {
   const handleOfflineLogin = () => {
     loginOffline();
     navigate('/collections');
+  };
+
+  const handlePasswordReset = async () => {
+    clearError();
+    if (!email.trim()) {
+      toast.error('Enter your email address first');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await sendPasswordReset(email.trim());
+      toast.success('Password reset email sent');
+    } catch {
+      // error is set in the store
+      return;
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -129,9 +149,9 @@ export default function Login() {
 
           <div className="flex items-center justify-center gap-8 pt-4">
             {[
-              { value: '10K+', label: 'Collectors' },
-              { value: '1M+', label: 'Items Tracked' },
-              { value: '50+', label: 'Categories' },
+              { value: 'Offline', label: 'PWA ready' },
+              { value: 'CSV', label: 'Export ready' },
+              { value: 'Roles', label: 'Access aware' },
             ].map((stat) => (
               <div key={stat.label} className="text-center">
                 <p className="text-2xl font-bold text-primary">{stat.value}</p>
@@ -253,6 +273,10 @@ export default function Login() {
                     type="button"
                     className="text-xs font-medium text-primary hover:text-primary/80 transition-colors"
                     tabIndex={-1}
+                    disabled={isLoading || !firebaseReady}
+                    onClick={async () => {
+                      await handlePasswordReset();
+                    }}
                   >
                     Forgot password?
                   </button>

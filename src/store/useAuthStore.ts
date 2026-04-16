@@ -24,6 +24,7 @@ interface AuthState {
   logout: () => Promise<void>;
   updateUserProfile: (displayName?: string, photoURL?: string) => Promise<void>;
   changePassword: (newPassword: string) => Promise<void>;
+  sendPasswordReset: (email: string) => Promise<void>;
   clearError: () => void;
 }
 
@@ -134,6 +135,17 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   changePassword: async (newPassword) => {
     await authService.changePassword(newPassword);
+  },
+
+  sendPasswordReset: async (email) => {
+    set({ error: null });
+    try {
+      await authService.sendPasswordReset(email);
+    } catch (error: unknown) {
+      const msg = getAuthErrorMessage(error, 'Password reset failed');
+      set({ error: msg });
+      throw error;
+    }
   },
 
   clearError: () => set({ error: null }),
