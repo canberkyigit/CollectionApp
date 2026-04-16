@@ -106,6 +106,43 @@
     box-shadow: var(--shadow-surface-1);
     backdrop-filter: blur(20px);
   }
+
+  .desktop-app .desktop-titlebar-drag {
+    -webkit-app-region: drag;
+    app-region: drag;
+  }
+
+  .desktop-app .desktop-titlebar-drag :is(
+    a,
+    button,
+    input,
+    textarea,
+    select,
+    [role="button"],
+    [role="menuitem"],
+    [data-radix-popper-content-wrapper]
+  ) {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+  }
+
+  .desktop-app-mac body::before {
+    content: "";
+    position: fixed;
+    inset: 0 0 auto;
+    z-index: 60;
+    height: 2rem;
+    border-bottom: 1px solid color-mix(in oklab, var(--color-border) 72%, transparent);
+    background-color: color-mix(in oklab, var(--color-surface-2) 90%, transparent);
+    backdrop-filter: blur(20px);
+    -webkit-app-region: drag;
+    app-region: drag;
+  }
+
+  .desktop-app-mac .desktop-content-shell {
+    height: calc(100vh - 2rem);
+    margin-top: 2rem;
+  }
 }
 
 @layer utilities {
