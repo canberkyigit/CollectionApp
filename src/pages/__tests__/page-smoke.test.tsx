@@ -313,7 +313,7 @@ describe('page smoke coverage', () => {
     });
 
     const loginView = renderWithRouter(<Login />);
-    expect(screen.getAllByText('CollectVault')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('ESÇ')[0]).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /create one/i }));
     loginView.unmount();
 

@@ -130,7 +130,7 @@ export default function Login() {
           </div>
 
           <div className="space-y-3">
-            <h1 className="text-4xl font-bold tracking-tight">CollectVault</h1>
+            <h1 className="text-4xl font-bold tracking-tight">ESÇ</h1>
             <p className="text-lg leading-relaxed text-muted-foreground">
               Your premium collection management platform. Catalog, track, and grow your valuable collections.
             </p>
@@ -172,7 +172,7 @@ export default function Login() {
             <div className="mx-auto flex size-14 items-center justify-center rounded-xl border border-primary/20 bg-primary/10">
               <Layers className="size-8 text-primary" />
             </div>
-            <h1 className="text-2xl font-bold tracking-tight">CollectVault</h1>
+            <h1 className="text-2xl font-bold tracking-tight">ESÇ</h1>
           </div>
 
           {/* Header */}
@@ -368,7 +368,7 @@ export default function Login() {
         </div>
 
         <p className="absolute bottom-6 text-xs text-muted-foreground/50">
-          &copy; {new Date().getFullYear()} CollectVault. All rights reserved.
+          &copy; {new Date().getFullYear()} ESÇ. All rights reserved.
         </p>
       </div>
     </div>

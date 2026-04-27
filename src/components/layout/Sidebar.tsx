@@ -20,6 +20,7 @@ import {
   Inbox,
   Search,
 } from 'lucide-react';
+import brandLogo from '@/assets/logo.png';
 import { getCategoryIcon } from '@/lib/icons';
 import { isItemUnassignedForCategory, libraryMatchesCategory } from '@/lib/libraries';
 import { cn } from '@/lib/utils';
@@ -28,7 +29,6 @@ import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { VirtualList } from '@/components/shared';
 import { useCollectionStore } from '@/store/useCollectionStore';
-import { useAuthStore } from '@/store/useAuthStore';
 
 const baseNavItems = [
   { label: 'Collections', icon: FolderOpen, path: '/collections' },
@@ -43,11 +43,6 @@ const baseNavItems = [
 import type { CollectionItem } from '@/types';
 
 const VIRTUAL_THRESHOLD = 80;
-
-function getDisplayRole(role?: string) {
-  if (!role) return 'Workspace';
-  return role.charAt(0).toUpperCase() + role.slice(1);
-}
 
 function getPrimaryNavClass(isActive: boolean) {
   return cn(
@@ -144,7 +139,6 @@ function SidebarItemList({
 }
 
 const Sidebar = () => {
-  const currentUser = useAuthStore((state) => state.user);
   const sidebarOpen = useCollectionStore((s) => s.sidebarOpen);
   const menuCollectionStyle = useCollectionStore((s) => s.menuCollectionStyle) ?? 'style1';
   const categories = useCollectionStore((s) => s.categories);
@@ -266,23 +260,20 @@ const Sidebar = () => {
       <div className="desktop-titlebar-drag relative flex h-16 items-center overflow-hidden border-b border-border/70 px-4">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(99,102,241,0.18),transparent_42%),linear-gradient(180deg,rgba(255,255,255,0.03),transparent)]" />
         <div className="relative flex w-full items-center gap-3">
-          <div className="surface-brand flex h-9 w-9 items-center justify-center rounded-2xl border border-primary/25">
-            <Layers className="h-4.5 w-4.5" />
+          <div className="flex h-14 w-20 shrink-0 items-center justify-center">
+            <img src={brandLogo} alt="ESÇ logo" className="h-full w-full scale-[1.02] object-contain" />
           </div>
           <div className="min-w-0 flex-1">
-            <span className="block text-[15px] font-semibold leading-tight tracking-tight text-foreground">
-              CollectVault
+            <span className="brand-title-premium block text-[17px] leading-tight" data-text="ESÇ">
+              ESÇ
             </span>
-            <div className="mt-0.5 flex items-center gap-1.5">
-              <span className="text-[9px] font-semibold uppercase tracking-[0.22em] text-sidebar-foreground/65">
-                Collector OS
-              </span>
-              <Badge
-                variant="secondary"
-                className="h-5 rounded-full border border-border/60 bg-background/55 px-2 text-[10px] font-medium text-sidebar-foreground"
+            <div className="mt-0.5 flex items-center">
+              <span
+                className="brand-subtitle-premium whitespace-nowrap text-[12px]"
+                data-text="Private Collection"
               >
-                {getDisplayRole(currentUser?.role)}
-              </Badge>
+                Private Collection
+              </span>
             </div>
           </div>
         </div>

@@ -150,10 +150,10 @@ export function DesktopUpdatePrompt() {
                   : isInstallFailed
                     ? 'This build is unsigned. Download the new version manually from GitHub.'
                     : isDownloaded
-                      ? `CollectVault ${(phase as { version: string }).version} is ready. Restart to apply.`
+                      ? `ESÇ ${(phase as { version: string }).version} is ready. Restart to apply.`
                       : isDownloading
                         ? `${percent}% · ${formatBytes(phase.progress.bytesPerSecond)}/s · ${formatBytes(phase.progress.transferred)} of ${formatBytes(phase.progress.total)}`
-                        : 'A new CollectVault build is available. Install it now?'}
+                        : 'A new ESÇ build is available. Install it now?'}
               </p>
             </div>
 

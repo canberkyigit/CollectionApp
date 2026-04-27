@@ -107,6 +107,77 @@
     backdrop-filter: blur(20px);
   }
 
+  .brand-title-premium,
+  .brand-subtitle-premium {
+    position: relative;
+    display: inline-block;
+    isolation: isolate;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    -webkit-background-clip: text;
+    background-repeat: no-repeat;
+    white-space: inherit;
+  }
+
+  .brand-title-premium::before,
+  .brand-subtitle-premium::before {
+    content: attr(data-text);
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    white-space: inherit;
+  }
+
+  .brand-title-premium {
+    font-family:
+      "SF Pro Display",
+      "SF Pro Text",
+      -apple-system,
+      BlinkMacSystemFont,
+      "Inter",
+      "Segoe UI",
+      sans-serif;
+    letter-spacing: 0.06em;
+    font-weight: 700;
+    font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
+    background-image: linear-gradient(
+      180deg,
+      oklch(0.96 0.012 252) 0%,
+      oklch(0.88 0.025 248) 18%,
+      oklch(0.74 0.022 246) 42%,
+      oklch(0.92 0.008 255) 58%,
+      oklch(0.7 0.03 242) 100%
+    );
+  }
+
+  .brand-title-premium::before {
+    z-index: -2;
+    color: color-mix(in oklab, var(--color-foreground) 86%, var(--color-primary) 14%);
+    opacity: 0.26;
+    transform: translateY(0.045em);
+    filter: blur(0.2px);
+  }
+
+  .brand-subtitle-premium {
+    letter-spacing: 0.08em;
+    font-weight: 600;
+    background-image: linear-gradient(
+      180deg,
+      oklch(0.76 0.016 252) 0%,
+      oklch(0.68 0.02 248) 30%,
+      oklch(0.56 0.018 245) 62%,
+      oklch(0.7 0.016 250) 100%
+    );
+  }
+
+  .brand-subtitle-premium::before {
+    z-index: -2;
+    color: color-mix(in oklab, var(--color-sidebar-foreground) 90%, var(--color-primary) 10%);
+    opacity: 0.16;
+    transform: translateY(0.04em);
+  }
+
   .desktop-app .desktop-titlebar-drag {
     -webkit-app-region: drag;
     app-region: drag;
@@ -167,6 +238,37 @@ html.light .scrollbar-thin {
 }
 html.light .scrollbar-thin::-webkit-scrollbar-thumb {
   background-color: oklch(0.8 0.01 260);
+}
+
+html.light .brand-title-premium {
+  background-image: linear-gradient(
+    180deg,
+    oklch(0.2 0.018 254) 0%,
+    oklch(0.33 0.035 247) 18%,
+    oklch(0.15 0.018 252) 46%,
+    oklch(0.42 0.026 246) 64%,
+    oklch(0.22 0.022 250) 100%
+  );
+}
+
+html.light .brand-title-premium::before {
+  color: oklch(0.2 0.018 252);
+  opacity: 0.18;
+}
+
+html.light .brand-subtitle-premium {
+  background-image: linear-gradient(
+    180deg,
+    oklch(0.48 0.018 252) 0%,
+    oklch(0.56 0.024 248) 28%,
+    oklch(0.42 0.018 248) 60%,
+    oklch(0.58 0.02 246) 100%
+  );
+}
+
+html.light .brand-subtitle-premium::before {
+  color: oklch(0.46 0.018 248);
+  opacity: 0.12;
 }
 
 html.light, .light {

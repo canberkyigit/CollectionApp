@@ -625,7 +625,7 @@ export function ImportExportPanel({
       const snapshot = await api.restoreSnapshot();
       if (!isBackupBundle(snapshot)) {
         toast.error('Local copy is invalid', {
-          description: 'The saved desktop copy is not a valid CollectVault backup bundle.',
+          description: 'The saved desktop copy is not a valid ESÇ backup file.',
         });
         return;
       }
@@ -1424,7 +1424,7 @@ export function ImportExportPanel({
                 </div>
               </CardHeader>
               <CardContent className="text-sm text-muted-foreground">
-                Open CollectVault Desktop to save an offline copy with collection data, notes, photos, wishlist records, activity history, contributors, and settings.
+                Open ESÇ Desktop to save an offline copy with collection data, notes, photos, wishlist records, activity history, contributors, and settings.
               </CardContent>
             </Card>
           ) : (
@@ -1467,7 +1467,7 @@ export function ImportExportPanel({
 
                     <div className="space-y-2 text-sm text-muted-foreground">
                       <p>
-                        CollectVault Desktop keeps this local copy updated automatically after collection changes. Use Sync With Local for an immediate refresh.
+                        ESÇ Desktop keeps this local copy updated automatically after collection changes. Use Sync With Local for an immediate refresh.
                       </p>
                       <p>
                         The desktop copy stores a full backup bundle plus local asset files under your Documents folder.

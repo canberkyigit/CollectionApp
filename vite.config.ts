@@ -10,10 +10,10 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'prompt',
-      includeAssets: ['apple-touch-icon.svg'],
+      includeAssets: ['favicon.png', 'apple-touch-icon.png'],
       manifest: {
-        name: 'CollectVault — Premium Collection Management',
-        short_name: 'CollectVault',
+        name: 'ESÇ — Premium Collection Management',
+        short_name: 'ESÇ',
         description: 'Manage and track your personal collections — books, vinyl records, art, and more.',
         theme_color: '#6366f1',
         background_color: '#09090b',
@@ -24,21 +24,21 @@ export default defineConfig({
         categories: ['lifestyle', 'productivity', 'utilities'],
         icons: [
           {
-            src: 'pwa-192x192.svg',
+            src: 'pwa-192x192.png',
             sizes: '192x192',
-            type: 'image/svg+xml',
+            type: 'image/png',
             purpose: 'any',
           },
           {
-            src: 'pwa-512x512.svg',
+            src: 'pwa-512x512.png',
             sizes: '512x512',
-            type: 'image/svg+xml',
+            type: 'image/png',
             purpose: 'any',
           },
           {
-            src: 'pwa-512x512.svg',
+            src: 'pwa-512x512.png',
             sizes: '512x512',
-            type: 'image/svg+xml',
+            type: 'image/png',
             purpose: 'maskable',
           },
         ],
