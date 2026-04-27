@@ -319,11 +319,15 @@ const AppLayout = () => {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="desktop-content-shell surface-page flex h-screen overflow-hidden text-foreground">
-        <Sidebar />
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          <Topbar />
-          <main className="min-h-0 flex-1 overflow-y-auto scrollbar-thin p-3 sm:p-4 md:p-6">
+      <div className="desktop-content-shell surface-page flex h-screen overflow-hidden text-foreground print:block print:h-auto print:overflow-visible print:bg-white print:text-black">
+        <div className="print:hidden">
+          <Sidebar />
+        </div>
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden print:block print:min-w-full print:overflow-visible">
+          <div className="print:hidden">
+            <Topbar />
+          </div>
+          <main className="min-h-0 flex-1 overflow-y-auto scrollbar-thin p-3 sm:p-4 md:p-6 print:block print:h-auto print:overflow-visible print:p-0">
             <Outlet />
           </main>
         </div>
