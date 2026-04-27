@@ -1,35 +1,16 @@
-name: Notify Desktop Sync
+name: Desktop Sync Disabled
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  notify:
-    name: Notify desktop repository
+  disabled:
+    name: Desktop sync disabled
     runs-on: ubuntu-latest
-    env:
-      DESKTOP_DISPATCH_TOKEN: ${{ secrets.COLLECTVAULT_DESKTOP_DISPATCH_TOKEN }}
 
     steps:
-      - name: Dispatch desktop sync
-        if: env.DESKTOP_DISPATCH_TOKEN != ''
-        env:
-          GH_TOKEN: ${{ env.DESKTOP_DISPATCH_TOKEN }}
-        run: |
-          gh api repos/canberkyigit/CollectionApp-Desktop/dispatches \
-            --method POST \
-            --field event_type=web-main-updated \
-            --field client_payload[sha]="${GITHUB_SHA}" \
-            --field client_payload[ref]="main"
-
-      - name: Explain skipped dispatch
-        if: env.DESKTOP_DISPATCH_TOKEN == ''
-        run: |
-          echo "COLLECTVAULT_DESKTOP_DISPATCH_TOKEN is not configured."
-          echo "Desktop sync will still run from CollectionApp-Desktop on its schedule or manual dispatch."
+      - name: Explain disabled desktop sync
+        run: echo "Automatic desktop repository sync is intentionally disabled."

@@ -1,4 +1,4 @@
-# CollectVault — Premium Collection Management
+# ESÇ — Premium Collection Management
 
 A full-featured Progressive Web App (PWA) for managing personal collections of any kind — books, vinyl records, art, memorabilia, and more.
 
@@ -125,7 +125,9 @@ Build the installer artifacts:
 npm run desktop:dist:universal
 ```
 
-Before shipping an update, bump the version in this `package.json`. The desktop wrapper automatically syncs to it.
+Before shipping a manual desktop build, bump the version in this `package.json`. The desktop wrapper reads it during manual builds.
+
+GitHub automation no longer updates `CollectionApp-Desktop` when this repo changes. Run the desktop sync workflow manually only when you want to move the desktop app to a new web commit.
 
 Enable desktop auto-update by building with a feed URL:
 

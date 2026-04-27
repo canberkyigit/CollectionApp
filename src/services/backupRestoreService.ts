@@ -282,7 +282,7 @@ function validateBackup(rawBackup: unknown, current: RestorableBackupState) {
   const skipped: BackupRestoreIssue[] = [];
 
   if (!isBackupBundle(rawBackup)) {
-    errors.push('This file is not a CollectVault backup bundle.');
+    errors.push('This file is not a valid ESÇ backup file.');
     return {
       bundle: null,
       skipped,
