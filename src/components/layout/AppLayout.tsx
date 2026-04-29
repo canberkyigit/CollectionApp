@@ -327,7 +327,7 @@ const AppLayout = () => {
           <div className="print:hidden">
             <Topbar />
           </div>
-          <main className="desktop-main-scroll min-h-0 flex-1 overflow-y-auto scrollbar-thin p-3 sm:p-4 md:p-6 print:block print:h-auto print:overflow-visible print:p-0">
+          <main className="min-h-0 flex-1 overflow-y-auto scrollbar-thin p-3 sm:p-4 md:p-6 print:block print:h-auto print:overflow-visible print:p-0">
             <Outlet />
           </main>
         </div>

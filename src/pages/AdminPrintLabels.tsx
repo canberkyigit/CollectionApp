@@ -83,8 +83,12 @@ function ItemPrintCard({
     return hasCustomFieldValue(field, item.customFields[field.key]);
   });
   const customFieldsToShow = mode === 'compact' ? visibleCustomFields.slice(0, 6) : visibleCustomFields;
-  const compactDescription = mode === 'compact' ? truncateText(item.description || 'No description provided.', 280) : (item.description || 'No description provided.');
-  const compactNotes = mode === 'compact' ? truncateText(item.notes || 'No notes yet.', 320) : (item.notes || 'No notes yet.');
+  const compactDescription = mode === 'compact'
+    ? truncateText(item.description || 'No description provided.', 280)
+    : (item.description || 'No description provided.');
+  const compactNotes = mode === 'compact'
+    ? truncateText(item.notes || 'No notes yet.', 320)
+    : (item.notes || 'No notes yet.');
   const tagsToShow = mode === 'compact' ? item.tags.slice(0, 8) : item.tags;
   const hiddenTagCount = item.tags.length - tagsToShow.length;
 
@@ -299,7 +303,6 @@ export default function AdminPrintLabels() {
   return (
     <PageTransition>
       <div className="space-y-4 sm:space-y-6 md:space-y-8">
-        {/* Screen-only header */}
         <div className="print:hidden">
           <PageHeader
             title="Print Labels"
@@ -312,7 +315,6 @@ export default function AdminPrintLabels() {
             </Button>
           </PageHeader>
 
-          {/* Search + select all */}
           <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center">
             <div className="w-full lg:w-[240px]">
               <Select value={categoryFilter} onValueChange={setCategoryFilter}>
@@ -362,7 +364,6 @@ export default function AdminPrintLabels() {
             </p>
           </div>
 
-          {/* Item list */}
           <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.map((item) => {
               const cat = categoryNameById.get(item.categoryId);
@@ -394,7 +395,6 @@ export default function AdminPrintLabels() {
           </div>
         </div>
 
-        {/* Print layout — only visible when printing */}
         {selectedItems.length > 0 && (
           <div className="hidden bg-white text-black print:block">
             <div className="space-y-6 print:space-y-0">
@@ -418,7 +418,6 @@ export default function AdminPrintLabels() {
           </div>
         )}
 
-        {/* Screen preview of print layout */}
         {selectedItems.length > 0 && (
           <div className="print:hidden">
             <h3 className="mb-3 text-sm font-semibold text-muted-foreground">Preview ({selectedItems.length} items)</h3>

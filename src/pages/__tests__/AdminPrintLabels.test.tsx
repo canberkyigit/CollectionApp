@@ -11,22 +11,28 @@ describe('AdminPrintLabels', () => {
     seedCollectionStore({
       categories: [
         { ...createMockCategory({ name: 'Books', slug: 'books' }), id: 'cat-books', order: 0, createdAt: '2024-01-01', updatedAt: '2024-01-01' },
+        { ...createMockCategory({ name: 'Stamps', slug: 'stamps' }), id: 'cat-stamps', order: 1, createdAt: '2024-01-01', updatedAt: '2024-01-01' },
       ],
       items: [
         { ...createMockItem({ title: 'Dune', categoryId: 'cat-books' }), id: 'item-1', createdAt: '2024-01-01', updatedAt: '2024-01-01' },
         { ...createMockItem({ title: 'Foundation', categoryId: 'cat-books' }), id: 'item-2', createdAt: '2024-01-02', updatedAt: '2024-01-02' },
+        { ...createMockItem({ title: 'Blue Mauritius', categoryId: 'cat-stamps' }), id: 'item-3', createdAt: '2024-01-03', updatedAt: '2024-01-03' },
       ],
     });
     window.print = vi.fn();
   });
 
-  it('filters by category text, selects labels, and prints', async () => {
+  it('filters by category text, supports category selection, and prints', async () => {
     const user = userEvent.setup();
     renderWithRouter(<AdminPrintLabels />);
+
+    await user.click(screen.getByRole('combobox'));
+    await user.click(screen.getByRole('option', { name: 'Books' }));
 
     await user.type(screen.getByPlaceholderText('Search items...'), 'books');
     expect(screen.getByText('Dune')).toBeInTheDocument();
     expect(screen.getByText('Foundation')).toBeInTheDocument();
+    expect(screen.queryByText('Blue Mauritius')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /select all/i }));
     expect(screen.getByText(/Preview \(2 items\)/i)).toBeInTheDocument();
