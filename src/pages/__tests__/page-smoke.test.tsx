@@ -313,8 +313,9 @@ describe('page smoke coverage', () => {
     });
 
     const loginView = renderWithRouter(<Login />);
-    expect(screen.getAllByText('ESÇ')[0]).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /welcome back/i })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /create one/i }));
+    expect(screen.getByRole('heading', { name: /create your account/i })).toBeInTheDocument();
     loginView.unmount();
 
     renderRoute({

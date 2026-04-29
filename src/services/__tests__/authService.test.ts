@@ -81,7 +81,7 @@ describe('authService', () => {
     expect(mocks.updateProfile).toHaveBeenCalledWith(user, { displayName: 'Ada' });
   });
 
-  it('creates a user profile document when one does not exist and upgrades missing roles', async () => {
+  it('creates a user profile document on first login and reuses the legacy fallback when role is missing without writing back', async () => {
     const user = createFirebaseUser({ uid: 'user-2' });
     mocks.signInWithEmailAndPassword.mockResolvedValue({ user });
     mocks.getDoc
@@ -99,7 +99,10 @@ describe('authService', () => {
 
     expect(first.role).toBe('admin');
     expect(second.role).toBe('admin');
-    expect(mocks.setDoc).toHaveBeenCalled();
+    // Only the initial create should write to Firestore. Legacy accounts
+    // without a role field must NOT trigger a follow-up write because the
+    // hardened rules forbid client-side role mutations on update.
+    expect(mocks.setDoc).toHaveBeenCalledTimes(1);
   });
 
   it('subscribes to auth changes, returns the current user, and supports profile updates', async () => {

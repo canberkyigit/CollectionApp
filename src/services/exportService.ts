@@ -9,11 +9,22 @@ import type {
 } from '@/types';
 import { getItemCurrentValueCurrency, getItemGainLoss } from '@/lib/valuation';
 
+// CSV "formula injection" guard. If a cell starts with =, +, @, tab, or CR,
+// some spreadsheet applications (Excel, Google Sheets, LibreOffice) will
+// interpret it as a formula. Prefixing such values with a single quote
+// neutralizes the formula while leaving the visible content intact.
+// Reference: https://owasp.org/www-community/attacks/CSV_Injection
+const FORMULA_PREFIX_PATTERN = /^[=+@\t\r]/;
+
 function escapeCSV(value: string): string {
-  if (value.includes(',') || value.includes('"') || value.includes('\n')) {
-    return `"${value.replace(/"/g, '""')}"`;
+  let escaped = value;
+  if (FORMULA_PREFIX_PATTERN.test(value)) {
+    escaped = `'${value}`;
   }
-  return value;
+  if (escaped.includes(',') || escaped.includes('"') || escaped.includes('\n')) {
+    return `"${escaped.replace(/"/g, '""')}"`;
+  }
+  return escaped;
 }
 
 function formatGainLoss(item: CollectionItem): string {

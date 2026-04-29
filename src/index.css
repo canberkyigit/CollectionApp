@@ -60,6 +60,7 @@
   * {
     @apply border-border;
   }
+
   body {
     @apply bg-background text-foreground antialiased;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
@@ -206,6 +207,30 @@
     app-region: drag;
   }
 
+  .desktop-app body,
+  .desktop-app #root {
+    overflow: hidden;
+  }
+
+  .desktop-app .desktop-content-shell {
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  .desktop-app .desktop-main-scroll {
+    overscroll-behavior-y: contain;
+  }
+
+  .desktop-app .desktop-sticky-topbar {
+    z-index: 40;
+    isolation: isolate;
+    transform: translateZ(0);
+    will-change: transform;
+    backface-visibility: hidden;
+  }
+
   .desktop-app .desktop-titlebar-drag :is(
     a,
     button,
@@ -234,7 +259,9 @@
   }
 
   .desktop-app-mac .desktop-content-shell {
-    height: calc(100vh - 2rem);
+    min-height: calc(100dvh - 2rem);
+    height: calc(100dvh - 2rem);
+    max-height: calc(100dvh - 2rem);
     margin-top: 2rem;
   }
 }

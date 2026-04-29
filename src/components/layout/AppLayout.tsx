@@ -92,7 +92,7 @@ const AppLayout = () => {
           : 'Loaded desktop local copy after cloud load failed',
       });
       toast.success('Loaded desktop local copy', {
-        description: 'ESÇ is using the saved local snapshot on this Mac.',
+        description: 'ESC is using the saved local snapshot on this Mac.',
       });
       return true;
     } catch {

@@ -1082,7 +1082,7 @@ export function createCollectionDataSlice(
 
       if (!restored) {
         toast.error('Backup restore failed', {
-          description: 'The selected file is not a valid ESÇ backup file.',
+          description: 'The selected file is not a valid ESC backup file.',
         });
         return;
       }

@@ -29,7 +29,19 @@ interface UserProfileDoc {
   role: ContributorRole;
 }
 
-function mapUser(user: User, role: ContributorRole = 'admin'): AuthUser {
+// Each user owns their own private sandbox under /users/{uid}, so newly
+// registered accounts are admin of their own collection. The Firestore rules
+// enforce that this `role` field cannot be changed by the client after
+// creation (see firestore.rules), preventing privilege escalation while
+// keeping the new-user experience friction-free.
+const DEFAULT_NEW_USER_ROLE: ContributorRole = 'admin';
+
+// Fallback for legacy accounts whose Firestore document was created before
+// the role field existed. We deliberately do NOT write this back to Firestore
+// because the rules block role mutations on update.
+const LEGACY_FALLBACK_ROLE: ContributorRole = 'admin';
+
+function mapUser(user: User, role: ContributorRole = LEGACY_FALLBACK_ROLE): AuthUser {
   return {
     uid: user.uid,
     email: user.email,
@@ -43,7 +55,7 @@ async function ensureUserDoc(user: User): Promise<UserProfileDoc> {
   const ref = doc(db, 'users', user.uid);
   const snap = await getDoc(ref);
   if (!snap.exists()) {
-    const profile: UserProfileDoc = { role: 'admin' };
+    const profile: UserProfileDoc = { role: DEFAULT_NEW_USER_ROLE };
     await setDoc(ref, {
       ...profile,
       displayCurrency: 'USD',
@@ -57,15 +69,8 @@ async function ensureUserDoc(user: User): Promise<UserProfileDoc> {
   }
 
   const data = snap.data() as Partial<UserProfileDoc>;
-  if (!data.role) {
-    await setDoc(ref, {
-      role: 'admin',
-      updatedAt: new Date().toISOString(),
-    }, { merge: true });
-  }
-
   return {
-    role: data.role ?? 'admin',
+    role: data.role ?? LEGACY_FALLBACK_ROLE,
   };
 }
 
