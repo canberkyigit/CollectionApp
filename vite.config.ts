@@ -12,8 +12,8 @@ export default defineConfig({
       registerType: 'prompt',
       includeAssets: ['favicon.png', 'apple-touch-icon.png'],
       manifest: {
-        name: 'ESÇ — Premium Collection Management',
-        short_name: 'ESÇ',
+        name: 'ESC — Premium Collection Management',
+        short_name: 'ESC',
         description: 'Manage and track your personal collections — books, vinyl records, art, and more.',
         theme_color: '#6366f1',
         background_color: '#09090b',

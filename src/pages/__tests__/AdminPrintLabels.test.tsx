@@ -29,7 +29,7 @@ describe('AdminPrintLabels', () => {
     expect(screen.getByText('Foundation')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /select all/i }));
-    expect(screen.getByText(/Preview \(2 labels\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Preview \(2 items\)/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /print \(2\)/i }));
     expect(window.print).toHaveBeenCalledTimes(1);

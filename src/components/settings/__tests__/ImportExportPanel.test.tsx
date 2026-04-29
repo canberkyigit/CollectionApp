@@ -229,7 +229,7 @@ describe('ImportExportPanel', () => {
     const seed = buildSeedData();
     const localStatus = {
       exists: true,
-      path: '/Users/test/Documents/ESÇ/Local Sync',
+      path: '/Users/test/Documents/ESC/Local Sync',
       sizeBytes: 4096,
       syncedAt: '2026-04-16T12:00:00.000Z',
       counts: {

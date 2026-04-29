@@ -22,6 +22,10 @@ service cloud.firestore {
       return data.id == docId;
     }
 
+    function isValidRole(value) {
+      return value == 'viewer' || value == 'editor' || value == 'admin';
+    }
+
     function validUserSettings(data) {
       return data.keys().hasOnly([
         'role',
@@ -35,11 +39,20 @@ service cloud.firestore {
         'createdAt',
         'updatedAt'
       ])
-      && isOptionalString(data, 'role')
+      && (!('role' in data) || isValidRole(data.role))
       && isOptionalString(data, 'displayCurrency')
       && isOptionalString(data, 'theme')
       && isOptionalString(data, 'menuCollectionStyle')
       && isOptionalBool(data, 'sidebarOpen');
+    }
+
+    // Role mutations are forbidden on update. On create the role enum check
+    // in validUserSettings is sufficient, since the user is provisioning
+    // their own private sandbox under /users/{uid}.
+    function roleIsImmutable(prev, next) {
+      return !('role' in next.data)
+        || prev == null
+        || ('role' in prev.data && next.data.role == prev.data.role);
     }
 
     function validCategory(data, docId) {
@@ -158,6 +171,7 @@ service cloud.firestore {
       && isString(data.entityId)
       && isString(data.entityTitle)
       && isString(data.userId)
+      && data.userId == request.auth.uid
       && isString(data.timestamp)
       && isOptionalString(data, 'details');
     }
@@ -187,7 +201,12 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read, delete: if isOwner(userId);
-      allow create, update: if isOwner(userId) && validUserSettings(request.resource.data);
+      allow create: if isOwner(userId)
+        && validUserSettings(request.resource.data)
+        && roleIsImmutable(null, request.resource);
+      allow update: if isOwner(userId)
+        && validUserSettings(request.resource.data)
+        && roleIsImmutable(resource, request.resource);
 
       match /categories/{docId} {
         allow read, delete: if isOwner(userId);

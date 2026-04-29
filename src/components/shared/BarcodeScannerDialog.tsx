@@ -109,11 +109,11 @@ export function BarcodeScannerDialog({ open, onOpenChange, onSelect }: Props) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('Permission') || msg.includes('NotAllowed')) {
-        setCameraError('Kamera izni reddedildi. Tarayici ayarlarindan kamera iznini verin.');
+        setCameraError('Camera permission was denied. Enable camera access in your browser settings and try again.');
       } else if (msg.includes('NotFound') || msg.includes('Requested device not found')) {
-        setCameraError('Kamera bulunamadi. Cihazinizda kamera oldugundan emin olun.');
+        setCameraError('No camera detected on this device. Switch to manual entry to continue.');
       } else {
-        setCameraError('Kamera baslatilamadi. Manuel ISBN girisi kullanabilirsiniz.');
+        setCameraError('Could not start the camera. You can enter the ISBN manually instead.');
       }
       setMode('manual');
     } finally {

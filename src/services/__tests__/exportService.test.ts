@@ -103,6 +103,29 @@ describe('exportService', () => {
       expect(text).toContain('Good');
       expect(text).toContain('fiction; classic');
     });
+
+    it('neutralizes CSV formula injection attempts in item fields', async () => {
+      const service = await getService();
+      const maliciousItem: CollectionItem = {
+        ...mockItem,
+        id: 'item-malicious',
+        title: '=cmd|"/c calc"!A1',
+        notes: '+SUM(1+1)',
+        location: '@HYPERLINK("https://evil.example/")',
+        description: 'Plain description with no formula',
+      };
+      service.exportToCSV([maliciousItem], [mockCategory], 'malicious.csv');
+
+      const blob = mockCreateObjectURL.mock.calls[0][0] as Blob;
+      const text = await blob.text();
+
+      expect(text).toContain("'=cmd");
+      expect(text).toContain("'+SUM(1+1)");
+      expect(text).toContain("'@HYPERLINK");
+      expect(text).not.toMatch(/(^|,|\n)=cmd/);
+      expect(text).not.toMatch(/(^|,|\n)\+SUM/);
+      expect(text).not.toMatch(/(^|,|\n)@HYPERLINK/);
+    });
   });
 
   describe('exportToJSON', () => {
