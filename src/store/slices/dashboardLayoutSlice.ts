@@ -50,6 +50,12 @@ export function createDashboardLayoutSlice(
       dependencies.syncSettings({ dashboardWidgets: get().dashboardWidgets });
     },
 
+    setDashboardWidgets: (widgets) => {
+      const nextWidgets = widgets.map((widget, index) => ({ ...widget, order: index }));
+      set({ dashboardWidgets: nextWidgets });
+      dependencies.syncSettings({ dashboardWidgets: nextWidgets });
+    },
+
     resetDashboardLayout: () => {
       const nextWidgets = cloneDefaultWidgets();
       set({ dashboardWidgets: nextWidgets });

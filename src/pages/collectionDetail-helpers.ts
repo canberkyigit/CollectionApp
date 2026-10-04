@@ -1,6 +1,9 @@
 import type { FilterState } from '@/components/shared';
 import type { Category, CollectionItem, SortField } from '@/types';
+import { getLocale } from '@/i18n';
+import { matchesQuery } from '@/lib/search';
 import { getItemCurrentValue, getItemPurchaseValue } from '@/lib/valuation';
+import { getConditionTier } from '@/lib/conditionScales';
 
 const CONDITION_ORDER: Record<string, number> = {
   Mint: 0,
@@ -11,19 +14,26 @@ const CONDITION_ORDER: Record<string, number> = {
   Poor: 5,
 };
 
-export const SORT_OPTIONS: { label: string; value: SortField }[] = [
-  { label: 'Title', value: 'title' },
-  { label: 'Date Added', value: 'createdAt' },
-  { label: 'Last Updated', value: 'updatedAt' },
-  { label: 'Condition', value: 'condition' },
-  { label: 'Publisher', value: 'publisher' },
+/** `labelKey` is an i18n key (collections.sort.*). */
+export const SORT_OPTIONS: { labelKey: string; value: SortField }[] = [
+  { labelKey: 'collections.sort.title', value: 'title' },
+  { labelKey: 'collections.sort.createdAt', value: 'createdAt' },
+  { labelKey: 'collections.sort.updatedAt', value: 'updatedAt' },
+  { labelKey: 'collections.sort.currentValue', value: 'currentValue' },
+  { labelKey: 'collections.sort.purchasePrice', value: 'purchasePrice' },
+  { labelKey: 'collections.sort.condition', value: 'condition' },
+  { labelKey: 'collections.sort.publisher', value: 'publisher' },
 ];
+
+export const SORT_FIELDS = new Set<SortField>(SORT_OPTIONS.map((option) => option.value));
 
 export interface CollectionFilterMeta {
   maxPrice: number;
   maxValue: number;
   tags: string[];
   currencies: string[];
+  /** Distinct condition values present in the data (may include grades from other scales). */
+  conditions: string[];
 }
 
 export interface CollectionStats {
@@ -33,41 +43,48 @@ export interface CollectionStats {
   highestValue: number;
 }
 
-export function getConditionBadgeProps(condition: string) {
-  switch (condition) {
-    case 'Mint':
-      return {
-        variant: 'outline' as const,
-        className: 'border-emerald-500/40 bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
-      };
-    case 'Near Mint':
-      return {
-        variant: 'outline' as const,
-        className: 'border-green-500/40 bg-green-500/20 text-green-700 dark:text-green-400',
-      };
-    case 'Very Good':
-      return {
-        variant: 'outline' as const,
-        className: 'border-teal-500/40 bg-teal-500/20 text-teal-700 dark:text-teal-400',
-      };
-    case 'Good':
-      return {
-        variant: 'outline' as const,
-        className: 'border-blue-500/40 bg-blue-500/20 text-blue-700 dark:text-blue-400',
-      };
-    case 'Fair':
-      return {
-        variant: 'outline' as const,
-        className: 'border-amber-500/40 bg-amber-500/20 text-amber-700 dark:text-amber-400',
-      };
-    case 'Poor':
-      return {
-        variant: 'outline' as const,
-        className: 'border-red-500/40 bg-red-500/20 text-red-700 dark:text-red-400',
-      };
-    default:
-      return { variant: 'secondary' as const };
+export type ConditionBadgeVariant = 'success' | 'secondary' | 'warning' | 'destructive' | 'outline';
+
+/** Original condition badge colours, best → worst (emerald, green, teal, blue, amber, red). */
+const CONDITION_TIER_CLASSES = [
+  'border-emerald-500/40 bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
+  'border-green-500/40 bg-green-500/20 text-green-700 dark:text-green-400',
+  'border-teal-500/40 bg-teal-500/20 text-teal-700 dark:text-teal-400',
+  'border-blue-500/40 bg-blue-500/20 text-blue-700 dark:text-blue-400',
+  'border-amber-500/40 bg-amber-500/20 text-amber-700 dark:text-amber-400',
+  'border-red-500/40 bg-red-500/20 text-red-700 dark:text-red-400',
+] as const;
+
+/**
+ * Badge style for a condition on any category scale. Grades are mapped by tier
+ * (0 = best … 5 = worst) so coin, vinyl, stamp… scales all get the original colours.
+ */
+export function getConditionBadgeProps(condition: string): { variant: ConditionBadgeVariant; className: string } {
+  const tier = getConditionTier(condition);
+  if (tier === undefined) return { variant: 'secondary', className: '' };
+  const index = Math.min(Math.max(tier, 0), CONDITION_TIER_CLASSES.length - 1);
+  return { variant: 'outline', className: CONDITION_TIER_CLASSES[index] };
+}
+
+const REFERENCE_FIELD_KEYS = ['isbn', 'catalogNumber', 'catalogueNumber', 'setNumber', 'serialNumber'] as const;
+
+/** Catalogue reference (ISBN, catalogue/set number) for monospace display, if the item has one. */
+export function getItemReference(item: CollectionItem): { key: string; value: string } | null {
+  for (const key of REFERENCE_FIELD_KEYS) {
+    const value = item.customFields?.[key];
+    if (typeof value === 'string' && value.trim()) return { key, value: value.trim() };
+    if (typeof value === 'number' && Number.isFinite(value)) return { key, value: String(value) };
   }
+  return null;
+}
+
+/** Accent/Turkish-insensitive, multi-word search across an item's text fields. */
+export function itemMatchesSearch(item: CollectionItem, query: string): boolean {
+  if (!query.trim()) return true;
+  const customValues = Object.values(item.customFields ?? {})
+    .filter((value) => value != null && value !== '')
+    .map((value) => String(value));
+  return matchesQuery(query, item.title, item.description, item.condition, item.notes, ...item.tags, ...customValues);
 }
 
 export function getKeyFields(category: Category, item: CollectionItem) {
@@ -101,8 +118,10 @@ export function getCollectionFilterMeta(items: CollectionItem[], displayCurrency
   let maxValue = 0;
   const tagSet = new Set<string>();
   const currencySet = new Set<string>();
+  const conditionSet = new Set<string>();
 
   items.forEach((item) => {
+    if (item.condition) conditionSet.add(item.condition);
     const purchasePrice = getCollectionItemPurchasePrice(item, displayCurrency);
     const currentValue = getCollectionItemValue(item, displayCurrency);
 
@@ -120,6 +139,7 @@ export function getCollectionFilterMeta(items: CollectionItem[], displayCurrency
     maxValue: Math.ceil(maxValue),
     tags: [...tagSet].sort(),
     currencies: [...currencySet].sort(),
+    conditions: [...conditionSet],
   };
 }
 
@@ -144,19 +164,8 @@ export function filterCollectionItems({
 }: FilterCollectionItemsArgs) {
   let result = items;
 
-  if (searchQuery) {
-    const query = searchQuery.toLowerCase();
-    result = result.filter((item) => {
-      if (item.title.toLowerCase().includes(query)) return true;
-      if (item.description.toLowerCase().includes(query)) return true;
-      if (item.tags.some((tag) => tag.toLowerCase().includes(query))) return true;
-      if (item.condition.toLowerCase().includes(query)) return true;
-      if (item.notes && item.notes.toLowerCase().includes(query)) return true;
-
-      return Object.values(item.customFields).some((value) => (
-        value != null && String(value).toLowerCase().includes(query)
-      ));
-    });
+  if (searchQuery.trim()) {
+    result = result.filter((item) => itemMatchesSearch(item, searchQuery));
   }
 
   if (advFilters.conditions.length > 0) {
@@ -234,7 +243,7 @@ export function filterCollectionItems({
 
     switch (sortField) {
       case 'title':
-        comparison = left.title.localeCompare(right.title);
+        comparison = left.title.localeCompare(right.title, getLocale());
         break;
       case 'createdAt':
         comparison = new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();

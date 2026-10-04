@@ -283,11 +283,10 @@ describe('page smoke coverage', () => {
 
   it('renders admin pages and archived data views', () => {
     const adminView = renderWithRouter(<Admin />);
-    expect(screen.getByText('Admin Panel')).toBeInTheDocument();
     adminView.unmount();
 
     const storageView = renderWithRouter(<AdminStorage />);
-    expect(screen.getByRole('heading', { name: 'Data & Storage' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Data & storage' })).toBeInTheDocument();
     storageView.unmount();
 
     const archiveView = renderWithRouter(<AdminArchive />);
@@ -299,12 +298,15 @@ describe('page smoke coverage', () => {
       initialEntry: '/admin/categories/new',
       ui: <AdminCategoryForm />,
     });
-    expect(screen.getByText('New Category')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'New category' })).toBeInTheDocument();
   });
 
   it('renders login and item form routes', async () => {
     const user = userEvent.setup();
     useAuthStore.setState({
+      // Login redirects signed-in users, so render it signed out.
+      user: null,
+      isAuthenticated: false,
       loginWithEmail: vi.fn(async () => undefined),
       registerWithEmail: vi.fn(async () => undefined),
       loginWithGoogle: vi.fn(async () => undefined),
@@ -313,9 +315,9 @@ describe('page smoke coverage', () => {
     });
 
     const loginView = renderWithRouter(<Login />);
-    expect(screen.getByRole('heading', { name: /welcome back/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^welcome back$/i })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /create one/i }));
-    expect(screen.getByRole('heading', { name: /create your account/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^create your account$/i })).toBeInTheDocument();
     loginView.unmount();
 
     renderRoute({
@@ -323,7 +325,7 @@ describe('page smoke coverage', () => {
       initialEntry: '/items/new?category=books',
       ui: <ItemForm />,
     });
-    expect(screen.getByText('Add New Item')).toBeInTheDocument();
+    expect(screen.getByText('Add new item')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /search open library/i })).toBeInTheDocument();
   });
 

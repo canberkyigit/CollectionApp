@@ -1,0 +1,28 @@
+const duplicates: Record<string, string> = {
+  'duplicates.title': 'Duplicate Detection',
+  'duplicates.breadcrumb': 'Duplicates',
+  'duplicates.description': 'Items in the same category that share a title or ISBN',
+  'duplicates.emptyTitle': 'No duplicates found',
+  'duplicates.emptyDescription': 'Every item has a unique title and ISBN within its category.',
+  'duplicates.found_one': 'Found {formatted} potential duplicate group.',
+  'duplicates.found_other': 'Found {formatted} potential duplicate groups.',
+  'duplicates.itemCount_one': '{formatted} item',
+  'duplicates.itemCount_other': '{formatted} items',
+  'duplicates.reason.isbn': 'Same ISBN',
+  'duplicates.reason.title': 'Same title',
+  'duplicates.merge': 'Merge',
+  'duplicates.added': 'Added {date}',
+  'duplicates.updated': 'Updated {date}',
+  'duplicates.viewItem': 'View item',
+  'duplicates.deleteItem': 'Delete item',
+  'duplicates.archiveTitle': 'Archive item',
+  'duplicates.archiveDescription': 'This item will be moved to the archive.',
+  'duplicates.archiveConfirm': 'Archive',
+  'duplicates.mergeTitle': 'Merge duplicate items',
+  'duplicates.mergeDescription_one': 'Merge {formatted} item into the primary item and archive the rest.',
+  'duplicates.mergeDescription_other': 'Merge {formatted} duplicate items into the selected primary item and archive the rest.',
+  'duplicates.mergeConfirm': 'Merge duplicates',
+  'duplicates.primaryLegend': 'Keep as primary',
+};
+
+export default duplicates;

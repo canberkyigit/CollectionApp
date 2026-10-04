@@ -23,7 +23,7 @@ describe('catalogEnrichmentService', () => {
 
     expect(suggestion).toMatchObject({
       provider: 'openlibrary',
-      categoryId: 'cat-books',
+      kind: 'books',
       title: 'The Left Hand of Darkness',
       customFields: {
         author: 'Ursula K. Le Guin',

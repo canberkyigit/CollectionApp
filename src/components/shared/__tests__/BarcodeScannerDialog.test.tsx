@@ -4,6 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { BarcodeScannerDialog } from '@/components/shared/BarcodeScannerDialog';
 import { bookSearchService } from '@/services/bookSearchService';
+import { useCollectionStore } from '@/store/useCollectionStore';
+import { seedCollectionStore } from '@/test/render';
+import { buildSeedData } from '@/test/seed';
 
 const mocks = vi.hoisted(() => ({
   toastError: vi.fn(),
@@ -122,5 +125,51 @@ describe('BarcodeScannerDialog', () => {
     });
     expect(await screen.findByPlaceholderText(/9780141439518/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /manual/i })).toHaveClass('text-primary');
+  });
+
+  describe('item mode (scan to open)', () => {
+    beforeEach(() => {
+      seedCollectionStore(buildSeedData());
+    });
+
+    it('opens the item for a Curio label decoded by the camera', async () => {
+      const onItemFound = vi.fn();
+      const onOpenChange = vi.fn();
+      mocks.start.mockImplementation(async (_camera, _config, onDecoded: (text: string) => void) => {
+        onDecoded('https://labels.example.org/items/item-1');
+      });
+
+      render(<BarcodeScannerDialog mode="item" open onOpenChange={onOpenChange} onItemFound={onItemFound} />);
+
+      expect(screen.getByText('Scan item label')).toBeInTheDocument();
+      await waitFor(() => {
+        expect(onItemFound).toHaveBeenCalledWith('item-1');
+      });
+      expect(onOpenChange).toHaveBeenCalledWith(false);
+      expect(bookSearchService.searchByISBN).not.toHaveBeenCalled();
+    });
+
+    it('rejects codes that are not Curio labels or point to unknown items', async () => {
+      const user = userEvent.setup();
+      const onItemFound = vi.fn();
+      expect(useCollectionStore.getState().items.length).toBeGreaterThan(0);
+
+      render(<BarcodeScannerDialog mode="item" open onOpenChange={vi.fn()} onItemFound={onItemFound} />);
+
+      await user.click(screen.getByRole('button', { name: /manual/i }));
+      const input = screen.getByLabelText(/label link or item id/i);
+      await user.type(input, '9780261103344');
+      await user.click(screen.getByRole('button', { name: /^open$/i }));
+      expect(mocks.toastError).toHaveBeenCalledWith('This code is not a Curio item label.');
+
+      fireEvent.change(input, { target: { value: 'https://curio.app/items/missing-item' } });
+      await user.click(screen.getByRole('button', { name: /^open$/i }));
+      expect(mocks.toastError).toHaveBeenCalledWith('No item with this label was found in your collection.');
+      expect(onItemFound).not.toHaveBeenCalled();
+
+      fireEvent.change(input, { target: { value: 'item-2' } });
+      await user.click(screen.getByRole('button', { name: /^open$/i }));
+      expect(onItemFound).toHaveBeenCalledWith('item-2');
+    });
   });
 });

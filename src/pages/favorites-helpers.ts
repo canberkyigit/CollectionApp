@@ -1,11 +1,14 @@
 import type { Category, CollectionItem } from '@/types';
 import type { FilterState } from '@/components/shared';
+import { getLocale } from '@/i18n';
 import { getItemCurrentValue, getItemPurchaseValue, getItemsCurrentValue } from '@/lib/valuation';
+import { itemMatchesSearch } from './collectionDetail-helpers';
 
 export interface FavoritesFilterMeta {
   maxPrice: number;
   maxValue: number;
   tags: string[];
+  conditions: string[];
 }
 
 export interface FavoritesStats {
@@ -16,42 +19,18 @@ export interface FavoritesStats {
 
 export type FavoritesSortKey = 'title' | 'createdAt' | 'category';
 
-export function getConditionBadgeProps(condition: string) {
-  switch (condition) {
-    case 'Mint':
-      return {
-        variant: 'outline' as const,
-        className: 'border-emerald-500/40 bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
-      };
-    case 'Near Mint':
-      return {
-        variant: 'outline' as const,
-        className: 'border-green-500/40 bg-green-500/20 text-green-700 dark:text-green-400',
-      };
-    case 'Very Good':
-      return {
-        variant: 'outline' as const,
-        className: 'border-teal-500/40 bg-teal-500/20 text-teal-700 dark:text-teal-400',
-      };
-    case 'Good':
-      return {
-        variant: 'outline' as const,
-        className: 'border-blue-500/40 bg-blue-500/20 text-blue-700 dark:text-blue-400',
-      };
-    case 'Fair':
-      return {
-        variant: 'outline' as const,
-        className: 'border-amber-500/40 bg-amber-500/20 text-amber-700 dark:text-amber-400',
-      };
-    case 'Poor':
-      return {
-        variant: 'outline' as const,
-        className: 'border-red-500/40 bg-red-500/20 text-red-700 dark:text-red-400',
-      };
-    default:
-      return { variant: 'secondary' as const, className: '' };
-  }
+/** `labelKey` is an i18n key (collections.sort.*). */
+export const FAVORITES_SORT_OPTIONS: { labelKey: string; value: FavoritesSortKey }[] = [
+  { labelKey: 'collections.sort.title', value: 'title' },
+  { labelKey: 'collections.sort.createdAt', value: 'createdAt' },
+  { labelKey: 'collections.sort.category', value: 'category' },
+];
+
+export function isFavoritesSortKey(value: string): value is FavoritesSortKey {
+  return FAVORITES_SORT_OPTIONS.some((option) => option.value === value);
 }
+
+export { getConditionBadgeProps } from './collectionDetail-helpers';
 
 export function getKeyFields(category: Category | undefined, item: CollectionItem) {
   if (!category) return [];
@@ -81,8 +60,10 @@ export function getFavoriteFilterMeta(favorites: CollectionItem[], displayCurren
   let maxPrice = 0;
   let maxValue = 0;
   const tagSet = new Set<string>();
+  const conditionSet = new Set<string>();
 
   favorites.forEach((item) => {
+    if (item.condition) conditionSet.add(item.condition);
     maxPrice = Math.max(maxPrice, getItemPurchaseValue(item, displayCurrency));
     maxValue = Math.max(maxValue, getItemCurrentValue(item, displayCurrency));
     item.tags.forEach((tag) => tagSet.add(tag));
@@ -92,6 +73,7 @@ export function getFavoriteFilterMeta(favorites: CollectionItem[], displayCurren
     maxPrice: Math.ceil(maxPrice),
     maxValue: Math.ceil(maxValue),
     tags: [...tagSet].sort(),
+    conditions: [...conditionSet],
   };
 }
 
@@ -127,10 +109,7 @@ export function filterFavoriteItems({
   let list = favorites;
 
   if (search.trim()) {
-    const query = search.toLowerCase();
-    list = list.filter(
-      (item) => item.title.toLowerCase().includes(query) || item.tags.some((tag) => tag.toLowerCase().includes(query)),
-    );
+    list = list.filter((item) => itemMatchesSearch(item, search));
   }
 
   if (advFilters.conditions.length > 0) {
@@ -175,7 +154,7 @@ export function filterFavoriteItems({
     let comparison = 0;
     switch (sortKey) {
       case 'title':
-        comparison = left.title.localeCompare(right.title);
+        comparison = left.title.localeCompare(right.title, getLocale());
         break;
       case 'createdAt':
         comparison = new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
@@ -183,7 +162,7 @@ export function filterFavoriteItems({
       case 'category': {
         const leftCategory = getCategoryById(left.categoryId)?.name ?? '';
         const rightCategory = getCategoryById(right.categoryId)?.name ?? '';
-        comparison = leftCategory.localeCompare(rightCategory);
+        comparison = leftCategory.localeCompare(rightCategory, getLocale());
         break;
       }
     }

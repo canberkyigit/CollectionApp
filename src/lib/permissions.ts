@@ -1,4 +1,5 @@
 import type { ContributorRole } from '@/types';
+import { t } from '@/i18n';
 
 export type CollectionPermission =
   | 'content:edit'
@@ -50,14 +51,14 @@ export function hasPermission(role: ContributorRole, permission: CollectionPermi
 export function getPermissionDeniedMessage(permission: CollectionPermission): string {
   switch (permission) {
     case 'content:edit':
-      return 'Viewer accounts are read-only. Use an editor or admin account to change collection data.';
+      return t('common.permission.contentEdit');
     case 'catalog:manage':
-      return 'Only admins can manage categories and libraries.';
+      return t('common.permission.catalogManage');
     case 'item:delete-permanently':
-      return 'Only admins can permanently delete items.';
+      return t('common.permission.deletePermanently');
     case 'activity:clear':
-      return 'Only admins can clear the activity log.';
+      return t('common.permission.activityClear');
     default:
-      return 'You do not have permission to perform this action.';
+      return t('common.permission.default');
   }
 }

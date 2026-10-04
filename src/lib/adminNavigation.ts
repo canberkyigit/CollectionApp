@@ -1,3 +1,6 @@
+import { t } from '@/i18n';
+
+/** The admin hub lives inside Settings; /admin redirects here. */
 export const SETTINGS_ADMIN_PATH = '/settings?section=admin';
 
 type AdminBreadcrumb = {
@@ -10,10 +13,11 @@ export function isSettingsAdminSource(search: string): boolean {
   return params.get('from') === 'settings';
 }
 
-export function getAdminRootPath(search: string): string {
-  return isSettingsAdminSource(search) ? SETTINGS_ADMIN_PATH : '/admin';
+export function getAdminRootPath(_search?: string): string {
+  return SETTINGS_ADMIN_PATH;
 }
 
+/** Keeps the `from=settings` marker on admin child links (harmless now that every root is Settings). */
 export function withAdminSource(path: string, search: string): string {
   if (!isSettingsAdminSource(search)) return path;
 
@@ -25,17 +29,14 @@ export function withAdminSource(path: string, search: string): string {
   return nextQuery ? `${pathname}?${nextQuery}` : pathname;
 }
 
+/** Settings › Admin › …trail — admin pages always sit under the Settings admin section. */
 export function getAdminBreadcrumbs(
-  search: string,
+  _search: string,
   trail: AdminBreadcrumb[] = [],
 ): AdminBreadcrumb[] {
-  if (isSettingsAdminSource(search)) {
-    return [
-      { label: 'Settings', href: SETTINGS_ADMIN_PATH },
-      { label: 'Admin', href: SETTINGS_ADMIN_PATH },
-      ...trail,
-    ];
-  }
-
-  return [{ label: 'Admin', href: '/admin' }, ...trail];
+  return [
+    { label: t('admin.breadcrumb.settings'), href: SETTINGS_ADMIN_PATH },
+    { label: t('admin.breadcrumb.admin'), href: SETTINGS_ADMIN_PATH },
+    ...trail,
+  ];
 }

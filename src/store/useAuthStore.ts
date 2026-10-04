@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { t } from '@/i18n';
 import type { AuthUser } from '@/services/authService';
 import { authService } from '@/services/authService';
 import { isFirebaseConfigured } from '@/services/firebase';
@@ -38,7 +39,51 @@ function getAuthErrorMessage(error: unknown, fallback: string): string {
   return err.message || fallback;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const OFFLINE_USER_ID = 'offline';
+const OFFLINE_SESSION_KEY = 'curio-offline-session';
+
+interface OfflineSession {
+  displayName: string | null;
+}
+
+function buildOfflineUser(displayName?: string | null): AuthUser {
+  return {
+    uid: OFFLINE_USER_ID,
+    email: 'offline@local',
+    displayName: displayName || t('auth.localUser'),
+    photoURL: null,
+    role: 'admin',
+  };
+}
+
+function readOfflineSession(): OfflineSession | null {
+  try {
+    const raw = localStorage.getItem(OFFLINE_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<OfflineSession> | null;
+    return { displayName: typeof parsed?.displayName === 'string' ? parsed.displayName : null };
+  } catch {
+    return null;
+  }
+}
+
+function writeOfflineSession(session: OfflineSession | null) {
+  try {
+    if (session) localStorage.setItem(OFFLINE_SESSION_KEY, JSON.stringify(session));
+    else localStorage.removeItem(OFFLINE_SESSION_KEY);
+  } catch {
+    // storage unavailable — the offline session just won't survive a reload
+  }
+}
+
+/** Single source of truth for "signed in": a user object is present. */
+export const selectIsAuthenticated = (state: Pick<AuthState, 'user'>) => state.user !== null;
+
+export function isOfflineUser(user: Pick<AuthUser, 'uid'> | null | undefined): boolean {
+  return user?.uid === OFFLINE_USER_ID;
+}
+
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   isLoading: true,
   isAuthenticated: false,
@@ -47,9 +92,22 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   init: () => {
     if (!isFirebaseConfigured()) {
-      set({ isLoading: false, isAuthenticated: false });
+      // Never clobber a session that already exists (e.g. loginOffline() ran first).
+      const existing = get().user;
+      if (existing) {
+        set({ isLoading: false, isAuthenticated: true });
+        return () => {};
+      }
+
+      const session = readOfflineSession();
+      set(session
+        ? { user: buildOfflineUser(session.displayName), isAuthenticated: true, isLoading: false }
+        : { isLoading: false, isAuthenticated: false });
       return () => {};
     }
+
+    // Offline sessions only exist when Firebase is not configured.
+    writeOfflineSession(null);
 
     const unsub = authService.onAuthChanged((user) => {
       set({
@@ -69,10 +127,10 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({ user, isAuthenticated: true, isLoading: false });
     } catch (error: unknown) {
       const err = error as AuthErrorLike;
-      const msg = err.code === 'auth/invalid-credential' ? 'Invalid email or password'
-        : err.code === 'auth/user-not-found' ? 'No account with this email'
-        : err.code === 'auth/too-many-requests' ? 'Too many attempts, try again later'
-        : getAuthErrorMessage(error, 'Login failed');
+      const msg = err.code === 'auth/invalid-credential' ? t('auth.error.invalidCredential')
+        : err.code === 'auth/user-not-found' ? t('auth.error.userNotFound')
+        : err.code === 'auth/too-many-requests' ? t('auth.error.tooManyRequests')
+        : getAuthErrorMessage(error, t('auth.error.loginFailed'));
       set({ error: msg, isLoading: false });
       throw error;
     }
@@ -85,9 +143,10 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({ user, isAuthenticated: true, isLoading: false });
     } catch (error: unknown) {
       const err = error as AuthErrorLike;
-      const msg = err.code === 'auth/email-already-in-use' ? 'Email already in use'
-        : err.code === 'auth/weak-password' ? 'Password must be at least 6 characters'
-        : getAuthErrorMessage(error, 'Registration failed');
+      const msg = err.code === 'auth/email-already-in-use' ? t('auth.error.emailInUse')
+        : err.code === 'auth/weak-password' ? t('auth.error.weakPassword')
+        : err.code === 'auth/invalid-email' ? t('auth.error.invalidEmail')
+        : getAuthErrorMessage(error, t('auth.error.registerFailed'));
       set({ error: msg, isLoading: false });
       throw error;
     }
@@ -101,7 +160,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     } catch (error: unknown) {
       const err = error as AuthErrorLike;
       if (err.code !== 'auth/popup-closed-by-user') {
-        set({ error: getAuthErrorMessage(error, 'Google login failed'), isLoading: false });
+        set({ error: getAuthErrorMessage(error, t('auth.error.googleFailed')), isLoading: false });
       } else {
         set({ isLoading: false });
       }
@@ -110,14 +169,21 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   loginOffline: () => {
-    set({
-      user: { uid: 'offline', email: 'offline@local', displayName: 'Local User', photoURL: null, role: 'admin' },
-      isAuthenticated: true,
-      isLoading: false,
-    });
+    const user = buildOfflineUser(readOfflineSession()?.displayName);
+    writeOfflineSession({ displayName: user.displayName });
+    set({ user, isAuthenticated: true, isLoading: false, error: null });
   },
 
   logout: async () => {
+    if (isOfflineUser(get().user)) {
+      // Offline data belongs to this device: end the session but keep the local collection.
+      writeOfflineSession(null);
+      setCurrentCollectionActor(null);
+      useSyncStore.getState().reset();
+      set({ user: null, isAuthenticated: false });
+      return;
+    }
+
     await authService.logout();
     setFirebaseUserId(null);
     setCurrentCollectionActor(null);
@@ -142,7 +208,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       await authService.sendPasswordReset(email);
     } catch (error: unknown) {
-      const msg = getAuthErrorMessage(error, 'Password reset failed');
+      const msg = getAuthErrorMessage(error, t('auth.error.resetFailed'));
       set({ error: msg });
       throw error;
     }

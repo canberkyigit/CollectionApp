@@ -1,8 +1,19 @@
-import type { Category, CategoryField, CollectionItem, CurrencyEquivalent, ItemSourceMetadata } from '@/types';
+import type {
+  Category,
+  CategoryField,
+  CollectionItem,
+  CurrencyEquivalent,
+  ItemSourceMetadata,
+  ValueHistoryEntry,
+} from '@/types';
+import type { ItemDialogPrefill } from '@/store/collectionStore.types';
 import { currencyService } from '@/services/currencyService';
 import { storageService } from '@/services/storageService';
 import { getItemCurrentValueCurrency } from '@/lib/valuation';
+import { todayISO } from '@/lib/utils';
+import { t } from '@/i18n';
 
+/** Default (category-agnostic) scale. Category-aware scales live in `@/lib/conditionScales`. */
 export const ITEM_FORM_CONDITIONS = ['Mint', 'Near Mint', 'Very Good', 'Good', 'Fair', 'Poor'] as const;
 export const ITEM_FORM_CURRENCIES = ['USD', 'EUR', 'TRY', 'GBP', 'JPY', 'CHF'] as const;
 
@@ -38,6 +49,10 @@ export interface ItemFormValues {
   exchangeRate?: number;
   currentValue?: number;
   currentValueCurrency: string;
+  /** YYYY-MM-DD the current value was assessed (defaults to today on save). */
+  valuedAt?: string;
+  /** Where the valuation came from (appraisal, auction result, price guide…). */
+  valuationSource?: string;
   targetYear: number;
   targetValue?: number;
   notes?: string;
@@ -89,6 +104,8 @@ export function itemToFormValues(
     exchangeRate: item.purchaseInfo.exchangeRateAtPurchase,
     currentValue: item.valuationInfo.currentEstimatedValue,
     currentValueCurrency: getItemCurrentValueCurrency(item),
+    valuedAt: item.valuationInfo.valuedAt ?? '',
+    valuationSource: item.valuationInfo.valuationSource ?? '',
     targetYear: item.valuationInfo.targetYearProjection ?? 2030,
     targetValue: item.valuationInfo.targetEstimatedValue,
     notes: item.notes,
@@ -98,6 +115,70 @@ export function itemToFormValues(
     usdRate: usdEq?.rate,
     gbpRate: gbpEq?.rate,
   };
+}
+
+export const DEFAULT_TARGET_YEAR = 2030;
+
+/** Blank form values for a new item, optionally seeded (e.g. from a wishlist entry). */
+export function buildEmptyFormValues(
+  fields: CategoryField[],
+  prefill?: ItemDialogPrefill | null,
+): ItemFormValues {
+  const customDefaults: Record<string, unknown> = {};
+  for (const field of fields) {
+    if (field.defaultValue !== undefined) {
+      customDefaults[field.key] = field.defaultValue;
+    } else if (field.type === 'boolean') {
+      customDefaults[field.key] = false;
+    } else {
+      customDefaults[field.key] = '';
+    }
+  }
+
+  return {
+    title: prefill?.title ?? '',
+    description: prefill?.description ?? '',
+    condition: '',
+    location: '',
+    tags: prefill?.tags?.join(', ') ?? '',
+    customFields: customDefaults,
+    purchaseDate: prefill?.purchaseDate ? prefill.purchaseDate.slice(0, 10) : '',
+    purchasePrice: prefill?.purchasePrice,
+    purchaseCurrency: prefill?.purchaseCurrency || 'TRY',
+    purchaseLocation: prefill?.purchasePlace ?? '',
+    exchangeRate: undefined,
+    currentValue: undefined,
+    currentValueCurrency: '',
+    valuedAt: '',
+    valuationSource: '',
+    targetYear: DEFAULT_TARGET_YEAR,
+    targetValue: undefined,
+    notes: prefill?.notes ?? '',
+    libraryId: '',
+    quantity: 1,
+    eurRate: undefined,
+    usdRate: undefined,
+    gbpRate: undefined,
+  };
+}
+
+/**
+ * Distinct storage locations already in use, plus their parent paths, so
+ * "Study / Cabinet A / Shelf 2" also suggests "Study" and "Study / Cabinet A".
+ */
+export function getLocationSuggestions(items: Pick<CollectionItem, 'location'>[]): string[] {
+  const seen = new Map<string, string>();
+  for (const item of items) {
+    const raw = item.location?.trim();
+    if (!raw) continue;
+    const parts = raw.split('/').map((part) => part.trim()).filter(Boolean);
+    for (let depth = 1; depth <= parts.length; depth += 1) {
+      const path = parts.slice(0, depth).join(' / ');
+      const key = path.toLocaleLowerCase();
+      if (!seen.has(key)) seen.set(key, path);
+    }
+  }
+  return [...seen.values()].sort((a, b) => a.localeCompare(b));
 }
 
 export function normalizeCustomFields(
@@ -135,8 +216,8 @@ export function getMissingItemFormFields(
   values: Pick<ItemFormValues, 'title' | 'condition' | 'customFields'>,
 ): string[] {
   const missing: string[] = [];
-  if (!values.title?.trim()) missing.push('Title');
-  if (!values.condition?.trim()) missing.push('Condition');
+  if (!values.title?.trim()) missing.push(t('itemForm.field.title'));
+  if (!values.condition?.trim()) missing.push(t('itemForm.field.condition'));
 
   for (const field of fields) {
     if (!field.required || ITEM_FORM_BUILT_IN_CUSTOM_KEYS.has(field.key)) continue;
@@ -268,6 +349,37 @@ export function resolveCurrentValuationInput(
   };
 }
 
+/**
+ * Value history after saving. A changed current value (or currency) adds a
+ * point dated `valuedAt` (default today); re-valuing on the same date replaces
+ * that day's point instead of stacking duplicates.
+ */
+export function buildNextValueHistory(
+  existingItem: CollectionItem | undefined,
+  next: { value: number; currency: string; valuedAt?: string; source?: string },
+): ValueHistoryEntry[] {
+  const date = next.valuedAt?.slice(0, 10) || todayISO();
+  const point: ValueHistoryEntry = {
+    date,
+    value: next.value,
+    currency: next.currency,
+    ...(next.source ? { source: next.source } : {}),
+  };
+
+  if (!existingItem) {
+    return [point];
+  }
+
+  const history = existingItem.valuationInfo.valueHistory ?? [];
+  const previous = existingItem.valuationInfo;
+  const changed = previous.currentEstimatedValue !== next.value
+    || (previous.currentValueCurrency || '') !== next.currency;
+  if (!changed || next.value <= 0) return history;
+
+  return [...history.filter((entry) => entry.date !== date), point]
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
 function isBase64Image(image: string): boolean {
   return image.startsWith('data:image/');
 }
@@ -345,6 +457,22 @@ export async function buildItemFormSubmission({
     purchaseAmt,
     existingItem,
   );
+  const valuationSource = data.valuationSource?.trim() || undefined;
+  const valueChanged = !!existingItem && (
+    existingItem.valuationInfo.currentEstimatedValue !== resolvedCurrentValuation.currentEstimatedValue
+    || (existingItem.valuationInfo.currentValueCurrency || '') !== resolvedCurrentValuation.currentValueCurrency
+  );
+  let valuedAt = data.valuedAt?.slice(0, 10) || undefined;
+  // A new value with an untouched (stale) "valued on" date means "valued today".
+  if (valueChanged && (!valuedAt || valuedAt === existingItem?.valuationInfo.valuedAt)) {
+    valuedAt = todayISO();
+  }
+  const valueHistory = buildNextValueHistory(existingItem, {
+    value: resolvedCurrentValuation.currentEstimatedValue,
+    currency: resolvedCurrentValuation.currentValueCurrency,
+    valuedAt,
+    source: valuationSource,
+  });
 
   return {
     categoryId: category.id,
@@ -368,15 +496,11 @@ export async function buildItemFormSubmission({
       currentEstimatedValue: resolvedCurrentValuation.currentEstimatedValue,
       currentValueCurrency: resolvedCurrentValuation.currentValueCurrency,
       currentExchangeRate: resolvedCurrentValuation.currentExchangeRate,
-      targetYearProjection: data.targetYear,
+      targetYearProjection: Number(data.targetYear) || undefined,
       targetEstimatedValue: data.targetValue ? Number(data.targetValue) || 0 : undefined,
-      valueHistory: existingItem?.valuationInfo.valueHistory ?? [
-        {
-          date: now.slice(0, 10),
-          value: resolvedCurrentValuation.currentEstimatedValue,
-          currency: resolvedCurrentValuation.currentValueCurrency,
-        },
-      ],
+      valuedAt,
+      valuationSource,
+      valueHistory,
     },
     contributorId: existingItem?.contributorId ?? currentUserId ?? 'offline',
     condition: data.condition,

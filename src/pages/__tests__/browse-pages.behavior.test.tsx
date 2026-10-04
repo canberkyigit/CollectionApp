@@ -172,7 +172,7 @@ describe('browse page behaviors', () => {
     await user.click(screen.getByRole('button', { name: /clear filters/i }));
 
     await user.click(screen.getByRole('button', { name: /^acquire$/i }));
-    await user.click(screen.getByRole('button', { name: /confirm acquisition/i }));
+    await user.click(screen.getByRole('button', { name: /just mark as acquired/i }));
 
     expect(updateWishlistItem).toHaveBeenCalledWith('wish-1', { isAcquired: true });
   });
@@ -218,7 +218,9 @@ describe('browse page behaviors', () => {
     expect(mocks.toastError).toHaveBeenCalledWith('Please fill in all required fields');
 
     await user.click(within(lendDialog).getByRole('combobox'));
-    await user.click(await screen.findByRole('option', { name: 'Dune' }));
+    // Dune already has an open loan, so it is listed but cannot be picked again.
+    expect(await screen.findByRole('option', { name: 'Dune (on loan)' })).toHaveAttribute('aria-disabled', 'true');
+    await user.click(await screen.findByRole('option', { name: 'Kind of Blue' }));
     await user.type(screen.getByLabelText(/borrower name/i), 'Jane Reader');
     await user.type(screen.getByLabelText(/borrower contact/i), 'jane@example.com');
     await user.type(screen.getByLabelText(/expected return date/i), '2099-12-31');
@@ -226,7 +228,7 @@ describe('browse page behaviors', () => {
     await user.click(within(lendDialog).getByRole('button', { name: /lend item/i }));
 
     expect(addLendingRecord).toHaveBeenCalledWith(
-      'item-1',
+      'item-2',
       expect.objectContaining({
         borrowerName: 'Jane Reader',
         borrowerContact: 'jane@example.com',

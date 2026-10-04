@@ -7,6 +7,8 @@ import type {
   Library,
   WishlistItem,
 } from '@/types';
+import { BRAND_NAME } from '@/lib/brand';
+import { t } from '@/i18n';
 
 export const SUPPORTED_BACKUP_SCHEMA_VERSION = 1;
 
@@ -111,7 +113,7 @@ function countState(state: Pick<RestorableBackupState, CollectionName>) {
 }
 
 function getLabel(entry: unknown): string {
-  if (!isRecord(entry)) return 'Untitled';
+  if (!isRecord(entry)) return t('common.untitled');
   const title = entry.title;
   if (typeof title === 'string' && title.trim()) return title;
   const name = entry.name;
@@ -119,11 +121,16 @@ function getLabel(entry: unknown): string {
   const entityTitle = entry.entityTitle;
   if (typeof entityTitle === 'string' && entityTitle.trim()) return entityTitle;
   const id = entry.id;
-  return typeof id === 'string' && id.trim() ? id : 'Untitled';
+  return typeof id === 'string' && id.trim() ? id : t('common.untitled');
 }
 
 function sameJson(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+  try {
+    return JSON.stringify(left) === JSON.stringify(right);
+  } catch {
+    // Circular or otherwise unserialisable data — treat as different.
+    return false;
+  }
 }
 
 function validCategory(entry: unknown): entry is Category {
@@ -282,7 +289,7 @@ function validateBackup(rawBackup: unknown, current: RestorableBackupState) {
   const skipped: BackupRestoreIssue[] = [];
 
   if (!isBackupBundle(rawBackup)) {
-    errors.push('This file is not a valid ESC backup file.');
+    errors.push(t('data.backup.error.invalidFile', { brand: BRAND_NAME }));
     return {
       bundle: null,
       skipped,
@@ -292,7 +299,10 @@ function validateBackup(rawBackup: unknown, current: RestorableBackupState) {
   }
 
   if (rawBackup.schemaVersion !== SUPPORTED_BACKUP_SCHEMA_VERSION) {
-    errors.push(`Unsupported backup schema version ${rawBackup.schemaVersion}. This app supports version ${SUPPORTED_BACKUP_SCHEMA_VERSION}.`);
+    errors.push(t('data.backup.error.unsupportedSchema', {
+      version: String(rawBackup.schemaVersion),
+      supported: SUPPORTED_BACKUP_SCHEMA_VERSION,
+    }));
     return {
       bundle: null,
       skipped,
@@ -311,7 +321,7 @@ function validateBackup(rawBackup: unknown, current: RestorableBackupState) {
   ];
   for (const collection of requiredCollections) {
     if (!Array.isArray(rawBackup[collection])) {
-      errors.push(`Backup is missing the "${collection}" array.`);
+      errors.push(t('data.backup.error.missingArray', { collection }));
     }
   }
   if (errors.length > 0) {
@@ -327,7 +337,7 @@ function validateBackup(rawBackup: unknown, current: RestorableBackupState) {
     'categories',
     asArray(rawBackup.categories),
     validCategory,
-    'Missing required category fields.',
+    t('data.backup.skip.category'),
   );
   skipped.push(...categories.skipped);
 
@@ -340,31 +350,31 @@ function validateBackup(rawBackup: unknown, current: RestorableBackupState) {
     'items',
     asArray(rawBackup.items),
     (entry): entry is CollectionItem => validItem(entry, validCategoryIds),
-    'Missing required item fields or category reference.',
+    t('data.backup.skip.item'),
   );
   const libraries = collectValid<Library>(
     'libraries',
     asArray(rawBackup.libraries),
     validLibrary,
-    'Missing required library fields.',
+    t('data.backup.skip.library'),
   );
   const wishlist = collectValid<WishlistItem>(
     'wishlist',
     asArray(rawBackup.wishlist),
     (entry): entry is WishlistItem => validWishlist(entry, validCategoryIds),
-    'Missing required wishlist fields or category reference.',
+    t('data.backup.skip.wishlist'),
   );
   const activityLog = collectValid<ActivityLogEntry>(
     'activityLog',
     asArray(rawBackup.activityLog),
     validActivity,
-    'Missing required activity fields.',
+    t('data.backup.skip.activity'),
   );
   const contributors = collectValid<Contributor>(
     'contributors',
     asArray(rawBackup.contributors),
     validContributor,
-    'Missing required contributor fields.',
+    t('data.backup.skip.contributor'),
   );
 
   skipped.push(
@@ -376,7 +386,7 @@ function validateBackup(rawBackup: unknown, current: RestorableBackupState) {
   );
 
   if (!isRecord(rawBackup.settings)) {
-    warnings.push('Backup settings are missing. Current app settings will be kept.');
+    warnings.push(t('data.backup.warning.noSettings'));
   }
 
   return {
@@ -417,7 +427,7 @@ function buildConflicts<T extends { id: string }>(
 }
 
 export function isBackupBundle(value: unknown): value is BackupBundle {
-  return isRecord(value) && typeof value.schemaVersion === 'number';
+  return isRecord(value) && typeof value.schemaVersion === 'number' && Number.isFinite(value.schemaVersion);
 }
 
 export function buildBackupRestoreState(

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 
 import { ChevronRight } from 'lucide-react';
 
+import { useT } from '@/i18n';
 import { cn } from '@/lib/utils';
 
 interface Breadcrumb {
@@ -25,22 +26,24 @@ export function PageHeader({
   breadcrumbs,
   className,
 }: PageHeaderProps) {
+  const t = useT();
+
   return (
     <div className={cn('space-y-2 sm:space-y-3', className)}>
       {breadcrumbs && breadcrumbs.length > 0 && (
-        <nav className="flex items-center gap-1 text-xs text-muted-foreground sm:text-sm">
+        <nav aria-label={t('shell.breadcrumbs')} className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground sm:text-sm">
           {breadcrumbs.map((crumb, index) => (
-            <span key={crumb.label} className="flex items-center gap-1">
-              {index > 0 && <ChevronRight className="size-3 sm:size-3.5" />}
+            <span key={`${crumb.label}-${index}`} className="flex items-center gap-1">
+              {index > 0 && <ChevronRight className="size-3 sm:size-3.5" aria-hidden="true" />}
               {crumb.href ? (
                 <Link
                   to={crumb.href}
-                  className="transition-colors hover:text-foreground"
+                  className="rounded-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                 >
                   {crumb.label}
                 </Link>
               ) : (
-                <span className="text-foreground">{crumb.label}</span>
+                <span className="text-foreground" aria-current="page">{crumb.label}</span>
               )}
             </span>
           ))}

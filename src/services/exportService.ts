@@ -8,6 +8,22 @@ import type {
   WishlistItem,
 } from '@/types';
 import { getItemCurrentValueCurrency, getItemGainLoss } from '@/lib/valuation';
+import { getLanguage, t } from '@/i18n';
+
+/** Column separator for CSV exports. Excel in Turkish/European locales expects `;`. */
+export type CsvExportDelimiter = ',' | ';';
+
+export interface CsvExportOptions {
+  delimiter?: CsvExportDelimiter;
+}
+
+/** Semicolon when the UI is Turkish (Excel TR opens it as columns), comma otherwise. */
+export function getDefaultCsvDelimiter(): CsvExportDelimiter {
+  return getLanguage() === 'tr' ? ';' : ',';
+}
+
+/** UTF-8 byte-order mark: makes Excel decode ş, ğ, ı, € etc. correctly. */
+export const UTF8_BOM = '\uFEFF';
 
 // CSV "formula injection" guard. If a cell starts with =, +, @, tab, or CR,
 // some spreadsheet applications (Excel, Google Sheets, LibreOffice) will
@@ -16,12 +32,18 @@ import { getItemCurrentValueCurrency, getItemGainLoss } from '@/lib/valuation';
 // Reference: https://owasp.org/www-community/attacks/CSV_Injection
 const FORMULA_PREFIX_PATTERN = /^[=+@\t\r]/;
 
-function escapeCSV(value: string): string {
+function escapeCSV(value: string, delimiter: CsvExportDelimiter = ','): string {
   let escaped = value;
   if (FORMULA_PREFIX_PATTERN.test(value)) {
     escaped = `'${value}`;
   }
-  if (escaped.includes(',') || escaped.includes('"') || escaped.includes('\n')) {
+  if (
+    escaped.includes(delimiter)
+    || escaped.includes(',')
+    || escaped.includes('"')
+    || escaped.includes('\n')
+    || escaped.includes('\r')
+  ) {
     return `"${escaped.replace(/"/g, '""')}"`;
   }
   return escaped;
@@ -29,12 +51,40 @@ function escapeCSV(value: string): string {
 
 function formatGainLoss(item: CollectionItem): string {
   const gainLoss = getItemGainLoss(item, 'USD');
-  if (item.purchaseInfo.purchasePrice === 0) return 'N/A';
+  if (item.purchaseInfo.purchasePrice === 0) return t('data.col.notAvailable');
   return `${gainLoss.percentage >= 0 ? '+' : ''}${gainLoss.percentage.toFixed(1)}%`;
 }
 
-function toCSVRow(values: string[]): string {
-  return values.map(escapeCSV).join(',');
+function toCSVRow(values: string[], delimiter: CsvExportDelimiter): string {
+  return values.map((value) => escapeCSV(value, delimiter)).join(delimiter);
+}
+
+function buildCsv(headers: string[], rows: string[][], options?: CsvExportOptions): string {
+  const delimiter = options?.delimiter ?? getDefaultCsvDelimiter();
+  // CRLF line endings are what Excel writes and reads most reliably.
+  return UTF8_BOM + [headers, ...rows].map((row) => toCSVRow(row, delimiter)).join('\r\n');
+}
+
+function baseHeaders(includeCategory: boolean): string[] {
+  return [
+    t('data.col.id'), t('data.col.title'),
+    ...(includeCategory ? [t('data.col.category')] : []),
+    t('data.col.description'), t('data.col.condition'), t('data.col.location'),
+    t('data.col.purchaseDate'), t('data.col.purchasePrice'), t('data.col.purchaseCurrency'),
+    t('data.col.currentValue'), t('data.col.valueCurrency'), t('data.col.gainLoss'),
+    t('data.col.tags'), t('data.col.notes'), t('data.col.favorite'), t('data.col.created'), t('data.col.updated'),
+  ];
+}
+
+function formatCustomValue(value: unknown): string {
+  if (value == null) return '';
+  if (Array.isArray(value)) return value.join('; ');
+  if (typeof value === 'boolean') return value ? t('common.yes') : t('common.no');
+  return String(value);
+}
+
+function timestamp(): string {
+  return String(Date.now());
 }
 
 function downloadFile(content: string, filename: string, mimeType: string): void {
@@ -50,7 +100,12 @@ function downloadFile(content: string, filename: string, mimeType: string): void
 }
 
 export const exportService = {
-  exportToCSV(items: CollectionItem[], categories: Category[], filename?: string): void {
+  exportToCSV(
+    items: CollectionItem[],
+    categories: Category[],
+    filename?: string,
+    options?: CsvExportOptions,
+  ): void {
     const categoryMap = new Map(categories.map((c) => [c.id, c]));
 
     const allCustomKeys = new Map<string, string>();
@@ -66,10 +121,7 @@ export const exportService = {
     const customKeyEntries = Array.from(allCustomKeys.entries());
 
     const headers = [
-      'ID', 'Title', 'Category', 'Description', 'Condition', 'Location',
-      'Purchase Date', 'Purchase Price', 'Purchase Currency',
-      'Current Value', 'Value Currency', 'Gain/Loss %',
-      'Tags', 'Notes', 'Favorite', 'Created', 'Updated',
+      ...baseHeaders(true),
       ...customKeyEntries.map(([, label]) => label),
     ];
 
@@ -91,30 +143,32 @@ export const exportService = {
         formatGainLoss(item),
         item.tags.join('; '),
         item.notes,
-        item.isFavorite ? 'Yes' : 'No',
+        item.isFavorite ? t('common.yes') : t('common.no'),
         item.createdAt,
         item.updatedAt,
-        ...customKeyEntries.map(([key]) => String(item.customFields[key] ?? '')),
+        ...customKeyEntries.map(([key]) => formatCustomValue(item.customFields[key])),
       ];
     });
 
-    const csv = [toCSVRow(headers), ...rows.map(toCSVRow)].join('\n');
-    downloadFile(csv, filename ?? `collection-export-${Date.now()}.csv`, 'text/csv;charset=utf-8;');
+    const csv = buildCsv(headers, rows, options);
+    downloadFile(csv, filename ?? `curio-export-${timestamp()}.csv`, 'text/csv;charset=utf-8;');
   },
 
   exportToJSON(items: CollectionItem[], filename?: string): void {
     const json = JSON.stringify(items, null, 2);
-    downloadFile(json, filename ?? `collection-export-${Date.now()}.json`, 'application/json');
+    downloadFile(json, filename ?? `curio-export-${timestamp()}.json`, 'application/json');
   },
 
-  exportCategoryToCSV(items: CollectionItem[], category: Category, filename?: string): void {
+  exportCategoryToCSV(
+    items: CollectionItem[],
+    category: Category,
+    filename?: string,
+    options?: CsvExportOptions,
+  ): void {
     const customFields = category.fields;
 
     const headers = [
-      'ID', 'Title', 'Description', 'Condition', 'Location',
-      'Purchase Date', 'Purchase Price', 'Purchase Currency',
-      'Current Value', 'Value Currency', 'Gain/Loss %',
-      'Tags', 'Notes', 'Favorite', 'Created', 'Updated',
+      ...baseHeaders(false),
       ...customFields.map((f) => f.label),
     ];
 
@@ -134,15 +188,15 @@ export const exportService = {
         formatGainLoss(item),
         item.tags.join('; '),
         item.notes,
-        item.isFavorite ? 'Yes' : 'No',
+        item.isFavorite ? t('common.yes') : t('common.no'),
         item.createdAt,
         item.updatedAt,
-        ...customFields.map((f) => String(item.customFields[f.key] ?? '')),
+        ...customFields.map((f) => formatCustomValue(item.customFields[f.key])),
       ];
     });
 
-    const csv = [toCSVRow(headers), ...rows.map(toCSVRow)].join('\n');
-    const name = filename ?? `${category.slug}-export-${Date.now()}.csv`;
+    const csv = buildCsv(headers, rows, options);
+    const name = filename ?? `curio-${category.slug}-${timestamp()}.csv`;
     downloadFile(csv, name, 'text/csv;charset=utf-8;');
   },
 
@@ -171,7 +225,7 @@ export const exportService = {
 
     downloadFile(
       JSON.stringify(backup, null, 2),
-      filename ?? `collectvault-backup-${Date.now()}.json`,
+      filename ?? `curio-backup-${timestamp()}.json`,
       'application/json',
     );
   },

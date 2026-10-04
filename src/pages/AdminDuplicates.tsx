@@ -1,30 +1,30 @@
 import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { AlertTriangle, Eye, Trash2, ChevronDown, ChevronRight, GitMerge } from 'lucide-react';
-import type { CollectionItem } from '@/types';
+import { AlertTriangle, ChevronDown, ChevronRight, CopyCheck, Eye, GitMerge, Trash2 } from 'lucide-react';
+
 import { PageHeader } from '@/components/shared/PageHeader';
 import { PageTransition } from '@/components/shared/motion';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
+import { useT } from '@/i18n';
 import { getAdminBreadcrumbs } from '@/lib/adminNavigation';
-import { mergeDuplicateItems, normalizeISBNForDuplicate, normalizeTitleForDuplicate } from '@/lib/duplicates';
+import { mergeDuplicateItems } from '@/lib/duplicates';
 import { useCollectionStore } from '@/store/useCollectionStore';
-import { formatDate } from '@/lib/utils';
-
-interface DuplicateGroup {
-  key: string;
-  reason: 'title' | 'isbn';
-  items: CollectionItem[];
-  categoryName: string;
-}
+import { cn, formatDate, formatNumber } from '@/lib/utils';
+import { findDuplicateGroups, type DuplicateGroup } from './adminDuplicates-helpers';
 
 export default function AdminDuplicates() {
+  const t = useT();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const search = searchParams.toString();
-  const { items, categories, deleteItem, updateItem, archiveItems } = useCollectionStore();
+  const items = useCollectionStore((s) => s.items);
+  const categories = useCollectionStore((s) => s.categories);
+  const deleteItem = useCollectionStore((s) => s.deleteItem);
+  const updateItem = useCollectionStore((s) => s.updateItem);
+  const archiveItems = useCollectionStore((s) => s.archiveItems);
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [mergeGroup, setMergeGroup] = useState<DuplicateGroup | null>(null);
@@ -34,59 +34,10 @@ export default function AdminDuplicates() {
     [categories],
   );
 
-  const duplicateGroups = useMemo<DuplicateGroup[]>(() => {
-    const groups: DuplicateGroup[] = [];
-    const activeItems = items.filter((i) => !i.isArchived);
-
-    // Group by categoryId
-    const byCat = new Map<string, typeof activeItems>();
-    for (const item of activeItems) {
-      const arr = byCat.get(item.categoryId) ?? [];
-      arr.push(item);
-      byCat.set(item.categoryId, arr);
-    }
-
-    for (const [catId, catItems] of byCat) {
-      const catName = categoryNameById.get(catId) ?? catId;
-
-      // Title duplicates
-      const byTitle = new Map<string, typeof catItems>();
-      for (const item of catItems) {
-        const key = normalizeTitleForDuplicate(item.title);
-        const arr = byTitle.get(key) ?? [];
-        arr.push(item);
-        byTitle.set(key, arr);
-      }
-      for (const [titleKey, dupeItems] of byTitle) {
-        if (dupeItems.length > 1) {
-          groups.push({ key: `title-${catId}-${titleKey}`, reason: 'title', items: dupeItems, categoryName: catName });
-        }
-      }
-
-      // ISBN duplicates (only items with isbn field)
-      const byIsbn = new Map<string, typeof catItems>();
-      for (const item of catItems) {
-        const isbn = normalizeISBNForDuplicate(item.customFields?.isbn);
-        if (!isbn) continue;
-        const arr = byIsbn.get(isbn) ?? [];
-        arr.push(item);
-        byIsbn.set(isbn, arr);
-      }
-      for (const [isbnKey, dupeItems] of byIsbn) {
-        if (dupeItems.length > 1) {
-          // Only add if not already covered by title group
-          const alreadyCovered = groups.some(
-            (g) => g.reason === 'title' && dupeItems.every((d) => g.items.some((gi) => gi.id === d.id)),
-          );
-          if (!alreadyCovered) {
-            groups.push({ key: `isbn-${catId}-${isbnKey}`, reason: 'isbn', items: dupeItems, categoryName: catName });
-          }
-        }
-      }
-    }
-
-    return groups;
-  }, [items, categoryNameById]);
+  const duplicateGroups = useMemo(
+    () => findDuplicateGroups(items, categoryNameById),
+    [items, categoryNameById],
+  );
 
   const toggleExpand = (key: string) => {
     setExpandedKeys((prev) => {
@@ -121,95 +72,112 @@ export default function AdminDuplicates() {
     <PageTransition>
       <div className="space-y-4 sm:space-y-6 md:space-y-8">
         <PageHeader
-          title="Duplicate Detection"
-          description="Items that may be duplicates based on title or ISBN"
-          breadcrumbs={getAdminBreadcrumbs(search ? `?${search}` : '', [{ label: 'Duplicates' }])}
+          title={t('duplicates.title')}
+          description={t('duplicates.description')}
+          breadcrumbs={getAdminBreadcrumbs(search ? `?${search}` : '', [{ label: t('duplicates.breadcrumb') }])}
         />
 
         {duplicateGroups.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
               <div className="flex size-14 items-center justify-center rounded-full bg-emerald-500/10">
-                <AlertTriangle className="size-7 text-emerald-500" />
+                <CopyCheck className="size-7 text-emerald-500" aria-hidden="true" />
               </div>
-              <p className="text-lg font-semibold">No duplicates found</p>
-              <p className="text-sm text-muted-foreground">All items have unique titles and ISBNs within their categories.</p>
+              <p className="text-lg font-semibold">{t('duplicates.emptyTitle')}</p>
+              <p className="text-sm text-muted-foreground">{t('duplicates.emptyDescription')}</p>
             </CardContent>
           </Card>
         ) : (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              Found <span className="font-semibold text-foreground">{duplicateGroups.length}</span> potential duplicate group{duplicateGroups.length !== 1 ? 's' : ''}.
+              {t('duplicates.found', { count: duplicateGroups.length, formatted: formatNumber(duplicateGroups.length) })}
             </p>
             {duplicateGroups.map((group) => {
               const isExpanded = expandedKeys.has(group.key);
+              const panelId = `duplicate-${group.key}`;
               return (
-                <Card key={group.key}>
-                  <CardHeader
-                    className="cursor-pointer select-none py-3"
-                    onClick={() => toggleExpand(group.key)}
-                  >
-                    <div className="flex items-center gap-3">
-                      <AlertTriangle className="size-4 text-amber-500 shrink-0" />
-                      <div className="min-w-0 flex-1">
-                        <CardTitle className="text-sm font-semibold">
-                          {group.items[0].title}
-                        </CardTitle>
-                        <CardDescription className="mt-0.5 text-xs">
-                          {group.items.length} items &middot; {group.categoryName} &middot;{' '}
-                          <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${group.reason === 'isbn' ? 'border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-400' : 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400'}`}>
-                            {group.reason === 'isbn' ? 'Same ISBN' : 'Same Title'}
+                <Card key={group.key} className="overflow-hidden">
+                  <div className="flex items-center gap-3 px-6 py-3">
+                    <button
+                      type="button"
+                      className="flex min-w-0 flex-1 select-none items-center gap-3 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      aria-expanded={isExpanded}
+                      aria-controls={panelId}
+                      onClick={() => toggleExpand(group.key)}
+                    >
+                      <AlertTriangle className="size-4 shrink-0 text-amber-500" aria-hidden="true" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-semibold leading-none tracking-tight">{group.items[0].title}</span>
+                        <span className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
+                          <span>
+                            {t('duplicates.itemCount', { count: group.items.length, formatted: formatNumber(group.items.length) })}
+                          </span>
+                          <span aria-hidden="true">&middot;</span>
+                          <span>{group.categoryName}</span>
+                          <span aria-hidden="true">&middot;</span>
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              'px-1.5 py-0 text-[10px]',
+                              group.reason === 'isbn'
+                                ? 'border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-400'
+                                : 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400',
+                            )}
+                          >
+                            {group.reason === 'isbn' ? t('duplicates.reason.isbn') : t('duplicates.reason.title')}
                           </Badge>
-                        </CardDescription>
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="shrink-0 gap-1.5"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          openMergeDialog(group);
-                        }}
-                      >
-                        <GitMerge className="size-3.5" />
-                        Merge
-                      </Button>
-                      {isExpanded ? <ChevronDown className="size-4 text-muted-foreground shrink-0" /> : <ChevronRight className="size-4 text-muted-foreground shrink-0" />}
-                    </div>
-                  </CardHeader>
+                        </span>
+                      </span>
+                      {isExpanded
+                        ? <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                        : <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
+                    </button>
+                    <Button variant="outline" size="sm" className="shrink-0 gap-1.5" onClick={() => openMergeDialog(group)}>
+                      <GitMerge className="size-3.5" />
+                      {t('duplicates.merge')}
+                    </Button>
+                  </div>
 
                   {isExpanded && (
                     <CardContent className="pt-0">
-                      <div className="divide-y rounded-lg border">
-                        {group.items.map((item) => (
-                          <div key={item.id} className="flex items-center gap-3 px-4 py-3">
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm font-medium truncate">{item.title}</p>
-                              <p className="text-xs text-muted-foreground">Added {formatDate(item.createdAt)}</p>
-                            </div>
-                            <div className="flex items-center gap-1 shrink-0">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="size-8"
-                                onClick={() => navigate(`/items/${item.id}`)}
-                                title="View item"
-                              >
-                                <Eye className="size-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="size-8 text-destructive hover:text-destructive"
-                                onClick={() => setDeleteId(item.id)}
-                                title="Delete item"
-                              >
-                                <Trash2 className="size-4" />
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                      <ul id={panelId} className="divide-y rounded-lg border">
+                        {group.items.map((item) => {
+                          const isbn = typeof item.customFields?.isbn === 'string' ? item.customFields.isbn : '';
+                          return (
+                            <li key={item.id} className="flex items-center gap-3 px-4 py-3">
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-medium">{item.title}</p>
+                                <p className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+                                  <span>{t('duplicates.added', { date: formatDate(item.createdAt) })}</span>
+                                  {isbn && <span className="font-mono">{isbn}</span>}
+                                </p>
+                              </div>
+                              <div className="flex shrink-0 items-center gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-8"
+                                  onClick={() => navigate(`/items/${item.id}`)}
+                                  aria-label={t('duplicates.viewItem')}
+                                  title={t('duplicates.viewItem')}
+                                >
+                                  <Eye className="size-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-8 text-destructive hover:text-destructive"
+                                  onClick={() => setDeleteId(item.id)}
+                                  aria-label={t('duplicates.deleteItem')}
+                                  title={t('duplicates.deleteItem')}
+                                >
+                                  <Trash2 className="size-4" />
+                                </Button>
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
                     </CardContent>
                   )}
                 </Card>
@@ -225,9 +193,9 @@ export default function AdminDuplicates() {
             if (deleteId) deleteItem(deleteId);
             setDeleteId(null);
           }}
-          title="Archive Item"
-          description="This item will be moved to the archive."
-          confirmLabel="Archive"
+          title={t('duplicates.archiveTitle')}
+          description={t('duplicates.archiveDescription')}
+          confirmLabel={t('duplicates.archiveConfirm')}
           destructive
         />
 
@@ -238,32 +206,42 @@ export default function AdminDuplicates() {
             setPrimaryId('');
           }}
           onConfirm={confirmMerge}
-          title="Merge Duplicate Items"
+          title={t('duplicates.mergeTitle')}
           description={
             mergeGroup
-              ? `Merge ${mergeGroup.items.length} duplicate items into the selected primary item and archive the rest.`
+              ? t('duplicates.mergeDescription', { count: mergeGroup.items.length, formatted: formatNumber(mergeGroup.items.length) })
               : ''
           }
-          confirmLabel="Merge Duplicates"
+          confirmLabel={t('duplicates.mergeConfirm')}
         >
           {mergeGroup && (
-            <div className="space-y-2">
+            <fieldset className="space-y-2">
+              <legend className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">{t('duplicates.primaryLegend')}</legend>
               {mergeGroup.items.map((item) => (
-                <label key={item.id} className="flex cursor-pointer items-center gap-3 rounded-lg border p-3 text-sm">
+                <label
+                  key={item.id}
+                  className={cn(
+                    'flex cursor-pointer items-center gap-3 rounded-lg border p-3 text-sm transition-colors hover:bg-muted/50',
+                    primaryId === item.id && 'border-primary bg-primary/5 hover:bg-primary/5',
+                  )}
+                >
                   <input
                     type="radio"
                     name="primary-duplicate"
                     value={item.id}
                     checked={primaryId === item.id}
                     onChange={() => setPrimaryId(item.id)}
+                    className="accent-primary"
                   />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium">{item.title}</span>
-                    <span className="block text-xs text-muted-foreground">Updated {formatDate(item.updatedAt)}</span>
+                    <span className="block text-xs text-muted-foreground">
+                      {t('duplicates.updated', { date: formatDate(item.updatedAt) })}
+                    </span>
                   </span>
                 </label>
               ))}
-            </div>
+            </fieldset>
           )}
         </ConfirmDialog>
       </div>

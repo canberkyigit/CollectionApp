@@ -9,23 +9,20 @@ import {
 } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
+import { getLocale, useLanguageStore, useT } from '@/i18n';
 
-const MONTHS = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
+function getMonthNames(locale: string): string[] {
+  const formatter = new Intl.DateTimeFormat(locale, { month: 'long' });
+  return Array.from({ length: 12 }, (_, month) => formatter.format(new Date(2024, month, 1)));
+}
 
-const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+/** Monday-first narrow weekday labels. */
+function getWeekdayNames(locale: string): string[] {
+  const formatter = new Intl.DateTimeFormat(locale, { weekday: 'narrow' });
+  // 2024-01-01 was a Monday.
+  return Array.from({ length: 7 }, (_, offset) => formatter.format(new Date(2024, 0, 1 + offset)));
+}
+
 const MIN_YEAR = 1900;
 const FUTURE_YEAR_BUFFER = 5;
 
@@ -47,7 +44,7 @@ function formatDateValue(date: Date): string {
 
 function formatDisplayValue(value?: string): string {
   const date = parseDateValue(value);
-  if (!date) return 'dd.mm.yyyy';
+  if (!date) return '';
 
   const day = String(date.getDate()).padStart(2, '0');
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -101,8 +98,13 @@ const DatePicker = React.forwardRef<HTMLInputElement, DatePickerProps>(({
   onBlur,
   disabled,
   className,
-  placeholder = 'dd.mm.yyyy',
+  placeholder,
 }, ref) => {
+  const t = useT();
+  const language = useLanguageStore((state) => state.language);
+  const MONTHS = React.useMemo(() => getMonthNames(getLocale(language)), [language]);
+  const WEEKDAYS = React.useMemo(() => getWeekdayNames(getLocale(language)), [language]);
+  const resolvedPlaceholder = placeholder ?? t('common.datePicker.placeholder');
   const selectedDate = React.useMemo(() => parseDateValue(value), [value]);
   const [open, setOpen] = React.useState(false);
   const [monthMenuOpen, setMonthMenuOpen] = React.useState(false);
@@ -198,7 +200,7 @@ const DatePicker = React.forwardRef<HTMLInputElement, DatePickerProps>(({
               className,
             )}
           >
-            <span>{value ? formatDisplayValue(value) : placeholder}</span>
+            <span>{value ? formatDisplayValue(value) : resolvedPlaceholder}</span>
             <CalendarDays className="size-4 text-muted-foreground" />
           </Button>
         </PopoverTrigger>
@@ -216,7 +218,7 @@ const DatePicker = React.forwardRef<HTMLInputElement, DatePickerProps>(({
                   <div className="relative">
                     <button
                       type="button"
-                      aria-label="Select month"
+                      aria-label={t('common.datePicker.selectMonth')}
                       aria-expanded={monthMenuOpen}
                       onClick={() => {
                         setMonthMenuOpen((current) => !current);
@@ -261,7 +263,7 @@ const DatePicker = React.forwardRef<HTMLInputElement, DatePickerProps>(({
                   <div className="relative">
                     <button
                       type="button"
-                      aria-label="Select year"
+                      aria-label={t('common.datePicker.selectYear')}
                       aria-expanded={yearMenuOpen}
                       onClick={() => {
                         setYearMenuOpen((current) => !current);
@@ -315,7 +317,7 @@ const DatePicker = React.forwardRef<HTMLInputElement, DatePickerProps>(({
                   size="icon"
                   className="size-7 rounded-lg"
                   onClick={() => setMonth(-1)}
-                  aria-label="Previous month"
+                  aria-label={t('common.datePicker.previousMonth')}
                 >
                   <ChevronLeft className="size-4" />
                 </Button>
@@ -325,7 +327,7 @@ const DatePicker = React.forwardRef<HTMLInputElement, DatePickerProps>(({
                   size="icon"
                   className="size-7 rounded-lg"
                   onClick={() => setMonth(1)}
-                  aria-label="Next month"
+                  aria-label={t('common.datePicker.nextMonth')}
                 >
                   <ChevronRight className="size-4" />
                 </Button>
@@ -376,7 +378,7 @@ const DatePicker = React.forwardRef<HTMLInputElement, DatePickerProps>(({
                 onClick={clearDate}
               >
                 <X className="size-3.5" />
-                Clear
+                {t('common.datePicker.clear')}
               </Button>
               <Button
                 type="button"
@@ -385,7 +387,7 @@ const DatePicker = React.forwardRef<HTMLInputElement, DatePickerProps>(({
                 className="h-8 rounded-lg px-2 text-xs"
                 onClick={() => selectDate(new Date())}
               >
-                Today
+                {t('common.datePicker.today')}
               </Button>
             </div>
           </div>

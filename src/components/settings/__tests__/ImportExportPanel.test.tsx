@@ -1,4 +1,6 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render as rtlRender, screen, waitFor, within } from '@testing-library/react';
+import type { ReactElement } from 'react';
+import { MemoryRouter } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -24,6 +26,10 @@ vi.mock('sonner', async () => {
     },
   };
 });
+
+function render(ui: ReactElement) {
+  return rtlRender(ui, { wrapper: ({ children }) => <MemoryRouter>{children}</MemoryRouter> });
+}
 
 function mockFileReader(result: string) {
   class MockFileReader {
@@ -127,7 +133,7 @@ describe('ImportExportPanel', () => {
 
     mockFileReader('description,price\nMissing title,15');
     await user.upload(csvInput as HTMLInputElement, new File([''], 'missing-title.csv', { type: 'text/csv' }));
-    await user.click(screen.getByRole('combobox'));
+    await user.click(screen.getByRole('combobox', { name: /assign to category/i }));
     await user.click(await screen.findByRole('option', { name: 'Books' }));
     expect(await screen.findByText(/0 ready, 1 skipped/i)).toBeInTheDocument();
     expect(screen.getByText(/missing title\/name column value/i)).toBeInTheDocument();
@@ -136,7 +142,7 @@ describe('ImportExportPanel', () => {
     await user.upload(csvInput as HTMLInputElement, new File([''], 'books.csv', { type: 'text/csv' }));
     expect((await screen.findAllByText(/2 rows/i)).length).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('combobox'));
+    await user.click(screen.getByRole('combobox', { name: /assign to category/i }));
     await user.click(await screen.findByRole('option', { name: 'Books' }));
     await user.click(screen.getByRole('button', { name: /import 2 items/i }));
 
@@ -229,7 +235,7 @@ describe('ImportExportPanel', () => {
     const seed = buildSeedData();
     const localStatus = {
       exists: true,
-      path: '/Users/test/Documents/ESC/Local Sync',
+      path: '/Users/test/Documents/Curio/Local Sync',
       sizeBytes: 4096,
       syncedAt: '2026-04-16T12:00:00.000Z',
       counts: {
@@ -317,5 +323,85 @@ describe('ImportExportPanel', () => {
     await waitFor(() => {
       expect(restoreBackupBundle).toHaveBeenCalledWith(expect.objectContaining({ schemaVersion: 1 }), 'merge');
     });
+  });
+  it('detects semicolon CSVs and lets the user remap columns before importing', async () => {
+    const user = userEvent.setup();
+    const bulkAddItems = vi.fn(() => 1);
+    useCollectionStore.setState({ bulkAddItems });
+
+    mockFileReader('﻿Ad;Yazar;Fiyat\r\nDune;Frank Herbert;"1.250,50"\r\n');
+
+    const view = render(<ImportExportPanel activeTab="import" onTabChange={vi.fn()} />);
+    const csvInput = view.container.querySelector('input[accept=".csv"]');
+    await user.upload(csvInput as HTMLInputElement, new File([''], 'tr.csv', { type: 'text/csv' }));
+
+    expect(screen.getByText(/1 rows · 3 columns/i)).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /separator/i })).toHaveTextContent(/auto \(semicolon\)/i);
+
+    await user.click(screen.getByRole('combobox', { name: /assign to category/i }));
+    await user.click(await screen.findByRole('option', { name: 'Books' }));
+
+    expect(screen.getByText('Column mapping')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: /csv column for author/i })).toHaveTextContent('Not imported');
+
+    await user.click(screen.getByRole('combobox', { name: /csv column for author/i }));
+    await user.click(await screen.findByRole('option', { name: 'Yazar' }));
+
+    await user.click(screen.getByRole('button', { name: /import 1 items/i }));
+    expect(bulkAddItems).toHaveBeenCalledWith([
+      expect.objectContaining({
+        title: 'Dune',
+        customFields: expect.objectContaining({ author: 'Frank Herbert' }),
+        purchaseInfo: expect.objectContaining({ purchasePrice: 1250.5 }),
+      }),
+    ]);
+  });
+
+  it('shows "Not detected" when no title column matches', async () => {
+    const user = userEvent.setup();
+    mockFileReader('foo,bar\n1,2');
+    const view = render(<ImportExportPanel activeTab="import" onTabChange={vi.fn()} />);
+    await user.upload(view.container.querySelector('input[accept=".csv"]') as HTMLInputElement, new File([''], 'x.csv'));
+    await user.click(screen.getByRole('combobox', { name: /assign to category/i }));
+    await user.click(await screen.findByRole('option', { name: 'Books' }));
+    expect(screen.getByText('Not detected')).toBeInTheDocument();
+  });
+
+  it('reports a translated error when a restore fails', async () => {
+    const user = userEvent.setup();
+    const seed = buildSeedData();
+    const restoreBackupBundle = vi.fn(async () => {
+      throw new Error('Network down');
+    });
+    useCollectionStore.setState({ restoreBackupBundle });
+    mockFileReader(JSON.stringify({ schemaVersion: 1, exportedAt: '2024-03-01T00:00:00.000Z', ...seed }));
+
+    const view = render(<ImportExportPanel activeTab="import" onTabChange={vi.fn()} />);
+    await user.upload(view.container.querySelector('input[accept=".json"]') as HTMLInputElement, new File(['{}'], 'b.json'));
+    await user.click(await screen.findByRole('button', { name: /^merge backup$/i }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: /^merge backup$/i }));
+
+    await waitFor(() => {
+      expect(mocks.toastError).toHaveBeenCalledWith('Restore failed', { description: 'Network down' });
+    });
+    expect(screen.getByRole('button', { name: /^merge backup$/i })).not.toBeDisabled();
+  });
+
+  it('exports CSV with the chosen separator and opens the tag manager', async () => {
+    const user = userEvent.setup();
+    const exportSpy = vi.spyOn((await import('@/services/exportService')).exportService, 'exportToCSV').mockImplementation(() => undefined);
+    render(<ImportExportPanel activeTab="export" onTabChange={vi.fn()} />);
+
+    await user.click(screen.getByRole('combobox', { name: /csv separator/i }));
+    await user.click(await screen.findByRole('option', { name: /semicolon/i }));
+    await user.click(screen.getAllByRole('button', { name: /export as csv/i })[0]);
+    expect(exportSpy).toHaveBeenCalledWith(expect.any(Array), expect.any(Array), undefined, { delimiter: ';' });
+
+    expect(screen.getByRole('link', { name: /open report/i })).toHaveAttribute('href', '/admin/print-labels?mode=report&from=settings');
+
+    await user.click(screen.getByRole('button', { name: /manage tags/i }));
+    expect(await screen.findByRole('dialog', { name: /manage tags/i })).toBeInTheDocument();
+    exportSpy.mockRestore();
   });
 });

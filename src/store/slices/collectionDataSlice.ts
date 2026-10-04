@@ -6,17 +6,11 @@ import {
   selectArchivedItems,
   selectCategoryById,
   selectCategoryBySlug,
-  selectCategoryStats,
   selectContributorById,
   selectFavoriteItems,
   selectItemById,
   selectItemsByCategory,
   selectLentItems,
-  selectMonthlyAcquisitions,
-  selectMostValuableItems,
-  selectRecentItems,
-  selectTotalValue,
-  selectValueOverTime,
 } from '@/store/collectionStore.selectors';
 import type {
   CollectionDataSlice,
@@ -31,14 +25,21 @@ import type {
   LendingRecord,
   Library,
   MaintenanceEntry,
+  ProvenanceDocument,
   WishlistItem,
 } from '@/types';
 import { collectionSyncService } from '@/services/collectionSyncService';
 import { firestoreService, type FirestoreSnapshot, type UserSettings } from '@/services/firestoreService';
 import { buildBackupRestoreState } from '@/services/backupRestoreService';
 import { logger } from '@/services/logger';
-import { generateId, slugify } from '@/lib/utils';
+import { generateId } from '@/lib/utils';
 import { getLibraryCategoryIds, libraryMatchesCategory, normalizeLibrary } from '@/lib/libraries';
+import { BRAND_NAME } from '@/lib/brand';
+import { resolveCategorySlug } from '@/lib/categorySlug';
+import { t } from '@/i18n';
+import { todayISO } from '@/lib/utils';
+import { rewriteTags, withCurrentValue } from '@/store/bulkEditHelpers';
+import { currencyService } from '@/services/currencyService';
 
 let firestoreUnsubscribe: (() => void) | null = null;
 
@@ -133,7 +134,7 @@ export function createCollectionDataSlice(
       const category: Category = {
         ...data,
         id: generateId(),
-        slug: slugify(data.name),
+        slug: resolveCategorySlug(data.slug, data.name, get().categories),
         order: maxOrder + 1,
         createdAt: now,
         updatedAt: now,
@@ -153,6 +154,14 @@ export function createCollectionDataSlice(
 
     updateCategory: (id, updates) => {
       if (!dependencies.ensurePermission('catalog:manage')) return;
+
+      if (updates.slug !== undefined) {
+        const current = get().categories.find((entry) => entry.id === id);
+        updates = {
+          ...updates,
+          slug: resolveCategorySlug(updates.slug, updates.name ?? current?.name ?? '', get().categories, id),
+        };
+      }
 
       set((state) => ({
         categories: state.categories.map((category) => (
@@ -398,7 +407,7 @@ export function createCollectionDataSlice(
 
       const activeCount = get().items.filter((entry) => !entry.isArchived).length;
       if (get().notifications.collectionMilestones && [10, 25, 50, 100, 250, 500].includes(activeCount)) {
-        toast.success(`Collection milestone: ${activeCount} items!`);
+        toast.success(t('common.milestone', { count: activeCount }));
       }
 
       get().logActivity({
@@ -460,10 +469,17 @@ export function createCollectionDataSlice(
         const nextValue = updates.valuationInfo.currentEstimatedValue;
 
         if (nextValue !== previousValue && nextValue > 0) {
-          const today = now.slice(0, 10);
+          const today = todayISO();
           const valueHistory = updates.valuationInfo.valueHistory ?? existing.valuationInfo.valueHistory;
+          // Callers that send their own history (e.g. the item editor with a "valued on"
+          // date) may already have recorded the new value — don't add a second point.
+          const previousHistory = existing.valuationInfo.valueHistory ?? [];
+          const alreadyRecorded = (updates.valuationInfo.valueHistory ?? []).some((entry) => (
+            entry.value === nextValue
+            && !previousHistory.some((prev) => prev.date === entry.date && prev.value === entry.value)
+          ));
 
-          if (!valueHistory.some((entry) => entry.date === today)) {
+          if (!alreadyRecorded && !valueHistory.some((entry) => entry.date === today)) {
             const nextEntry = {
               date: today,
               value: nextValue,
@@ -488,8 +504,10 @@ export function createCollectionDataSlice(
           if (get().notifications.valueChangeAlerts && previousValue > 0) {
             const changePct = ((nextValue - previousValue) / previousValue) * 100;
             if (Math.abs(changePct) >= 10) {
-              const direction = changePct > 0 ? 'increased' : 'decreased';
-              toast.info(`Value ${direction} by ${Math.abs(changePct).toFixed(1)}% for "${existing.title}"`);
+              toast.info(t(changePct > 0 ? 'common.valueAlert.up' : 'common.valueAlert.down', {
+                percent: Math.abs(changePct).toFixed(1),
+                title: existing.title,
+              }));
             }
           }
         }
@@ -658,6 +676,165 @@ export function createCollectionDataSlice(
       });
     },
 
+    bulkUpdateItems: (ids, updates, details) => {
+      if (!dependencies.ensurePermission('content:edit') || ids.length === 0) return;
+
+      const now = new Date().toISOString();
+      set((state) => ({
+        items: state.items.map((item) => (
+          ids.includes(item.id) ? { ...item, ...updates, updatedAt: now } : item
+        )),
+      }));
+
+      if (get().ownerUserId && firestoreService.isAvailable()) {
+        const updatedItems = get().items.filter((item) => ids.includes(item.id));
+        collectionSyncService.scheduleFirestoreMutation('Bulk update items', {
+          action: 'saveItems',
+          userId: get().ownerUserId!,
+          payload: updatedItems,
+          scope: 'items',
+        });
+      }
+
+      get().logActivity({
+        action: 'item_updated',
+        entityType: 'item',
+        entityId: ids[0],
+        entityTitle: `${ids.length} items`,
+        details: details ?? `Bulk updated ${Object.keys(updates).join(', ')}`,
+      });
+    },
+
+    bulkSetCustomField: (ids, fieldKey, value) => {
+      if (!dependencies.ensurePermission('content:edit') || ids.length === 0 || !fieldKey) return;
+
+      const now = new Date().toISOString();
+      set((state) => ({
+        items: state.items.map((item) => {
+          if (!ids.includes(item.id)) return item;
+          const customFields = { ...item.customFields };
+          if (value === undefined) delete customFields[fieldKey];
+          else customFields[fieldKey] = value;
+          return { ...item, customFields, updatedAt: now };
+        }),
+      }));
+
+      if (get().ownerUserId && firestoreService.isAvailable()) {
+        const updatedItems = get().items.filter((item) => ids.includes(item.id));
+        collectionSyncService.scheduleFirestoreMutation('Bulk set custom field', {
+          action: 'saveItems',
+          userId: get().ownerUserId!,
+          payload: updatedItems,
+          scope: 'items',
+        });
+      }
+
+      get().logActivity({
+        action: 'item_updated',
+        entityType: 'item',
+        entityId: ids[0],
+        entityTitle: `${ids.length} items`,
+        details: `Bulk set field "${fieldKey}"`,
+      });
+    },
+
+    bulkRemoveTag: (ids, tag) => {
+      if (!dependencies.ensurePermission('content:edit') || ids.length === 0) return;
+
+      const now = new Date().toISOString();
+      set((state) => ({
+        items: state.items.map((item) => (
+          ids.includes(item.id) && item.tags.includes(tag)
+            ? { ...item, tags: item.tags.filter((entry) => entry !== tag), updatedAt: now }
+            : item
+        )),
+      }));
+
+      if (get().ownerUserId && firestoreService.isAvailable()) {
+        const updatedItems = get().items.filter((item) => ids.includes(item.id));
+        collectionSyncService.scheduleFirestoreMutation('Bulk remove tag', {
+          action: 'saveItems',
+          userId: get().ownerUserId!,
+          payload: updatedItems,
+          scope: 'items',
+        });
+      }
+
+      get().logActivity({
+        action: 'item_updated',
+        entityType: 'item',
+        entityId: ids[0],
+        entityTitle: `${ids.length} items`,
+        details: `Bulk removed tag "${tag}"`,
+      });
+    },
+
+    bulkSetCurrentValue: (ids, value, currency) => {
+      if (!dependencies.ensurePermission('content:edit') || ids.length === 0) return;
+      if (!Number.isFinite(value) || value < 0) return;
+
+      const now = new Date().toISOString();
+      const today = todayISO();
+      set((state) => ({
+        items: state.items.map((item) => (
+          ids.includes(item.id) ? withCurrentValue(item, value, currency, today, now) : item
+        )),
+      }));
+
+      if (get().ownerUserId && firestoreService.isAvailable()) {
+        const updatedItems = get().items.filter((item) => ids.includes(item.id));
+        collectionSyncService.scheduleFirestoreMutation('Bulk set current value', {
+          action: 'saveItems',
+          userId: get().ownerUserId!,
+          payload: updatedItems,
+          scope: 'items',
+        });
+      }
+
+      get().logActivity({
+        action: 'item_updated',
+        entityType: 'item',
+        entityId: ids[0],
+        entityTitle: `${ids.length} items`,
+        details: `Bulk current value set to ${value} ${currency}`,
+      });
+    },
+
+    mergeTags: (sources, target) => {
+      if (!dependencies.ensurePermission('content:edit')) return 0;
+
+      const now = new Date().toISOString();
+      const { items: nextItems, changedIds } = rewriteTags(get().items, sources, target, now);
+      if (changedIds.length === 0) return 0;
+      set({ items: nextItems });
+
+      if (get().ownerUserId && firestoreService.isAvailable()) {
+        const updatedItems = get().items.filter((item) => changedIds.includes(item.id));
+        collectionSyncService.scheduleFirestoreMutation('Rewrite tags', {
+          action: 'saveItems',
+          userId: get().ownerUserId!,
+          payload: updatedItems,
+          scope: 'items',
+        });
+      }
+
+      const cleanTarget = target.trim();
+      get().logActivity({
+        action: 'item_updated',
+        entityType: 'item',
+        entityId: changedIds[0],
+        entityTitle: `${changedIds.length} items`,
+        details: cleanTarget
+          ? `Tags ${sources.map((tag) => `"${tag}"`).join(', ')} merged into "${cleanTarget}"`
+          : `Tags ${sources.map((tag) => `"${tag}"`).join(', ')} removed`,
+      });
+      return changedIds.length;
+    },
+
+    renameTag: (from, to) => (to.trim() ? get().mergeTags([from], to) : 0),
+
+    removeTag: (tag) => get().mergeTags([tag], ''),
+
     bulkToggleFavorite: (ids, favorite) => {
       if (!dependencies.ensurePermission('content:edit')) return;
 
@@ -761,8 +938,148 @@ export function createCollectionDataSlice(
       if (item) dependencies.syncItem(item);
     },
 
+    updateMaintenanceEntry: (itemId, entryId, patch) => {
+      if (!dependencies.ensurePermission('content:edit')) return;
+
+      set((state) => ({
+        items: state.items.map((item) => (
+          item.id === itemId
+            ? {
+                ...item,
+                maintenanceLog: item.maintenanceLog.map((entry) => (
+                  entry.id === entryId ? { ...entry, ...patch, id: entry.id } : entry
+                )),
+                updatedAt: new Date().toISOString(),
+              }
+            : item
+        )),
+      }));
+
+      const item = get().items.find((entry) => entry.id === itemId);
+      const updatedEntry = item?.maintenanceLog.find((entry) => entry.id === entryId);
+      if (item && updatedEntry) {
+        dependencies.syncItem(item);
+        get().logActivity({
+          action: 'item_updated',
+          entityType: 'item',
+          entityId: itemId,
+          entityTitle: item.title,
+          details: t('itemDetail.activity.maintenanceUpdated', { description: updatedEntry.description }),
+        });
+      }
+    },
+
+    addValuationEntry: (itemId, entry) => {
+      if (!dependencies.ensurePermission('content:edit')) return;
+
+      const existing = get().items.find((item) => item.id === itemId);
+      if (!existing) return;
+
+      const history = existing.valuationInfo.valueHistory ?? [];
+      const isNewest = history.every((previous) => previous.date.slice(0, 10) <= entry.date.slice(0, 10));
+      const valueHistory = [...history, entry].sort((left, right) => left.date.localeCompare(right.date));
+
+      set((state) => ({
+        items: state.items.map((item) => (
+          item.id === itemId
+            ? {
+                ...item,
+                valuationInfo: {
+                  ...item.valuationInfo,
+                  valueHistory,
+                  ...(isNewest
+                    ? {
+                        currentEstimatedValue: entry.value,
+                        currentValueCurrency: entry.currency,
+                        currentExchangeRate: currencyService.getRate(entry.currency, 'USD'),
+                      }
+                    : {}),
+                },
+                updatedAt: new Date().toISOString(),
+              }
+            : item
+        )),
+      }));
+
+      const item = get().items.find((candidate) => candidate.id === itemId);
+      if (item) {
+        dependencies.syncItem(item);
+        get().logActivity({
+          action: 'item_updated',
+          entityType: 'item',
+          entityId: itemId,
+          entityTitle: item.title,
+          details: t('itemDetail.activity.valuationAdded'),
+        });
+      }
+    },
+
+    addItemDocument: (itemId, document) => {
+      if (!dependencies.ensurePermission('content:edit')) return null;
+
+      const existing = get().items.find((item) => item.id === itemId);
+      if (!existing) return null;
+
+      const nextDocument: ProvenanceDocument = {
+        ...document,
+        id: generateId(),
+        uploadedAt: new Date().toISOString(),
+      };
+
+      set((state) => ({
+        items: state.items.map((item) => (
+          item.id === itemId
+            ? {
+                ...item,
+                documents: [...(item.documents ?? []), nextDocument],
+                updatedAt: new Date().toISOString(),
+              }
+            : item
+        )),
+      }));
+
+      const item = get().items.find((candidate) => candidate.id === itemId);
+      if (item) {
+        dependencies.syncItem(item);
+        get().logActivity({
+          action: 'item_updated',
+          entityType: 'item',
+          entityId: itemId,
+          entityTitle: item.title,
+          details: t('itemDetail.activity.documentAdded', { title: nextDocument.title }),
+        });
+      }
+      return nextDocument;
+    },
+
+    removeItemDocument: (itemId, documentId) => {
+      if (!dependencies.ensurePermission('content:edit')) return;
+
+      set((state) => ({
+        items: state.items.map((item) => (
+          item.id === itemId
+            ? {
+                ...item,
+                documents: (item.documents ?? []).filter((document) => document.id !== documentId),
+                updatedAt: new Date().toISOString(),
+              }
+            : item
+        )),
+      }));
+
+      const item = get().items.find((candidate) => candidate.id === itemId);
+      if (item) dependencies.syncItem(item);
+    },
+
     addLendingRecord: (itemId, record) => {
       if (!dependencies.ensurePermission('content:edit')) return;
+
+      // Guard: an item can only be on one open loan at a time.
+      const target = get().items.find((item) => item.id === itemId);
+      if (target?.lendingHistory.some((existingRecord) => !existingRecord.actualReturnDate)) {
+        toast.error(t('lending.toast.alreadyOnLoan', { title: target.title }));
+        return;
+      }
 
       const nextRecord: LendingRecord = { ...record, id: generateId() };
       set((state) => ({
@@ -802,7 +1119,7 @@ export function createCollectionDataSlice(
                   record.id === recordId
                     ? {
                         ...record,
-                        actualReturnDate: new Date().toISOString().slice(0, 10),
+                        actualReturnDate: todayISO(),
                         condition,
                       }
                     : record
@@ -1081,8 +1398,8 @@ export function createCollectionDataSlice(
       );
 
       if (!restored) {
-        toast.error('Backup restore failed', {
-          description: 'The selected file is not a valid ESC backup file.',
+        toast.error(t('common.backupInvalid.title'), {
+          description: t('common.backupInvalid.description', { brand: BRAND_NAME }),
         });
         return;
       }
@@ -1135,12 +1452,6 @@ export function createCollectionDataSlice(
     getContributorById: (id) => selectContributorById(get(), id),
     getFavoriteItems: () => selectFavoriteItems(get()),
     getLentItems: () => selectLentItems(get()),
-    getTotalValue: () => selectTotalValue(get()),
-    getCategoryStats: () => selectCategoryStats(get()),
-    getRecentItems: (limit = 5) => selectRecentItems(get(), limit),
-    getMostValuableItems: (limit = 5) => selectMostValuableItems(get(), limit),
-    getMonthlyAcquisitions: () => selectMonthlyAcquisitions(get()),
-    getValueOverTime: () => selectValueOverTime(get()),
 
     applyRemoteState: (userId, snapshot) => {
       const currentState = get();

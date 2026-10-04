@@ -109,6 +109,11 @@ describe('layout components', () => {
 
     expect(screen.getAllByText('Collections')[0]).toBeInTheDocument();
     await user.click(screen.getByTitle(/reorder categories/i));
+    expect(screen.getByRole('button', { name: /move books up/i })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: /move books down/i }));
+    expect([...useCollectionStore.getState().categories].sort((a, b) => a.order - b.order).map((c) => c.id))
+      .toEqual(['cat-vinyl', 'cat-books']);
+    await user.click(screen.getByRole('button', { name: /^done$/i }));
     await user.click(screen.getByRole('button', { name: /books/i }));
     await user.click(screen.getByRole('button', { name: /all/i }));
     expect(await screen.findByText('Dune')).toBeInTheDocument();
@@ -164,7 +169,7 @@ describe('layout components', () => {
         failedCount: 0,
       });
     });
-    expect(screen.getByText('2 In Queue')).toBeInTheDocument();
+    expect(screen.getByText('2 in queue')).toBeInTheDocument();
 
     act(() => {
       useSyncStore.setState({
@@ -190,12 +195,12 @@ describe('layout components', () => {
         ],
       });
     });
-    expect(screen.getByText('Sync Issue')).toBeInTheDocument();
+    expect(screen.getByText('Sync issue')).toBeInTheDocument();
 
     act(() => {
       useSyncStore.getState().setOnlineState(false);
     });
-    expect(screen.getByText('1 Offline')).toBeInTheDocument();
+    expect(screen.getByText('Offline · 1 pending')).toBeInTheDocument();
   });
 
   it('renders app layout, handles auth redirects, and reacts to connectivity changes', async () => {
@@ -234,9 +239,10 @@ describe('layout components', () => {
 
     expect(screen.getByText('Dashboard Child')).toBeInTheDocument();
     await waitFor(() => {
-      expect(init).toHaveBeenCalled();
       expect(loadFromFirestore).toHaveBeenCalledWith('contrib-1');
     });
+    // init() runs once at the app root (App.tsx), not inside the layout.
+    expect(init).not.toHaveBeenCalled();
     expect(mocks.toastWarning).toHaveBeenCalled();
 
     await act(async () => {
@@ -253,7 +259,7 @@ describe('layout components', () => {
 
     firstLayout.unmount();
     act(() => {
-      useAuthStore.setState({ isAuthenticated: false });
+      useAuthStore.setState({ user: null, isAuthenticated: false });
     });
     render(
       <MemoryRouter initialEntries={['/']}>

@@ -23,6 +23,7 @@ export const DEFAULT_NOTIFICATIONS = {
 
 export const DEFAULT_WIDGETS: DashboardWidgetConfig[] = [
   { id: 'stats', label: 'Statistics', description: 'Total value, items, categories, contributors', icon: 'BarChart3', visible: true, order: 0, size: 'full' },
+  { id: 'real-value', label: 'Real value', description: 'Cost basis vs today in lira and in USD/EUR terms', icon: 'Scale', visible: true, order: 0.5, size: 'full' },
   { id: 'value-over-time', label: 'Value Over Time', description: 'Portfolio valuation trend chart', icon: 'TrendingUp', visible: true, order: 1, size: 'half' },
   { id: 'category-distribution', label: 'Category Distribution', description: 'Items per category donut chart', icon: 'PieChart', visible: true, order: 2, size: 'half' },
   { id: 'value-by-category', label: 'Value by Category', description: 'Total value per category bar chart', icon: 'BarChart', visible: true, order: 3, size: 'half' },
@@ -78,6 +79,7 @@ export function createDefaultUiPreferencesState() {
     itemDialogOpen: false,
     itemDialogCategoryId: null,
     itemDialogItem: null,
+    itemDialogOptions: null,
   };
 }
 

@@ -61,10 +61,6 @@ export function getItemsCurrentValue(items: CollectionItem[], displayCurrency: s
   return items.reduce((sum, item) => sum + getItemCurrentValue(item, displayCurrency), 0);
 }
 
-export function getItemsCurrentValueUSD(items: CollectionItem[]): number {
-  return items.reduce((sum, item) => sum + getItemCurrentValueUSD(item), 0);
-}
-
 export function getItemGainLoss(item: CollectionItem, displayCurrency: string) {
   return calculateGainLoss(
     getItemPurchaseValue(item, displayCurrency),

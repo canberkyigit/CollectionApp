@@ -38,7 +38,7 @@ export function EmptyState({
       )}
     >
       <div className="flex size-14 items-center justify-center rounded-2xl bg-background shadow-sm ring-1 ring-border/60">
-        <Icon className="size-7 text-primary/80" />
+        <Icon className="size-7 text-primary/80" aria-hidden="true" />
       </div>
       {eyebrow && (
         <p className="mt-5 text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">

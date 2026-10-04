@@ -1,0 +1,28 @@
+const duplicates: Record<string, string> = {
+  'duplicates.title': 'Mükerrer kayıtlar',
+  'duplicates.breadcrumb': 'Mükerrerler',
+  'duplicates.description': 'Aynı kategoride başlığı ya da ISBN’i aynı olan eşyalar',
+  'duplicates.emptyTitle': 'Mükerrer kayıt yok',
+  'duplicates.emptyDescription': 'Her eşyanın kategorisi içinde benzersiz bir başlığı ve ISBN’i var.',
+  'duplicates.found_one': '{formatted} olası mükerrer grup bulundu.',
+  'duplicates.found_other': '{formatted} olası mükerrer grup bulundu.',
+  'duplicates.itemCount_one': '{formatted} eşya',
+  'duplicates.itemCount_other': '{formatted} eşya',
+  'duplicates.reason.isbn': 'Aynı ISBN',
+  'duplicates.reason.title': 'Aynı başlık',
+  'duplicates.merge': 'Birleştir',
+  'duplicates.added': '{date} eklendi',
+  'duplicates.updated': '{date} güncellendi',
+  'duplicates.viewItem': 'Eşyayı görüntüle',
+  'duplicates.deleteItem': 'Eşyayı sil',
+  'duplicates.archiveTitle': 'Eşyayı arşivle',
+  'duplicates.archiveDescription': 'Bu eşya arşive taşınacak.',
+  'duplicates.archiveConfirm': 'Arşivle',
+  'duplicates.mergeTitle': 'Mükerrer eşyaları birleştir',
+  'duplicates.mergeDescription_one': '{formatted} eşyayı ana eşyada birleştir, kalanları arşivle.',
+  'duplicates.mergeDescription_other': '{formatted} mükerrer eşyayı seçilen ana eşyada birleştir, kalanları arşivle.',
+  'duplicates.mergeConfirm': 'Birleştir',
+  'duplicates.primaryLegend': 'Ana eşya olarak tut',
+};
+
+export default duplicates;

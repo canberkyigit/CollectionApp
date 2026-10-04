@@ -44,6 +44,7 @@ describe('collectionStore defaults', () => {
       itemDialogOpen: false,
       itemDialogCategoryId: null,
       itemDialogItem: null,
+      itemDialogOptions: null,
     });
 
     expect(createDefaultDashboardLayoutState().dashboardWidgets).toEqual(DEFAULT_WIDGETS);

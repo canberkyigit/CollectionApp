@@ -70,7 +70,7 @@ describe('AdminArchive behaviors', () => {
     expect(screen.getByText('Archived Book')).toBeInTheDocument();
     expect(screen.queryByText('Archived Vinyl')).not.toBeInTheDocument();
 
-    await user.click(screen.getAllByRole('button', { name: '' })[0]);
+    await user.click(screen.getByRole('checkbox', { name: /select all/i }));
     await user.click(screen.getAllByRole('button', { name: /^recover$/i })[0]);
     expect(recoverItems).toHaveBeenCalledWith(['item-3']);
 

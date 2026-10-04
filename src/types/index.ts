@@ -56,6 +56,9 @@ export interface ValueHistoryEntry {
   date: string;
   value: number;
   currency: string;
+  /** Who/what produced this valuation (e.g. "Christie's appraisal"). */
+  source?: string;
+  note?: string;
 }
 
 export interface ValuationInfo {
@@ -65,6 +68,10 @@ export interface ValuationInfo {
   targetYearProjection?: number;
   targetEstimatedValue?: number;
   valueHistory: ValueHistoryEntry[];
+  /** YYYY-MM-DD the current value was last assessed. */
+  valuedAt?: string;
+  /** Source note for the current value (appraisal, auction result, price guide…). */
+  valuationSource?: string;
 }
 
 export interface MaintenanceEntry {
@@ -104,6 +111,10 @@ export interface ProvenanceDocument {
   title: string;
   url: string;
   uploadedAt: string;
+  /** MIME type of the stored file (application/pdf, image/jpeg, …). */
+  mimeType?: string;
+  /** File size in bytes. */
+  size?: number;
 }
 
 export interface CollectionItem {
@@ -250,7 +261,8 @@ export type DashboardWidgetId =
   | 'starred-items'
   | 'wishlist'
   | 'recent-activity'
-  | 'quick-actions';
+  | 'quick-actions'
+  | 'real-value';
 
 export interface DashboardWidgetConfig {
   id: DashboardWidgetId;

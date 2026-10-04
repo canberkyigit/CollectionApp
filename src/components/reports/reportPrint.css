@@ -1,0 +1,67 @@
+/*
+ * Print styles for Curio reports and labels (inventory report, item sheets, stickers).
+ * Screen styling lives in Tailwind classes; this file only carries what Tailwind
+ * cannot express without arbitrary values: page boxes in millimetres.
+ */
+
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm 12mm;
+  }
+
+  @page curio-stickers {
+    size: A4;
+    margin: 10mm 6mm;
+  }
+
+  .curio-report {
+    font-size: 10pt;
+    color: #111;
+    background: #fff;
+  }
+
+  .curio-page-break {
+    break-after: page;
+  }
+
+  .curio-avoid-break {
+    break-inside: avoid;
+  }
+
+  .curio-sticker-page {
+    page: curio-stickers;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(8, 1fr);
+    height: 277mm;
+    break-after: page;
+  }
+
+  .curio-sticker-page:last-child {
+    break-after: auto;
+  }
+
+  .curio-sticker-page > * {
+    border: none !important;
+    border-radius: 0 !important;
+  }
+
+  .curio-thumb {
+    width: 28mm;
+    height: 28mm;
+  }
+}
+
+/* Thumbnail box on screen keeps a square ratio without arbitrary utilities. */
+.curio-thumb {
+  aspect-ratio: 1 / 1;
+}
+
+@media screen {
+  .curio-sticker-page {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+}

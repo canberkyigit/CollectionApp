@@ -1,4 +1,4 @@
-# ESC — Premium Collection Management
+# Curio — Premium Collection Management
 
 A full-featured Progressive Web App (PWA) for managing personal collections of any kind — books, vinyl records, art, memorabilia, and more.
 

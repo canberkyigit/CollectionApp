@@ -191,4 +191,56 @@ describe('exportService', () => {
       expect(parsed.settings.displayCurrency).toBe('USD');
     });
   });
+  describe('encoding and delimiters', () => {
+    async function readBytes(blob: Blob): Promise<Uint8Array> {
+      if (typeof blob.arrayBuffer === 'function') return new Uint8Array(await blob.arrayBuffer());
+      return new Uint8Array(await new Response(blob).arrayBuffer());
+    }
+
+    it('prefixes CSV exports with a UTF-8 BOM so Excel shows Turkish characters', async () => {
+      const service = await getService();
+      service.exportToCSV([{ ...mockItem, title: 'Şiir ğüı' }], [mockCategory], 'bom.csv');
+
+      const blob = mockCreateObjectURL.mock.calls[0][0] as Blob;
+      const bytes = await readBytes(blob);
+      expect(Array.from(bytes.slice(0, 3))).toEqual([0xef, 0xbb, 0xbf]);
+      expect(new TextDecoder().decode(bytes)).toContain('Şiir ğüı');
+    });
+
+    it('supports semicolon-separated output and quotes cells containing semicolons', async () => {
+      const service = await getService();
+      service.exportToCSV([mockItem], [mockCategory], 'semi.csv', { delimiter: ';' });
+
+      const text = new TextDecoder().decode(await readBytes(mockCreateObjectURL.mock.calls[0][0] as Blob));
+      expect(text).toContain('ID;Title;Category');
+      expect(text).toContain('"fiction; classic"');
+      expect(text).toContain('\r\n');
+    });
+
+    it('defaults to semicolons when the UI language is Turkish', async () => {
+      const { useLanguageStore } = await import('@/i18n');
+      const { getDefaultCsvDelimiter } = await import('../exportService');
+      const previous = useLanguageStore.getState().language;
+      useLanguageStore.setState({ language: 'tr' });
+      expect(getDefaultCsvDelimiter()).toBe(';');
+      useLanguageStore.setState({ language: 'en' });
+      expect(getDefaultCsvDelimiter()).toBe(',');
+      useLanguageStore.setState({ language: previous });
+    });
+
+    it('names backup downloads after Curio by default', async () => {
+      const service = await getService();
+      const anchor = { href: '', download: '', click: mockClick } as unknown as HTMLAnchorElement;
+      vi.spyOn(document, 'createElement').mockReturnValue(anchor);
+      service.exportBackupBundle({
+        categories: [], items: [], libraries: [], wishlist: [], activityLog: [], contributors: [],
+        settings: {
+          displayCurrency: 'USD', theme: 'light', sidebarOpen: true, menuCollectionStyle: 'style1',
+          dashboardWidgets: [], readNotificationIds: [],
+          notifications: { valueChangeAlerts: true, newItemReminders: true, collectionMilestones: true },
+        },
+      });
+      expect(anchor.download).toMatch(/^curio-backup-\d+\.json$/);
+    });
+  });
 });

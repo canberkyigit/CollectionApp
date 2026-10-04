@@ -1,0 +1,56 @@
+const shell: Record<string, string> = {
+  'shell.breadcrumbs': 'Sayfa yolu',
+  'shell.notifications': 'Bildirimler',
+  'shell.defaultUserName': 'Kullanıcı',
+
+  'shell.pwa.title': 'Güncelleme var',
+  'shell.pwa.description': 'En son sürümü almak için sayfayı yenile',
+  'shell.pwa.update': 'Güncelle',
+  'shell.pwa.dismiss': 'Güncelleme bildirimini kapat',
+
+  'shell.update.availableTitle': '{version} sürümü yayında',
+  'shell.update.availableDescription': 'Yeni {brand} sürümü indirilmeye hazır.',
+  'shell.update.downloadingTitle': 'Güncelleme indiriliyor…',
+  'shell.update.starting': 'İndirme başlıyor…',
+  'shell.update.progress': '%{percent} · {speed}/sn · {transferred} / {total}',
+  'shell.update.progressLabel': 'İndirme durumu',
+  'shell.update.readyTitle': 'Kuruluma hazır',
+  'shell.update.readyDescription': '{brand} {version} hazır. Uygulamak için yeniden başlat.',
+  'shell.update.installFailedTitle': 'Otomatik kurulum kullanılamıyor',
+  'shell.update.installFailedDescription': 'Bu sürüm imzasız. Yeni sürümü GitHub üzerinden indir.',
+  'shell.update.failedTitle': 'Güncelleme başarısız',
+  'shell.update.downloadFailed': 'Güncelleme indirilemedi.',
+  'shell.update.download': 'Güncellemeyi indir',
+  'shell.update.notNow': 'Şimdi değil',
+  'shell.update.installRestart': 'Kur ve yeniden başlat',
+  'shell.update.later': 'Sonra',
+  'shell.update.openReleases': 'GitHub sürümlerini aç',
+
+  'shell.error.eyebrow': 'Beklenmeyen hata',
+  'shell.error.chunkEyebrow': 'Güncelleme gerekli',
+  'shell.error.title': 'Bir şeyler ters gitti',
+  'shell.error.description': 'Bu sayfada bir sorun oluştu. Tekrar denemek için yenile ya da koleksiyonlarına dön.',
+  'shell.error.chunkTitle': 'Sayfa yüklenemedi',
+  'shell.error.chunkDescription': 'Uygulama güncellenmiş ya da bağlantı kopmuş olabilir. En son sürümü almak için yenile.',
+  'shell.error.reload': 'Yenile',
+  'shell.error.goToCollections': 'Koleksiyonlara git',
+
+  'shell.notFound.eyebrow': 'Hata 404',
+  'shell.notFound.title': 'Sayfa bulunamadı',
+  'shell.notFound.description': 'Bu adreste bir şey yok. Taşınmış ya da silinmiş olabilir.',
+
+  'shell.sync.localCopyOffline': 'Çevrimdışıyken masaüstündeki yerel kopya yüklendi',
+  'shell.sync.localCopyCloudFailed': 'Bulut verisi yüklenemediği için masaüstündeki yerel kopya yüklendi',
+  'shell.sync.localCopyLoaded': 'Yerel kopya yüklendi',
+  'shell.sync.localCopyDescription': '{brand}, bu Mac’te kayıtlı yerel kopyayı kullanıyor.',
+  'shell.sync.localCopyUnavailable': 'Masaüstünde yerel kopya bulunamadı',
+  'shell.sync.autoSynced': 'Masaüstündeki yerel kopya otomatik eşitlendi',
+  'shell.sync.autoSyncFailed': 'Yerel kopya otomatik eşitlenemedi',
+  'shell.sync.autoSyncFailedWithReason': 'Yerel kopya otomatik eşitlenemedi: {reason}',
+
+  'shell.overdue.title_one': '{count} ödünç verilen eşyanın iade tarihi geçti',
+  'shell.overdue.title_other': '{count} ödünç verilen eşyanın iade tarihi geçti',
+  'shell.overdue.description': 'Ayrıntılar için Ödünç verilenler sayfasına bak',
+};
+
+export default shell;

@@ -1,0 +1,56 @@
+const shell: Record<string, string> = {
+  'shell.breadcrumbs': 'Breadcrumb',
+  'shell.notifications': 'Notifications',
+  'shell.defaultUserName': 'User',
+
+  'shell.pwa.title': 'Update available',
+  'shell.pwa.description': 'Refresh to get the latest version',
+  'shell.pwa.update': 'Update',
+  'shell.pwa.dismiss': 'Dismiss update notice',
+
+  'shell.update.availableTitle': 'Version {version} is available',
+  'shell.update.availableDescription': 'A new {brand} build is ready to download.',
+  'shell.update.downloadingTitle': 'Downloading update…',
+  'shell.update.starting': 'Starting download…',
+  'shell.update.progress': '{percent}% · {speed}/s · {transferred} of {total}',
+  'shell.update.progressLabel': 'Download progress',
+  'shell.update.readyTitle': 'Ready to install',
+  'shell.update.readyDescription': '{brand} {version} is ready. Restart to apply it.',
+  'shell.update.installFailedTitle': 'Automatic install unavailable',
+  'shell.update.installFailedDescription': 'This build is unsigned. Download the new version from GitHub instead.',
+  'shell.update.failedTitle': 'Update failed',
+  'shell.update.downloadFailed': 'The update could not be downloaded.',
+  'shell.update.download': 'Download update',
+  'shell.update.notNow': 'Not now',
+  'shell.update.installRestart': 'Install and restart',
+  'shell.update.later': 'Later',
+  'shell.update.openReleases': 'Open GitHub releases',
+
+  'shell.error.eyebrow': 'Unexpected error',
+  'shell.error.chunkEyebrow': 'Update required',
+  'shell.error.title': 'Something went wrong',
+  'shell.error.description': 'This page ran into a problem. Reload to try again, or go back to your collections.',
+  'shell.error.chunkTitle': 'This page could not load',
+  'shell.error.chunkDescription': 'The app may have been updated, or the connection dropped. Reload to get the latest version.',
+  'shell.error.reload': 'Reload',
+  'shell.error.goToCollections': 'Go to collections',
+
+  'shell.notFound.eyebrow': 'Error 404',
+  'shell.notFound.title': 'Page not found',
+  'shell.notFound.description': 'There is nothing at this address. It may have moved or been deleted.',
+
+  'shell.sync.localCopyOffline': 'Loaded desktop local copy while offline',
+  'shell.sync.localCopyCloudFailed': 'Loaded desktop local copy after cloud load failed',
+  'shell.sync.localCopyLoaded': 'Loaded desktop local copy',
+  'shell.sync.localCopyDescription': '{brand} is using the saved local snapshot on this Mac.',
+  'shell.sync.localCopyUnavailable': 'Desktop local copy was not available',
+  'shell.sync.autoSynced': 'Desktop local copy auto-synced',
+  'shell.sync.autoSyncFailed': 'Desktop local auto-sync failed',
+  'shell.sync.autoSyncFailedWithReason': 'Desktop local auto-sync failed: {reason}',
+
+  'shell.overdue.title_one': '{count} lent item is overdue',
+  'shell.overdue.title_other': '{count} lent items are overdue',
+  'shell.overdue.description': 'Check Lending Tracker for details',
+};
+
+export default shell;

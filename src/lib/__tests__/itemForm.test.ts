@@ -220,3 +220,131 @@ describe('itemForm helpers', () => {
     expect(payload.documents).toEqual([]);
   });
 });
+
+describe('itemForm valuation, location and prefill helpers', () => {
+  it('seeds new item values from a wishlist prefill', async () => {
+    const { buildEmptyFormValues } = await import('@/lib/itemForm');
+    const values = buildEmptyFormValues(
+      [
+        { id: 'author', key: 'author', label: 'Author', type: 'text', required: false, order: 1 },
+        { id: 'signed', key: 'signed', label: 'Signed', type: 'boolean', required: false, order: 2 },
+      ],
+      {
+        title: 'Neuromancer',
+        description: 'First edition',
+        tags: ['cyberpunk', 'signed'],
+        notes: 'Seen at fair',
+        purchasePrice: 120,
+        purchaseCurrency: 'GBP',
+        purchaseDate: '2024-05-01T10:00:00Z',
+        purchasePlace: 'Hay-on-Wye',
+      },
+    );
+
+    expect(values).toMatchObject({
+      title: 'Neuromancer',
+      description: 'First edition',
+      tags: 'cyberpunk, signed',
+      notes: 'Seen at fair',
+      purchasePrice: 120,
+      purchaseCurrency: 'GBP',
+      purchaseDate: '2024-05-01',
+      purchaseLocation: 'Hay-on-Wye',
+      customFields: { author: '', signed: false },
+    });
+    expect(buildEmptyFormValues([]).purchaseCurrency).toBe('TRY');
+  });
+
+  it('suggests distinct locations including parent paths', async () => {
+    const { getLocationSuggestions } = await import('@/lib/itemForm');
+    expect(getLocationSuggestions([
+      { location: 'Study / Cabinet A / Shelf 2' },
+      { location: 'study/cabinet a/Shelf 3' },
+      { location: '  ' },
+      { location: undefined },
+      { location: 'Attic' },
+    ])).toEqual([
+      'Attic',
+      'Study',
+      'Study / Cabinet A',
+      'Study / Cabinet A / Shelf 2',
+      'study / cabinet a / Shelf 3',
+    ]);
+  });
+
+  it('appends a value history point when the current value changes and replaces same-day points', async () => {
+    const { buildNextValueHistory } = await import('@/lib/itemForm');
+    const { createMockItem } = await import('@/test/helpers');
+    const item = { ...createMockItem(), id: 'i1', createdAt: '2024-01-01', updatedAt: '2024-01-01' };
+
+    expect(buildNextValueHistory(undefined, { value: 50, currency: 'USD', valuedAt: '2024-06-01' }))
+      .toEqual([{ date: '2024-06-01', value: 50, currency: 'USD' }]);
+
+    // unchanged value → history untouched
+    expect(buildNextValueHistory(item, { value: 30, currency: 'USD' })).toBe(item.valuationInfo.valueHistory);
+
+    const next = buildNextValueHistory(item, { value: 45, currency: 'USD', valuedAt: '2024-07-01', source: 'Auction' });
+    expect(next).toEqual([
+      { date: '2024-01-01', value: 25, currency: 'USD' },
+      { date: '2024-07-01', value: 45, currency: 'USD', source: 'Auction' },
+    ]);
+
+    const sameDay = buildNextValueHistory(
+      { ...item, valuationInfo: { ...item.valuationInfo, currentEstimatedValue: 45, valueHistory: next } },
+      { value: 48, currency: 'USD', valuedAt: '2024-07-01' },
+    );
+    expect(sameDay).toHaveLength(2);
+    expect(sameDay[1]).toEqual({ date: '2024-07-01', value: 48, currency: 'USD' });
+  });
+
+  it('stores valuation metadata and dates a changed value today when the valued-on date is stale', async () => {
+    const { buildItemFormSubmission, itemToFormValues } = await import('@/lib/itemForm');
+    const { createMockItem, createMockCategory } = await import('@/test/helpers');
+    const { todayISO } = await import('@/lib/utils');
+    const category = { ...createMockCategory(), id: 'cat-books', order: 0, createdAt: '', updatedAt: '' };
+    const item = {
+      ...createMockItem({
+        valuationInfo: {
+          currentEstimatedValue: 30,
+          currentValueCurrency: 'USD',
+          currentExchangeRate: 1,
+          valueHistory: [{ date: '2024-01-01', value: 30, currency: 'USD' }],
+          valuedAt: '2024-01-01',
+          valuationSource: 'Old guide',
+        },
+      }),
+      id: 'i1',
+      createdAt: '2024-01-01',
+      updatedAt: '2024-01-01',
+    };
+
+    const values = itemToFormValues(item, category.fields);
+    expect(values.valuedAt).toBe('2024-01-01');
+    expect(values.valuationSource).toBe('Old guide');
+
+    const payload = await buildItemFormSubmission({
+      category,
+      fields: category.fields,
+      data: { ...values, currentValue: 75, valuationSource: 'Christie’s appraisal', targetValue: 120, targetYear: 2032 },
+      itemImages: [],
+      coverIndex: 0,
+      currentUserId: null,
+      existingItem: item,
+    });
+
+    expect(payload.valuationInfo).toMatchObject({
+      currentEstimatedValue: 75,
+      currentValueCurrency: 'USD',
+      valuedAt: todayISO(),
+      valuationSource: 'Christie’s appraisal',
+      targetEstimatedValue: 120,
+      targetYearProjection: 2032,
+    });
+    expect(payload.valuationInfo.valueHistory.at(-1)).toEqual({
+      date: todayISO(),
+      value: 75,
+      currency: 'USD',
+      source: 'Christie’s appraisal',
+    });
+  });
+});
