@@ -1,17 +1,36 @@
-import { lazy, Suspense, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  BookmarkPlus,
+  CalendarPlus,
   Clock,
+  History,
+  ShoppingBag,
+  Shuffle,
+  TrendingUp,
   Heart,
   Image as ImageIcon,
   Keyboard,
   Layers,
+  ListOrdered,
+  MoreHorizontal,
+  Pencil,
+  Plus,
   Play,
   Presentation,
   Sparkles,
+  Trash2,
+  type LucideIcon,
 } from 'lucide-react';
 
-import { EmptyState, PageHeader } from '@/components/shared';
+import { ConfirmDialog, EmptyState, PageHeader } from '@/components/shared';
+import { ExhibitionBuilder } from '@/components/exhibition/ExhibitionBuilder';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { PageTransition } from '@/components/shared/motion';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -21,12 +40,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { useT } from '@/i18n';
 import {
+  SMART_PRESETS,
   buildExhibitionSlides,
   countSlides,
+  getSmartPresetItemIds,
   isSameSource,
+  parseSmartExhibitionId,
+  smartExhibitionId,
   type ExhibitionSource,
+  type SmartPreset,
 } from '@/lib/exhibition';
+import { getItemCurrentValue } from '@/lib/valuation';
+import type { CollectionItem } from '@/types';
 import { getCategoryIcon } from '@/lib/icons';
+import { useSavedExhibitions, useSavedExhibitionsStore, type SavedExhibition } from '@/lib/savedExhibitions';
 import { cn } from '@/lib/utils';
 import { useCollectionStore } from '@/store/useCollectionStore';
 
@@ -35,6 +62,14 @@ const ExhibitionStage = lazy(() => import('@/components/exhibition/ExhibitionSta
   .then((module) => ({ default: module.ExhibitionStage })));
 
 const INTERVALS = [5, 8, 12, 20] as const;
+
+const PRESET_ICONS: Record<SmartPreset, LucideIcon> = {
+  topValue: TrendingUp,
+  addedThisYear: CalendarPlus,
+  recentlyAcquired: ShoppingBag,
+  random: Shuffle,
+  chronological: History,
+};
 const PREFS_KEY = 'curio-exhibition-prefs';
 
 interface ExhibitionPrefs {
@@ -43,7 +78,13 @@ interface ExhibitionPrefs {
   showValues: boolean;
   shuffle: boolean;
   onlyWithPhotos: boolean;
+  showQr: boolean;
+  kiosk: boolean;
+  /** Kiosk only: start the show after this many idle minutes on this page (0 = off). */
+  idleStartMinutes: number;
 }
+
+const IDLE_START_OPTIONS = [0, 1, 2, 5, 10] as const;
 
 const DEFAULT_PREFS: ExhibitionPrefs = {
   intervalSeconds: 8,
@@ -51,6 +92,9 @@ const DEFAULT_PREFS: ExhibitionPrefs = {
   showValues: false,
   shuffle: false,
   onlyWithPhotos: true,
+  showQr: true,
+  kiosk: false,
+  idleStartMinutes: 0,
 };
 
 function loadPrefs(): ExhibitionPrefs {
@@ -81,6 +125,33 @@ export default function Exhibition() {
   const [prefs, setPrefs] = useState<ExhibitionPrefs>(loadPrefs);
   const [seed, setSeed] = useState(() => Date.now());
   const [running, setRunning] = useState(false);
+  const savedExhibitions = useSavedExhibitions();
+  const removeExhibition = useSavedExhibitionsStore((state) => state.removeExhibition);
+  const [builder, setBuilder] = useState<{
+    open: boolean;
+    exhibition: SavedExhibition | null;
+    initialName?: string;
+    initialItemIds?: string[];
+  }>({ open: false, exhibition: null });
+  const [randomSeed, setRandomSeed] = useState(() => Date.now());
+
+  const valueOf = useCallback((item: CollectionItem) => getItemCurrentValue(item, displayCurrency), [displayCurrency]);
+  const presetIds = useMemo(() => Object.fromEntries(SMART_PRESETS.map((preset) => [
+    preset,
+    getSmartPresetItemIds(preset, items, { onlyWithPhotos: prefs.onlyWithPhotos, valueOf, seed: randomSeed }),
+  ])) as Record<SmartPreset, string[]>, [items, prefs.onlyWithPhotos, valueOf, randomSeed]);
+  const [pendingDelete, setPendingDelete] = useState<SavedExhibition | null>(null);
+
+  // A saved exhibition is referenced by id; its item list always comes from the store (edits apply immediately).
+  const effectiveSource = useMemo<ExhibitionSource>(() => {
+    if (typeof source === 'object' && 'exhibitionId' in source) {
+      const preset = parseSmartExhibitionId(source.exhibitionId);
+      if (preset) return { exhibitionId: source.exhibitionId, itemIds: presetIds[preset] };
+      const saved = savedExhibitions.find((exhibition) => exhibition.id === source.exhibitionId);
+      return saved ? { exhibitionId: saved.id, itemIds: saved.itemIds } : 'all';
+    }
+    return source;
+  }, [source, savedExhibitions, presetIds]);
 
   const updatePrefs = (patch: Partial<ExhibitionPrefs>) => {
     setPrefs((current) => {
@@ -96,12 +167,12 @@ export default function Exhibition() {
   );
 
   const slides = useMemo(() => buildExhibitionSlides(items, categories, {
-    source,
+    source: effectiveSource,
     onlyWithPhotos: prefs.onlyWithPhotos,
     shuffle: prefs.shuffle,
     seed,
     formatBoolean: (value) => (value ? t('common.yes') : t('common.no')),
-  }), [items, categories, source, prefs.onlyWithPhotos, prefs.shuffle, seed, t]);
+  }), [items, categories, effectiveSource, prefs.onlyWithPhotos, prefs.shuffle, seed, t]);
 
   const sources = useMemo(() => {
     const coverFor = (filter: (categoryId: string, isFavorite: boolean) => boolean) => items
@@ -137,13 +208,113 @@ export default function Exhibition() {
     ];
   }, [items, sortedCategories, prefs.onlyWithPhotos, t]);
 
-  const selectedSource = sources.find((entry) => isSameSource(entry.source, source)) ?? sources[0];
+  const exhibitionSources = useMemo(() => savedExhibitions.map((exhibition) => {
+    const exhibitionSource: ExhibitionSource = { exhibitionId: exhibition.id, itemIds: exhibition.itemIds };
+    const covers = exhibition.itemIds
+      .map((id) => items.find((item) => item.id === id && !item.isArchived)?.images?.find(Boolean))
+      .filter((image): image is string => Boolean(image))
+      .slice(0, 4);
+    return {
+      key: `exhibition-${exhibition.id}`,
+      source: exhibitionSource,
+      label: exhibition.name,
+      icon: ListOrdered,
+      covers,
+      count: countSlides(items, exhibitionSource, prefs.onlyWithPhotos),
+      exhibition,
+    };
+  }), [savedExhibitions, items, prefs.onlyWithPhotos]);
+
+  const presetSources = useMemo(() => SMART_PRESETS.map((preset) => {
+    const ids = presetIds[preset];
+    const covers = ids
+      .map((id) => items.find((item) => item.id === id)?.images?.find(Boolean))
+      .filter((image): image is string => Boolean(image))
+      .slice(0, 4);
+    return {
+      key: `preset-${preset}`,
+      preset,
+      source: { exhibitionId: smartExhibitionId(preset), itemIds: ids } as ExhibitionSource,
+      label: t(`exhibition.smart.${preset}`),
+      icon: PRESET_ICONS[preset],
+      covers,
+      count: ids.length,
+    };
+  }), [presetIds, items, t]);
+
+  const selectedSource = [...sources, ...presetSources, ...exhibitionSources].find((entry) => isSameSource(entry.source, effectiveSource)) ?? sources[0];
   const heroCovers = slides.map((slide) => slide.image).filter((image): image is string => Boolean(image)).slice(0, 4);
   const durationMinutes = Math.max(1, Math.round((slides.length * prefs.intervalSeconds) / 60));
 
   const start = () => {
     if (prefs.shuffle) setSeed(Date.now());
+    if (typeof source === 'object' && 'exhibitionId' in source && parseSmartExhibitionId(source.exhibitionId) === 'random') {
+      setRandomSeed(Date.now());
+    }
     setRunning(true);
+  };
+
+  // Kiosk: start the show by itself after a quiet period on this page.
+  const canIdleStart = !running && prefs.kiosk && prefs.idleStartMinutes > 0 && slides.length > 0;
+  useEffect(() => {
+    if (!canIdleStart) return undefined;
+    const delay = prefs.idleStartMinutes * 60_000;
+    let timer = window.setTimeout(() => setRunning(true), delay);
+    const reset = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setRunning(true), delay);
+    };
+    const events: (keyof WindowEventMap)[] = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'wheel', 'scroll'];
+    events.forEach((name) => window.addEventListener(name, reset, { passive: true }));
+    return () => {
+      window.clearTimeout(timer);
+      events.forEach((name) => window.removeEventListener(name, reset));
+    };
+  }, [canIdleStart, prefs.idleStartMinutes]);
+
+  const renderSourceTile = (entry: { key: string; source: ExhibitionSource; label: string; icon: LucideIcon; covers: string[]; count: number }) => {
+    const active = isSameSource(entry.source, effectiveSource);
+    const Icon = entry.icon;
+    return (
+      <button
+        type="button"
+        role="radio"
+        aria-checked={active}
+        disabled={entry.count === 0}
+        onClick={() => setSource(entry.source)}
+        className={cn(
+          'group relative w-full overflow-hidden rounded-2xl border text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          active
+            ? 'border-primary/50 shadow-[0_14px_30px_rgba(79,70,229,0.18)] ring-2 ring-primary/40'
+            : 'hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_12px_28px_rgba(15,23,42,0.08)]',
+          entry.count === 0 && 'cursor-not-allowed opacity-50 hover:translate-y-0 hover:shadow-none',
+        )}
+      >
+        <div className="relative h-20 overflow-hidden bg-gradient-to-br from-primary/15 to-sky-100/40 dark:to-sky-900/20">
+          {entry.covers.length > 0 ? (
+            <div className="grid size-full grid-cols-2 gap-px">
+              {entry.covers.slice(0, entry.covers.length >= 2 ? 2 : 1).map((cover) => (
+                <img key={cover.slice(-40)} src={cover} alt="" className={cn('size-full object-cover', entry.covers.length === 1 && 'col-span-2')} />
+              ))}
+            </div>
+          ) : (
+            <div className="flex size-full items-center justify-center">
+              <Icon className="size-7 text-primary/60" aria-hidden="true" />
+            </div>
+          )}
+          <div className="absolute inset-0 bg-gradient-to-t from-card via-card/10 to-transparent" />
+        </div>
+        <div className="flex items-center justify-between gap-2 px-3 pb-3 pt-1">
+          <span className="flex min-w-0 items-center gap-1.5 text-sm font-semibold">
+            <Icon className="size-3.5 shrink-0 text-primary max-sm:hidden" aria-hidden="true" />
+            <span className="truncate max-sm:line-clamp-2 max-sm:whitespace-normal max-sm:break-words">{entry.label}</span>
+          </span>
+          <Badge variant={active ? 'default' : 'secondary'} className="shrink-0 rounded-full px-2 text-[11px] tabular-nums">
+            {entry.count}
+          </Badge>
+        </div>
+      </button>
+    );
   };
 
   if (items.filter((item) => !item.isArchived).length === 0) {
@@ -240,53 +411,119 @@ export default function Exhibition() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3" role="radiogroup" aria-label={t('exhibition.sourceTitle')}>
-                {sources.map((entry) => {
-                  const active = isSameSource(entry.source, source);
-                  const Icon = entry.icon;
-                  return (
+            <CardContent className="space-y-6">
+              <div role="radiogroup" aria-label={t('exhibition.sourceTitle')} className="space-y-6">
+                {/* Saved exhibitions */}
+                <section className="space-y-3" aria-labelledby="exhibition-saved-heading">
+                  <div className="flex items-center justify-between gap-3">
+                    <p id="exhibition-saved-heading" className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                      {t('exhibition.saved.title')}
+                    </p>
+                    <Button variant="outline" size="sm" className="gap-1.5 max-sm:h-9" onClick={() => setBuilder({ open: true, exhibition: null })}>
+                      <Plus className="size-4" aria-hidden="true" />
+                      {t('exhibition.saved.new')}
+                    </Button>
+                  </div>
+                  {exhibitionSources.length === 0 ? (
                     <button
-                      key={entry.key}
                       type="button"
-                      role="radio"
-                      aria-checked={active}
-                      disabled={entry.count === 0}
-                      onClick={() => setSource(entry.source)}
-                      className={cn(
-                        'group relative overflow-hidden rounded-2xl border text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                        active
-                          ? 'border-primary/50 shadow-[0_14px_30px_rgba(79,70,229,0.18)] ring-2 ring-primary/40'
-                          : 'hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_12px_28px_rgba(15,23,42,0.08)]',
-                        entry.count === 0 && 'cursor-not-allowed opacity-50 hover:translate-y-0 hover:shadow-none',
-                      )}
+                      onClick={() => setBuilder({ open: true, exhibition: null })}
+                      className="flex w-full items-center gap-3 rounded-2xl border-2 border-dashed border-primary/25 bg-primary/[0.03] px-4 py-4 text-left transition-colors hover:border-primary/45 hover:bg-primary/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
-                      <div className="relative h-20 overflow-hidden bg-gradient-to-br from-primary/15 to-sky-100/40 dark:to-sky-900/20">
-                        {entry.covers.length > 0 ? (
-                          <div className="grid size-full grid-cols-2 gap-px">
-                            {entry.covers.slice(0, entry.covers.length >= 2 ? 2 : 1).map((cover) => (
-                              <img key={cover.slice(-40)} src={cover} alt="" className={cn('size-full object-cover', entry.covers.length === 1 && 'col-span-2')} />
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="flex size-full items-center justify-center">
-                            <Icon className="size-7 text-primary/60" aria-hidden="true" />
-                          </div>
-                        )}
-                        <div className="absolute inset-0 bg-gradient-to-t from-card via-card/10 to-transparent" />
-                      </div>
-                      <div className="flex items-center justify-between gap-2 px-3 pb-3 pt-1">
-                        <span className="flex min-w-0 items-center gap-1.5 text-sm font-semibold">
-                          <Icon className="size-3.5 shrink-0 text-primary max-sm:hidden" aria-hidden="true" />
-                          <span className="truncate max-sm:line-clamp-2 max-sm:whitespace-normal max-sm:break-words">{entry.label}</span>
-                        </span>
-                        <Badge variant={active ? 'default' : 'secondary'} className="shrink-0 rounded-full px-2 text-[10px] tabular-nums">
-                          {entry.count}
-                        </Badge>
-                      </div>
+                      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+                        <ListOrdered className="size-5 text-primary" aria-hidden="true" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-sm font-semibold">{t('exhibition.saved.emptyTitle')}</span>
+                        <span className="block text-xs text-muted-foreground">{t('exhibition.saved.emptyDescription')}</span>
+                      </span>
                     </button>
-                  );
-                })}
+                  ) : (
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                      {exhibitionSources.map((entry) => (
+                        <div key={entry.key} className="relative">
+                          {renderSourceTile(entry)}
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="secondary"
+                                size="icon"
+                                className="absolute right-2 top-2 size-8 rounded-full bg-background/80 shadow-sm backdrop-blur-sm max-sm:size-9"
+                                aria-label={t('exhibition.saved.actions', { name: entry.label })}
+                              >
+                                <MoreHorizontal className="size-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => setBuilder({ open: true, exhibition: entry.exhibition })}>
+                                <Pencil className="mr-2 size-4" aria-hidden="true" />
+                                {t('common.edit')}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setPendingDelete(entry.exhibition)}>
+                                <Trash2 className="mr-2 size-4" aria-hidden="true" />
+                                {t('common.delete')}
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                {/* Ready-made exhibitions */}
+                <section className="space-y-3" aria-labelledby="exhibition-smart-heading">
+                  <div>
+                    <p id="exhibition-smart-heading" className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                      {t('exhibition.smart.title')}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">{t('exhibition.smart.description')}</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                    {presetSources.map((entry) => (
+                      <div key={entry.key} className="relative">
+                        {renderSourceTile(entry)}
+                        {entry.count > 0 && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="secondary"
+                                size="icon"
+                                className="absolute right-2 top-2 size-8 rounded-full bg-background/80 shadow-sm backdrop-blur-sm max-sm:size-9"
+                                aria-label={t('exhibition.saved.actions', { name: entry.label })}
+                              >
+                                <MoreHorizontal className="size-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => setBuilder({
+                                  open: true,
+                                  exhibition: null,
+                                  initialName: entry.label,
+                                  initialItemIds: presetIds[entry.preset],
+                                })}
+                              >
+                                <BookmarkPlus className="mr-2 size-4" aria-hidden="true" />
+                                {t('exhibition.smart.saveAs')}
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                {/* Collections */}
+                <section className="space-y-3" aria-labelledby="exhibition-collections-heading">
+                  <p id="exhibition-collections-heading" className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                    {t('exhibition.collectionsHeading')}
+                  </p>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                    {sources.map((entry) => <div key={entry.key}>{renderSourceTile(entry)}</div>)}
+                  </div>
+                </section>
               </div>
             </CardContent>
           </Card>
@@ -329,6 +566,8 @@ export default function Exhibition() {
                   ['showValues', 'exhibition.showValues', 'exhibition.showValuesHint'],
                   ['shuffle', 'exhibition.shuffle', 'exhibition.shuffleHint'],
                   ['onlyWithPhotos', 'exhibition.onlyWithPhotos', 'exhibition.onlyWithPhotosHint'],
+                  ['showQr', 'exhibition.showQr', 'exhibition.showQrHint'],
+                  ['kiosk', 'exhibition.kiosk', 'exhibition.kioskHint'],
                 ] as const).map(([key, labelKey, hintKey]) => (
                   <div key={key} className="flex items-start justify-between gap-4 border-t pt-4">
                     <div className="min-w-0">
@@ -343,6 +582,29 @@ export default function Exhibition() {
                     />
                   </div>
                 ))}
+                {prefs.kiosk && (
+                  <div className="flex items-start justify-between gap-4 rounded-2xl border border-primary/15 bg-primary/[0.04] p-3">
+                    <div className="min-w-0">
+                      <Label htmlFor="exhibition-idle-start" className="text-sm font-medium">{t('exhibition.idleStart')}</Label>
+                      <p id="exhibition-idle-start-hint" className="mt-0.5 text-xs text-muted-foreground">{t('exhibition.idleStartHint')}</p>
+                    </div>
+                    <Select
+                      value={String(prefs.idleStartMinutes)}
+                      onValueChange={(value) => updatePrefs({ idleStartMinutes: Number(value) })}
+                    >
+                      <SelectTrigger id="exhibition-idle-start" aria-describedby="exhibition-idle-start-hint" className="w-32 shrink-0">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {IDLE_START_OPTIONS.map((minutes) => (
+                          <SelectItem key={minutes} value={String(minutes)}>
+                            {minutes === 0 ? t('exhibition.idleStartOff') : t('exhibition.minutes', { count: minutes })}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -384,11 +646,39 @@ export default function Exhibition() {
             intervalSeconds={prefs.intervalSeconds}
             autoplay={prefs.autoplay}
             showValues={prefs.showValues}
+            showQr={prefs.showQr}
+            kiosk={prefs.kiosk}
             displayCurrency={displayCurrency}
             onExit={() => setRunning(false)}
           />
         </Suspense>
       )}
+      {builder.open && (
+        <ExhibitionBuilder
+          key={builder.exhibition?.id ?? `new-${builder.initialName ?? ''}`}
+          open={builder.open}
+          onOpenChange={(open) => setBuilder((current) => ({ ...current, open }))}
+          exhibition={builder.exhibition}
+          initialName={builder.initialName}
+          initialItemIds={builder.initialItemIds}
+          onSaved={(saved) => setSource({ exhibitionId: saved.id, itemIds: saved.itemIds })}
+        />
+      )}
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onClose={() => setPendingDelete(null)}
+        onConfirm={() => {
+          if (pendingDelete) {
+            removeExhibition(pendingDelete.id);
+            if (typeof source === 'object' && 'exhibitionId' in source && source.exhibitionId === pendingDelete.id) setSource('all');
+          }
+          setPendingDelete(null);
+        }}
+        title={t('exhibition.saved.deleteTitle')}
+        description={t('exhibition.saved.deleteDescription', { name: pendingDelete?.name ?? '' })}
+        confirmLabel={t('common.delete')}
+        destructive
+      />
     </PageTransition>
   );
 }

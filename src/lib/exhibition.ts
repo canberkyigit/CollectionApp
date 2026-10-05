@@ -1,7 +1,14 @@
 import type { Category, CategoryField, CollectionItem } from '@/types';
 
-/** What the exhibition shows: every collection, the favourites, or one collection. */
-export type ExhibitionSource = 'all' | 'favorites' | { categoryId: string };
+/**
+ * What the exhibition shows: every collection, the favourites, one collection,
+ * or a saved (hand-ordered) exhibition.
+ */
+export type ExhibitionSource =
+  | 'all'
+  | 'favorites'
+  | { categoryId: string }
+  | { exhibitionId: string; itemIds: string[] };
 
 export interface ExhibitionHighlight {
   key: string;
@@ -37,12 +44,16 @@ const MAX_HIGHLIGHTS = 3;
 
 export function isSameSource(a: ExhibitionSource, b: ExhibitionSource): boolean {
   if (typeof a === 'string' || typeof b === 'string') return a === b;
+  if ('exhibitionId' in a || 'exhibitionId' in b) {
+    return 'exhibitionId' in a && 'exhibitionId' in b && a.exhibitionId === b.exhibitionId;
+  }
   return a.categoryId === b.categoryId;
 }
 
 function matchesSource(item: CollectionItem, source: ExhibitionSource): boolean {
   if (source === 'all') return true;
   if (source === 'favorites') return item.isFavorite;
+  if ('exhibitionId' in source) return source.itemIds.includes(item.id);
   return item.categoryId === source.categoryId;
 }
 
@@ -105,6 +116,10 @@ export function buildExhibitionSlides(
     .filter((item) => !item.isArchived && matchesSource(item, source))
     .filter((item) => !onlyWithPhotos || coverImage(item) !== null)
     .sort((a, b) => {
+      // A saved exhibition plays in the order it was curated.
+      if (typeof source === 'object' && 'exhibitionId' in source) {
+        return source.itemIds.indexOf(a.id) - source.itemIds.indexOf(b.id);
+      }
       const byCategory = (order.get(a.categoryId) ?? 999) - (order.get(b.categoryId) ?? 999);
       if (byCategory !== 0) return byCategory;
       return (b.createdAt ?? '').localeCompare(a.createdAt ?? '');
@@ -124,4 +139,92 @@ export function countSlides(
   onlyWithPhotos: boolean,
 ): number {
   return items.filter((item) => !item.isArchived && matchesSource(item, source) && (!onlyWithPhotos || coverImage(item) !== null)).length;
+}
+
+/* ───────────────────────── Smart (ready-made) exhibitions ───────────────────────── */
+
+export type SmartPreset = 'topValue' | 'addedThisYear' | 'recentlyAcquired' | 'random' | 'chronological';
+
+export const SMART_PRESETS: SmartPreset[] = ['topValue', 'addedThisYear', 'recentlyAcquired', 'random', 'chronological'];
+
+const SMART_PREFIX = 'smart:';
+const SMART_LIMITS: Partial<Record<SmartPreset, number>> = { topValue: 10, recentlyAcquired: 15, random: 15 };
+
+export function smartExhibitionId(preset: SmartPreset): string {
+  return `${SMART_PREFIX}${preset}`;
+}
+
+export function parseSmartExhibitionId(id: string): SmartPreset | null {
+  if (!id.startsWith(SMART_PREFIX)) return null;
+  const preset = id.slice(SMART_PREFIX.length) as SmartPreset;
+  return SMART_PRESETS.includes(preset) ? preset : null;
+}
+
+/** The item's year from a numeric "year"-like custom field (publishYear, year…); negative = BC. */
+export function getItemYear(item: CollectionItem): number | null {
+  for (const [key, raw] of Object.entries(item.customFields ?? {})) {
+    if (!/year/i.test(key)) continue;
+    const year = typeof raw === 'number' ? raw : Number(String(raw).trim());
+    if (Number.isFinite(year) && year !== 0 && Math.abs(year) < 10_000) return Math.trunc(year);
+  }
+  return null;
+}
+
+interface SmartPresetOptions {
+  onlyWithPhotos: boolean;
+  /** Current value of an item in the display currency (for "most valuable"). */
+  valueOf: (item: CollectionItem) => number;
+  /** Seed for the random selection. */
+  seed?: number;
+  now?: Date;
+}
+
+/**
+ * Ordered item ids for a ready-made exhibition. Photo filtering happens
+ * before the limit, so "Top 10" really shows ten slides when photos are required.
+ */
+export function getSmartPresetItemIds(
+  preset: SmartPreset,
+  items: CollectionItem[],
+  { onlyWithPhotos, valueOf, seed = 1, now = new Date() }: SmartPresetOptions,
+): string[] {
+  const pool = items.filter((item) => !item.isArchived && (!onlyWithPhotos || coverImage(item) !== null));
+  const limit = SMART_LIMITS[preset];
+  let ordered: CollectionItem[];
+
+  switch (preset) {
+    case 'topValue':
+      ordered = pool
+        .map((item) => ({ item, value: valueOf(item) }))
+        .filter((entry) => entry.value > 0)
+        .sort((a, b) => b.value - a.value)
+        .map((entry) => entry.item);
+      break;
+    case 'addedThisYear': {
+      const year = now.getFullYear();
+      ordered = pool
+        .filter((item) => new Date(item.createdAt).getFullYear() === year)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      break;
+    }
+    case 'recentlyAcquired':
+      ordered = pool
+        .filter((item) => Boolean(item.purchaseInfo?.purchasedAt))
+        .sort((a, b) => b.purchaseInfo.purchasedAt.localeCompare(a.purchaseInfo.purchasedAt));
+      break;
+    case 'random':
+      ordered = shuffled(pool, seed);
+      break;
+    case 'chronological':
+      ordered = pool
+        .map((item) => ({ item, year: getItemYear(item) }))
+        .filter((entry): entry is { item: CollectionItem; year: number } => entry.year !== null)
+        .sort((a, b) => a.year - b.year || a.item.title.localeCompare(b.item.title))
+        .map((entry) => entry.item);
+      break;
+    default:
+      ordered = [];
+  }
+
+  return (limit ? ordered.slice(0, limit) : ordered).map((item) => item.id);
 }
