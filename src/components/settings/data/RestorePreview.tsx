@@ -188,7 +188,7 @@ export function RestorePreview({
                 className="flex items-center justify-between gap-3 rounded-md bg-background px-3 py-1.5 text-xs"
               >
                 <span className="truncate">{conflict.label}</span>
-                <Badge variant="outline" className="shrink-0 text-[10px]">{collectionLabel(conflict.collection)}</Badge>
+                <Badge variant="outline" className="shrink-0 text-[11px]">{collectionLabel(conflict.collection)}</Badge>
               </li>
             ))}
           </ul>
@@ -213,7 +213,7 @@ export function RestorePreview({
                   <span className="truncate">
                     {issue.title ?? issue.id ?? t('data.restore.row', { index: issue.index ?? 0 })}
                   </span>
-                  <Badge variant="outline" className="shrink-0 text-[10px]">{collectionLabel(issue.collection)}</Badge>
+                  <Badge variant="outline" className="shrink-0 text-[11px]">{collectionLabel(issue.collection)}</Badge>
                 </div>
                 <p className="mt-0.5 text-muted-foreground">{issue.reason}</p>
               </li>

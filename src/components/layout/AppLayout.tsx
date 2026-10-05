@@ -6,6 +6,9 @@ import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 import { ShellLoading } from '@/components/shared/ShellLoading';
+import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton';
+import { Skeleton } from '@/components/ui/skeleton';
+import { selectIsColdLoading } from '@/store/collectionStore.selectors';
 import { t } from '@/i18n';
 import type { AuthUser } from '@/services/authService';
 import { OFFLINE_USER_ID, useAuthStore } from '@/store/useAuthStore';
@@ -20,6 +23,24 @@ import { isBackupBundle, type BackupBundle } from '@/services/backupRestoreServi
 import { getDesktopLocalSyncApi } from '@/lib/runtime';
 import { BRAND_NAME } from '@/lib/brand';
 import { todayISO } from '@/lib/utils';
+
+const OVERDUE_TOAST_KEY = 'curio-overdue-toast-date';
+
+// Pages that don't depend on collection data render immediately during the first cloud load.
+const DATA_INDEPENDENT_PATHS = ['/settings', '/profile'];
+
+/** Generic page skeleton shown while the first cloud snapshot is loading. */
+function ColdLoadingPage() {
+  return (
+    <div className="space-y-6" role="status" aria-busy="true">
+      <div className="space-y-2">
+        <Skeleton className="h-8 w-56" />
+        <Skeleton className="h-4 w-80 max-w-full" />
+      </div>
+      <LoadingSkeleton variant="card" count={8} />
+    </div>
+  );
+}
 
 // The item editor is heavy (photos, lookups, AI review); load it on first use.
 const AddEditItemDialog = lazy(() => import('@/components/shared/AddEditItemDialog')
@@ -81,6 +102,11 @@ function AuthenticatedShell({ user }: { user: AuthUser }) {
   const isRemoteDataLoading = useCollectionStore((s) => s.isRemoteDataLoading);
   const categories = useCollectionStore((s) => s.categories);
   const items = useCollectionStore((s) => s.items);
+  const coldOwnerUserId = useCollectionStore((s) => s.ownerUserId);
+  const isColdLoading = selectIsColdLoading(
+    { ownerUserId: coldOwnerUserId, isRemoteDataLoading },
+    [items.length, categories.length],
+  );
   const libraries = useCollectionStore((s) => s.libraries);
   const wishlist = useCollectionStore((s) => s.wishlist);
   const activityLog = useCollectionStore((s) => s.activityLog);
@@ -339,6 +365,12 @@ function AuthenticatedShell({ user }: { user: AuthUser }) {
   useEffect(() => {
     if (overdueNotifiedRef.current) return;
     const today = todayISO();
+    // Once a day is enough — the bell keeps the reminder visible after that.
+    try {
+      if (localStorage.getItem(OVERDUE_TOAST_KEY) === today) return;
+    } catch {
+      // storage unavailable — fall back to once per session
+    }
     const lentItems = getLentItems();
     const overdueCount = lentItems.reduce((count, item) => {
       return count + item.lendingHistory.filter(
@@ -347,6 +379,11 @@ function AuthenticatedShell({ user }: { user: AuthUser }) {
     }, 0);
     if (overdueCount > 0) {
       overdueNotifiedRef.current = true;
+      try {
+        localStorage.setItem(OVERDUE_TOAST_KEY, today);
+      } catch {
+        // ignore
+      }
       toast.warning(
         t('shell.overdue.title', { count: overdueCount }),
         { description: t('shell.overdue.description'), duration: 6000 },
@@ -367,7 +404,9 @@ function AuthenticatedShell({ user }: { user: AuthUser }) {
           <main className="min-h-0 flex-1 overflow-y-auto scrollbar-thin p-3 sm:p-4 md:p-6 print:block print:h-auto print:overflow-visible print:p-0">
             <ErrorBoundary resetKey={location.pathname} onNavigateHome={() => navigate('/collections')}>
               <Suspense fallback={<ShellLoading fullScreen={false} className="py-24" />}>
-                <Outlet />
+                {isColdLoading && !DATA_INDEPENDENT_PATHS.some((path) => location.pathname.startsWith(path))
+                  ? <ColdLoadingPage />
+                  : <Outlet />}
               </Suspense>
             </ErrorBoundary>
           </main>

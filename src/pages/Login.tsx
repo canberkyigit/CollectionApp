@@ -50,7 +50,7 @@ const brandAssurances = [
 ];
 
 const fieldClassName =
-  'h-14 rounded-[1.1rem] border border-slate-200/90 bg-white pl-11 shadow-[0_8px_18px_rgba(15,23,42,0.04)] placeholder:text-slate-400';
+  'h-14 rounded-[1.1rem] border border-slate-200/90 bg-white pl-11 shadow-[0_8px_18px_rgba(15,23,42,0.04)] placeholder:text-slate-400 dark:border-border dark:bg-background/60 dark:shadow-none dark:placeholder:text-muted-foreground';
 
 const primaryButtonClassName = cn(
   'relative h-14 w-full gap-2 rounded-[1.2rem] text-sm font-semibold tracking-[0.01em]',
@@ -78,7 +78,7 @@ function LanguageSwitch({ className }: { className?: string }) {
       role="group"
       aria-label={t('common.language')}
       className={cn(
-        'flex items-center gap-0.5 rounded-full border border-white/65 bg-white/55 p-1 shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur-md',
+        'flex items-center gap-0.5 rounded-full border border-white/65 bg-white/55 p-1 shadow-[0_10px_24px_rgba(15,23,42,0.06)] backdrop-blur-md dark:border-white/10 dark:bg-white/[0.06] dark:shadow-[0_10px_24px_rgba(0,0,0,0.25)]',
         className,
       )}
     >
@@ -93,8 +93,8 @@ function LanguageSwitch({ className }: { className?: string }) {
           className={cn(
             'rounded-full px-2.5 py-1 text-[11px] font-semibold tracking-[0.14em] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
             language === option.value
-              ? 'bg-white text-primary shadow-[0_4px_12px_rgba(79,70,229,0.14)]'
-              : 'text-slate-500 hover:text-slate-800',
+              ? 'bg-white text-primary shadow-[0_4px_12px_rgba(79,70,229,0.14)] dark:bg-white/[0.12] dark:text-foreground'
+              : 'text-slate-500 hover:text-slate-800 dark:text-muted-foreground dark:hover:text-foreground',
           )}
         >
           {option.value.toUpperCase()}
@@ -209,12 +209,12 @@ export default function Login() {
   );
 
   return (
-    <div className="relative flex min-h-screen overflow-hidden bg-[linear-gradient(135deg,rgba(251,252,255,0.95)_0%,rgba(244,247,255,0.98)_50%,rgba(252,252,250,0.97)_100%)] text-foreground">
-      <aside className="relative hidden w-1/2 overflow-hidden border-r border-white/45 bg-[linear-gradient(160deg,rgba(233,240,255,0.92)_0%,rgba(244,247,255,0.84)_42%,rgba(247,248,252,0.80)_100%)] lg:flex lg:flex-col lg:items-center lg:justify-center">
+    <div className="relative flex min-h-screen overflow-hidden bg-[linear-gradient(135deg,rgba(251,252,255,0.95)_0%,rgba(244,247,255,0.98)_50%,rgba(252,252,250,0.97)_100%)] text-foreground dark:bg-[linear-gradient(135deg,rgba(18,18,28,0.98)_0%,rgba(22,22,36,0.98)_50%,rgba(17,17,26,0.98)_100%)]">
+      <aside className="relative hidden w-1/2 overflow-hidden border-r border-white/45 bg-[linear-gradient(160deg,rgba(233,240,255,0.92)_0%,rgba(244,247,255,0.84)_42%,rgba(247,248,252,0.80)_100%)] dark:border-white/[0.06] dark:bg-[linear-gradient(160deg,rgba(34,34,62,0.92)_0%,rgba(24,24,37,0.88)_42%,rgba(20,20,30,0.85)_100%)] lg:flex lg:flex-col lg:items-center lg:justify-center">
         <div className="absolute inset-y-0 right-0 w-px bg-gradient-to-b from-transparent via-primary/15 to-transparent" />
         <div className="absolute -left-24 -top-20 size-[28rem] rounded-full bg-primary/16 blur-[130px]" />
-        <div className="absolute -bottom-36 left-16 size-[22rem] rounded-full bg-white/70 blur-[90px]" />
-        <div className="absolute right-0 top-16 size-[26rem] rounded-full bg-sky-100/50 blur-[120px]" />
+        <div className="absolute -bottom-36 left-16 size-[22rem] rounded-full bg-white/70 blur-[90px] dark:bg-primary/[0.06]" />
+        <div className="absolute right-0 top-16 size-[26rem] rounded-full bg-sky-100/50 blur-[120px] dark:bg-sky-500/[0.08]" />
         <div className="absolute bottom-0 right-8 size-[20rem] rounded-full bg-primary/8 blur-[110px]" />
 
         <div
@@ -247,12 +247,12 @@ export default function Login() {
               {BRAND_NAME}
             </p>
             <h2
-              className="mx-auto max-w-xl text-[1.9rem] font-semibold leading-[1.08] tracking-[-0.035em] text-slate-900"
+              className="mx-auto max-w-xl text-[1.9rem] font-semibold leading-[1.08] tracking-[-0.035em] text-slate-900 dark:text-foreground"
               style={{ fontFamily: '"Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif' }}
             >
               {t('auth.hero.headline')}
             </h2>
-            <p className="mx-auto max-w-lg pt-1 text-lg leading-8 text-slate-600">
+            <p className="mx-auto max-w-lg pt-1 text-lg leading-8 text-slate-600 dark:text-muted-foreground">
               {t('auth.hero.description')}
             </p>
           </div>
@@ -261,7 +261,7 @@ export default function Login() {
             {brandHighlightKeys.map((key) => (
               <span
                 key={key}
-                className="rounded-full border border-white/65 bg-white/45 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.05)] backdrop-blur-md"
+                className="rounded-full border border-white/65 bg-white/45 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.05)] backdrop-blur-md dark:border-white/10 dark:bg-white/[0.05] dark:text-foreground/85 dark:shadow-none"
               >
                 {t(key)}
               </span>
@@ -272,10 +272,10 @@ export default function Login() {
             {brandAssurances.map((item) => (
               <div
                 key={item.value}
-                className="rounded-3xl border border-white/55 bg-white/34 px-5 py-4 shadow-[0_18px_38px_rgba(15,23,42,0.05)] backdrop-blur-md"
+                className="rounded-3xl border border-white/55 bg-white/34 px-5 py-4 shadow-[0_18px_38px_rgba(15,23,42,0.05)] backdrop-blur-md dark:border-white/10 dark:bg-white/[0.04] dark:shadow-[0_18px_38px_rgba(0,0,0,0.2)]"
               >
-                <p className="text-base font-semibold tracking-[-0.02em] text-slate-900">{t(item.value)}</p>
-                <p className="mt-1 text-sm leading-6 text-slate-600">{t(item.label)}</p>
+                <p className="text-base font-semibold tracking-[-0.02em] text-slate-900 dark:text-foreground">{t(item.value)}</p>
+                <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-muted-foreground">{t(item.label)}</p>
               </div>
             ))}
           </div>
@@ -283,12 +283,12 @@ export default function Login() {
       </aside>
 
       <main className="relative flex flex-1 flex-col items-center justify-center px-6 py-16 lg:px-12">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(187,209,255,0.24),transparent_58%)]" />
-        <div className="absolute inset-x-0 top-0 h-40 bg-[linear-gradient(180deg,rgba(255,255,255,0.72),transparent)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(187,209,255,0.24),transparent_58%)] dark:bg-[radial-gradient(ellipse_at_top_right,rgba(99,102,241,0.12),transparent_58%)]" />
+        <div className="absolute inset-x-0 top-0 h-40 bg-[linear-gradient(180deg,rgba(255,255,255,0.72),transparent)] dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.03),transparent)]" />
 
         <LanguageSwitch className="absolute right-5 top-5 z-10" />
 
-        <div className="relative w-full max-w-[480px] rounded-[2rem] border border-white/65 bg-white/72 px-6 py-8 shadow-[0_28px_80px_rgba(15,23,42,0.10)] backdrop-blur-xl sm:px-8 sm:py-10">
+        <div className="relative w-full max-w-[480px] rounded-[2rem] border border-white/65 bg-white/72 px-6 py-8 shadow-[0_28px_80px_rgba(15,23,42,0.10)] backdrop-blur-xl dark:border-white/10 dark:bg-[rgba(24,24,37,0.78)] dark:shadow-[0_28px_80px_rgba(0,0,0,0.45)] sm:px-8 sm:py-10">
           <div className="mb-8 space-y-3 text-center lg:hidden">
             <div className="flex justify-center">
               <BrandMark className="size-16 rounded-[0.94rem] shadow-[0_18px_40px_rgba(79,70,229,0.28)]" />
@@ -296,13 +296,13 @@ export default function Login() {
             <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-primary/70">
               {t('auth.hero.eyebrowMobile')}
             </p>
-            <p className="text-2xl font-semibold tracking-[-0.03em] text-slate-950">{BRAND_NAME}</p>
+            <p className="text-2xl font-semibold tracking-[-0.03em] text-slate-950 dark:text-foreground">{BRAND_NAME}</p>
           </div>
 
           <div className="space-y-3 text-center lg:text-left">
             <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-primary/70">{eyebrow}</p>
-            <h1 className="text-[2.15rem] font-semibold tracking-[-0.05em] text-slate-950">{title}</h1>
-            <p className="text-[15px] leading-7 text-slate-600">{description}</p>
+            <h1 className="text-[2.15rem] font-semibold tracking-[-0.05em] text-slate-950 dark:text-foreground">{title}</h1>
+            <p className="text-[15px] leading-7 text-slate-600 dark:text-muted-foreground">{description}</p>
           </div>
 
           {error && (
@@ -322,7 +322,7 @@ export default function Login() {
                   type="button"
                   variant="outline"
                   size="lg"
-                  className="h-14 w-full gap-3 rounded-[1.35rem] border border-slate-200/85 bg-white text-sm font-semibold text-slate-700 shadow-[0_16px_34px_rgba(15,23,42,0.06)] hover:border-slate-300 hover:bg-white"
+                  className="h-14 w-full gap-3 rounded-[1.35rem] border border-slate-200/85 bg-white text-sm font-semibold text-slate-700 shadow-[0_16px_34px_rgba(15,23,42,0.06)] hover:border-slate-300 hover:bg-white dark:border-border dark:bg-card dark:text-foreground dark:shadow-[0_16px_34px_rgba(0,0,0,0.25)] dark:hover:border-border-strong dark:hover:bg-accent"
                   onClick={handleGoogleLogin}
                   disabled={isLoading}
                 >
@@ -331,22 +331,22 @@ export default function Login() {
                 </Button>
 
                 <div className="flex items-center gap-4" role="separator" aria-orientation="horizontal">
-                  <div className="h-px flex-1 bg-slate-200/85" />
-                  <span className="shrink-0 whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                  <div className="h-px flex-1 bg-slate-200/85 dark:bg-border" />
+                  <span className="shrink-0 whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                     {t('auth.orEmail')}
                   </span>
-                  <div className="h-px flex-1 bg-slate-200/85" />
+                  <div className="h-px flex-1 bg-slate-200/85 dark:bg-border" />
                 </div>
 
-                <div className="rounded-[1.6rem] border border-slate-200/80 bg-white/92 p-5 shadow-[0_18px_38px_rgba(15,23,42,0.05)] sm:p-6">
+                <div className="rounded-[1.6rem] border border-slate-200/80 bg-white/92 p-5 shadow-[0_18px_38px_rgba(15,23,42,0.05)] dark:border-border/70 dark:bg-card/80 dark:shadow-[0_18px_38px_rgba(0,0,0,0.2)] sm:p-6">
                   <form onSubmit={handleEmailAuth} className="space-y-5">
                     {mode === 'register' && (
                       <div className="space-y-2.5">
-                        <Label htmlFor="name" className="text-sm font-medium text-slate-800">
+                        <Label htmlFor="name" className="text-sm font-medium text-slate-800 dark:text-foreground">
                           {t('auth.displayName')}
                         </Label>
                         <div className="relative">
-                          <UserPlus className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                          <UserPlus className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-slate-400 dark:text-muted-foreground" aria-hidden="true" />
                           <Input
                             id="name"
                             name="name"
@@ -363,11 +363,11 @@ export default function Login() {
                     )}
 
                     <div className="space-y-2.5">
-                      <Label htmlFor="email" className="text-sm font-medium leading-none text-slate-800">
+                      <Label htmlFor="email" className="text-sm font-medium leading-none text-slate-800 dark:text-foreground">
                         {t('auth.email')}
                       </Label>
                       <div className="relative">
-                        <Mail className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                        <Mail className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-slate-400 dark:text-muted-foreground" aria-hidden="true" />
                         <Input
                           id="email"
                           name="email"
@@ -386,7 +386,7 @@ export default function Login() {
 
                     <div className="space-y-2.5">
                       <div className="flex min-h-6 items-center justify-between gap-2">
-                        <Label htmlFor="password" className="text-sm font-medium leading-none text-slate-800">
+                        <Label htmlFor="password" className="text-sm font-medium leading-none text-slate-800 dark:text-foreground">
                           {t('auth.password')}
                         </Label>
                         {mode === 'login' && (
@@ -401,7 +401,7 @@ export default function Login() {
                         )}
                       </div>
                       <div className="relative">
-                        <Lock className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                        <Lock className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-slate-400 dark:text-muted-foreground" aria-hidden="true" />
                         <Input
                           id="password"
                           name="password"
@@ -420,7 +420,7 @@ export default function Login() {
                           onClick={() => setShowPassword((v) => !v)}
                           aria-label={showPassword ? t('auth.hidePassword') : t('auth.showPassword')}
                           aria-controls="password"
-                          className="absolute inset-y-0 right-0 flex w-12 items-center justify-center rounded-r-[1.1rem] text-slate-400 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                          className="absolute inset-y-0 right-0 flex w-12 items-center justify-center rounded-r-[1.1rem] text-slate-400 transition-colors dark:text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                         >
                           {showPassword
                             ? <EyeOff className="size-4" aria-hidden="true" />
@@ -440,7 +440,7 @@ export default function Login() {
                   </form>
                 </div>
 
-                <p className="text-center text-sm text-slate-500">
+                <p className="text-center text-sm text-slate-500 dark:text-muted-foreground">
                   {mode === 'login' ? t('auth.noAccount') : t('auth.haveAccount')}{' '}
                   <button
                     type="button"
@@ -452,16 +452,16 @@ export default function Login() {
                 </p>
               </>
             ) : (
-              <div className="space-y-5 rounded-[1.6rem] border border-slate-200/80 bg-white/92 p-5 shadow-[0_18px_38px_rgba(15,23,42,0.05)] sm:p-6">
+              <div className="space-y-5 rounded-[1.6rem] border border-slate-200/80 bg-white/92 p-5 shadow-[0_18px_38px_rgba(15,23,42,0.05)] dark:border-border/70 dark:bg-card/80 dark:shadow-[0_18px_38px_rgba(0,0,0,0.2)] sm:p-6">
                 <div className="flex items-center gap-3 rounded-2xl border border-primary/12 bg-primary/[0.04] px-4 py-3.5 shadow-[0_12px_28px_rgba(79,70,229,0.05)]">
                   <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10">
                     <Sparkles className="size-4 text-primary" aria-hidden="true" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-700">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-700 dark:text-foreground">
                       {t('auth.offline.eyebrow')}
                     </p>
-                    <p className="text-[11px] leading-relaxed text-slate-500">{t('auth.offline.description')}</p>
+                    <p className="text-[11px] leading-relaxed text-slate-500 dark:text-muted-foreground">{t('auth.offline.description')}</p>
                   </div>
                 </div>
                 <Button type="button" size="lg" className={primaryButtonClassName} onClick={handleOfflineLogin}>
@@ -471,13 +471,13 @@ export default function Login() {
               </div>
             )}
 
-            <p className="text-center text-[11px] font-medium uppercase tracking-[0.18em] text-slate-400">
+            <p className="text-center text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
               {t('auth.tagline')}
             </p>
           </div>
         </div>
 
-        <p className="absolute bottom-6 text-xs text-muted-foreground/50">
+        <p className="absolute bottom-6 text-xs text-muted-foreground/80">
           {t('auth.footer', { year, brand: BRAND_NAME })}
           {desktopVersion && <span className="tabular-nums"> · v{desktopVersion}</span>}
         </p>

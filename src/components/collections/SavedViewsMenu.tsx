@@ -103,7 +103,7 @@ export function SavedViewsMenu({ categoryId, current, onApply }: SavedViewsMenuP
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant={activeView ? 'secondary' : 'outline'} size="sm" className="gap-1.5">
+          <Button variant={activeView ? 'secondary' : 'outline'} size="sm" className="gap-1.5 max-sm:h-9">
             <Bookmark className={activeView ? 'size-3.5 fill-primary text-primary' : 'size-3.5'} />
             <span className="max-w-40 truncate">{activeView ? activeView.name : t('collections.views.label')}</span>
           </Button>

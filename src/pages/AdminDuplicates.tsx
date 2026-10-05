@@ -118,7 +118,7 @@ export default function AdminDuplicates() {
                           <Badge
                             variant="outline"
                             className={cn(
-                              'px-1.5 py-0 text-[10px]',
+                              'px-1.5 py-0 text-[11px]',
                               group.reason === 'isbn'
                                 ? 'border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-400'
                                 : 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400',
@@ -132,7 +132,7 @@ export default function AdminDuplicates() {
                         ? <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                         : <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
                     </button>
-                    <Button variant="outline" size="sm" className="shrink-0 gap-1.5" onClick={() => openMergeDialog(group)}>
+                    <Button variant="outline" size="sm" className="h-9 sm:h-8 shrink-0 gap-1.5" onClick={() => openMergeDialog(group)}>
                       <GitMerge className="size-3.5" />
                       {t('duplicates.merge')}
                     </Button>
@@ -156,7 +156,7 @@ export default function AdminDuplicates() {
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="size-8"
+                                  className="size-9 sm:size-8"
                                   onClick={() => navigate(`/items/${item.id}`)}
                                   aria-label={t('duplicates.viewItem')}
                                   title={t('duplicates.viewItem')}
@@ -166,7 +166,7 @@ export default function AdminDuplicates() {
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="size-8 text-destructive hover:text-destructive"
+                                  className="size-9 text-destructive hover:text-destructive sm:size-8"
                                   onClick={() => setDeleteId(item.id)}
                                   aria-label={t('duplicates.deleteItem')}
                                   title={t('duplicates.deleteItem')}

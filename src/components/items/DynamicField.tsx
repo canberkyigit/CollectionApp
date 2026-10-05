@@ -86,7 +86,7 @@ export function DynamicField({
           <Input id={id} type="number" inputMode="decimal"
             step={field.type === 'currency' ? '0.01' : undefined}
             placeholder={field.placeholder ?? (field.type === 'currency' ? '0.00' : undefined)}
-            className={cn('tabular-nums', errorClass)}
+            className={cn('tabular-nums dark:[color-scheme:dark]', errorClass)}
             {...f}
             value={(f.value as number | string | undefined) ?? ''}
             onChange={(event) => f.onChange(event.target.value === '' ? undefined : Number(event.target.value))} />
@@ -96,7 +96,7 @@ export function DynamicField({
     case 'date':
       return wrap(
         <Controller name={name} control={control} render={({ field: f }) => (
-          <Input id={id} type="date" className={cn('tabular-nums', errorClass)}
+          <Input id={id} type="date" className={cn('tabular-nums dark:[color-scheme:dark]', errorClass)}
             {...f} value={(f.value as string) ?? ''} />
         )} />,
       );

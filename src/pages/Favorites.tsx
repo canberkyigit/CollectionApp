@@ -154,7 +154,7 @@ export default function Favorites() {
         <Button
           variant="ghost"
           size="icon"
-          className="size-8"
+          className="size-9 sm:size-8"
           aria-label={t('collections.item.moreActions', { title: item.title })}
         >
           <MoreHorizontal className="size-4" />
@@ -236,7 +236,7 @@ export default function Favorites() {
         <div className="relative flex flex-1 flex-col space-y-2 p-3">
           <div>
             <h3 className="line-clamp-2 text-sm font-semibold leading-tight tracking-tight">
-              <button
+              <button title={item.title}
                 type="button"
                 className="text-left after:absolute after:inset-0 focus-visible:outline-none"
                 onClick={() => openDetail(item.id)}
@@ -288,7 +288,7 @@ export default function Favorites() {
             )}
           </div>
           <div className="min-w-0">
-            <button
+            <button title={item.title}
               type="button"
               className="block max-w-full truncate text-left font-medium hover:text-primary focus-visible:underline focus-visible:outline-none"
               onClick={(event) => { event.stopPropagation(); openDetail(item.id); }}
@@ -356,7 +356,7 @@ export default function Favorites() {
                 <Button
                   variant={viewMode === 'grid' ? 'default' : 'ghost'}
                   size="icon"
-                  className="size-8"
+                  className="size-9 sm:size-8"
                   aria-label={t('collections.view.grid')}
                   aria-pressed={viewMode === 'grid'}
                   title={t('collections.view.grid')}
@@ -367,7 +367,7 @@ export default function Favorites() {
                 <Button
                   variant={viewMode === 'list' ? 'default' : 'ghost'}
                   size="icon"
-                  className="size-8"
+                  className="size-9 sm:size-8"
                   aria-label={t('collections.view.list')}
                   aria-pressed={viewMode === 'list'}
                   title={t('collections.view.list')}
@@ -407,7 +407,7 @@ export default function Favorites() {
                       subtitle={t('collections.favorites.statValueHint')}
                     />
                   </MotionItem>
-                  <MotionItem className="h-full" variants={staggerItem}>
+                  <MotionItem className="col-span-2 h-full sm:col-span-1" variants={staggerItem}>
                     <StatCard
                       title={t('collections.favorites.statCategories')}
                       value={formatNumber(stats.categories)}
@@ -427,7 +427,7 @@ export default function Favorites() {
                   <div className="flex items-center gap-2">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="sm">
+                        <Button variant="outline" size="sm" className="max-sm:h-9">
                           <ArrowUpDown className="mr-1.5 size-3.5" />
                           {t(FAVORITES_SORT_OPTIONS.find((o) => o.value === sortKey)?.labelKey ?? 'collections.sort.label')}
                         </Button>
@@ -450,7 +450,7 @@ export default function Favorites() {
                     <Button
                       variant="outline"
                       size="icon"
-                      className="size-8"
+                      className="size-9 sm:size-8"
                       aria-label={sortDir === 'asc' ? t('collections.sort.ascending') : t('collections.sort.descending')}
                       title={sortDir === 'asc' ? t('collections.sort.ascending') : t('collections.sort.descending')}
                       onClick={() => changeSort(sortKey, sortDir === 'asc' ? 'desc' : 'asc')}

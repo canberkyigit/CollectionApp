@@ -377,7 +377,7 @@ export function ImportExportPanel({
             title: t('data.tools.report'),
             hint: t('data.tools.reportHint'),
             action: (
-              <Button asChild variant="outline" size="sm" className="shrink-0">
+              <Button asChild variant="outline" size="sm" className="h-9 sm:h-8 shrink-0">
                 <Link to="/admin/print-labels?mode=report&from=settings">{t('data.tools.reportOpen')}</Link>
               </Button>
             ),
@@ -388,7 +388,7 @@ export function ImportExportPanel({
             title: t('data.tools.labels'),
             hint: t('data.tools.labelsHint'),
             action: (
-              <Button asChild variant="outline" size="sm" className="shrink-0">
+              <Button asChild variant="outline" size="sm" className="h-9 sm:h-8 shrink-0">
                 <Link to="/admin/print-labels?from=settings">{t('data.tools.labelsOpen')}</Link>
               </Button>
             ),
@@ -404,7 +404,7 @@ export function ImportExportPanel({
         <Button
           variant="outline"
           size="sm"
-          className="shrink-0"
+          className="h-9 sm:h-8 shrink-0"
           disabled={!canEditTags}
           onClick={() => setTagManagerOpen(true)}
         >
@@ -417,7 +417,7 @@ export function ImportExportPanel({
   return (
     <div className={className}>
       <Tabs value={activeTab} onValueChange={(nextTab) => onTabChange(nextTab as ImportExportTab)} className="space-y-6">
-        <TabsList>
+        <TabsList className="max-w-full justify-start overflow-x-auto">
           <TabsTrigger value="export">
             <Download className="mr-2 size-4" />
             {t('data.tab.export')}

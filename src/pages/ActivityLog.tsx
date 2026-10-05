@@ -33,9 +33,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { getLocale, useT } from '@/i18n';
-import { cn, formatNumber, formatRelativeDate } from '@/lib/utils';
+import { cn, formatNumber } from '@/lib/utils';
 import { useCollectionStore } from '@/store/useCollectionStore';
 import { selectIsColdLoading } from '@/store/collectionStore.selectors';
+import { RelativeTime } from '@/components/shared/RelativeTime';
 
 const PAGE_SIZE = 20;
 
@@ -211,10 +212,10 @@ export default function ActivityLog() {
           </div>
         ) : (
           <>
-            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+            <div className="flex flex-wrap items-center gap-2 pb-1">
               <Filter className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
               <div
-                className="flex items-center gap-0.5 rounded-lg border p-0.5"
+                className="flex min-w-0 max-w-full items-center gap-0.5 overflow-x-auto rounded-lg border p-0.5"
                 role="group"
                 aria-label={t('activity.filterLabel')}
               >
@@ -223,7 +224,7 @@ export default function ActivityLog() {
                     key={filter}
                     variant={entityFilter === filter ? 'default' : 'ghost'}
                     size="sm"
-                    className="h-7 px-3 text-xs"
+                    className="h-9 shrink-0 px-3 text-xs sm:h-7"
                     aria-pressed={entityFilter === filter}
                     onClick={() => handleFilterChange(filter)}
                   >
@@ -240,7 +241,7 @@ export default function ActivityLog() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="ml-auto shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  className="h-9 sm:h-8 ml-auto shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
                   onClick={() => setConfirmClearOpen(true)}
                 >
                   <Trash className="mr-1.5 size-3.5" />
@@ -302,7 +303,7 @@ export default function ActivityLog() {
                                   <div className="absolute bottom-0 left-[9px] top-4 w-px bg-background" aria-hidden="true" />
                                 )}
 
-                                <Card className="flex-1 transition-all duration-200 hover:shadow-md">
+                                <Card className="min-w-0 flex-1 transition-all duration-200 hover:shadow-md">
                                   <CardContent className="flex items-start gap-3 p-4">
                                     <div
                                       className={cn('flex size-9 shrink-0 items-center justify-center rounded-lg border', badgeColor)}
@@ -332,7 +333,7 @@ export default function ActivityLog() {
                                         <p className="text-sm leading-relaxed text-muted-foreground">{entry.details}</p>
                                       )}
 
-                                      <div className="flex items-center gap-2 pt-1">
+                                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 pt-1">
                                         {contributor && (
                                           <>
                                             <div className="flex items-center gap-1.5">
@@ -346,7 +347,7 @@ export default function ActivityLog() {
                                           </>
                                         )}
                                         <span className="text-xs text-muted-foreground/70">
-                                          {formatRelativeDate(entry.timestamp)}
+                                          <RelativeTime date={entry.timestamp} />
                                         </span>
                                       </div>
                                     </div>
@@ -374,6 +375,7 @@ export default function ActivityLog() {
                       <Button
                         variant="outline"
                         size="sm"
+                        className="h-9 sm:h-8"
                         onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                         disabled={currentPage === 1}
                       >
@@ -383,6 +385,7 @@ export default function ActivityLog() {
                       <Button
                         variant="outline"
                         size="sm"
+                        className="h-9 sm:h-8"
                         onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                         disabled={currentPage === totalPages}
                       >

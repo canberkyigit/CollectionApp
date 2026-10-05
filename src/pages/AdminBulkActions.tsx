@@ -196,10 +196,10 @@ export default function AdminBulkActions() {
 
   const columnHeaders = (
     <>
-      <div className="col-span-5 px-3 py-3 sm:col-span-4 md:col-span-3">{t('bulk.col.title')}</div>
-      <div className="col-span-2 hidden px-3 py-3 sm:block">{t('bulk.col.category')}</div>
+      <div className="col-span-8 px-3 py-3 sm:col-span-6 md:col-span-3">{t('bulk.col.title')}</div>
+      <div className="col-span-2 hidden px-3 py-3 sm:col-span-3 sm:block md:col-span-2">{t('bulk.col.category')}</div>
       <div className="col-span-2 hidden px-3 py-3 md:block">{t('bulk.col.condition')}</div>
-      <div className="col-span-3 px-3 py-3 text-right sm:col-span-2 md:col-span-1">{t('bulk.col.value')}</div>
+      <div className="col-span-4 px-3 py-3 text-right sm:col-span-3 md:col-span-1">{t('bulk.col.value')}</div>
       <div className="col-span-3 hidden px-3 py-3 md:col-span-4 md:block">{t('bulk.col.tags')}</div>
     </>
   );
@@ -214,15 +214,15 @@ export default function AdminBulkActions() {
     const checkboxId = `bulk-item-${item.id}`;
     return (
       <>
-        <div className="col-span-5 min-w-0 px-3 py-3 sm:col-span-4 md:col-span-3">
+        <div className="col-span-8 min-w-0 px-3 py-3 sm:col-span-6 md:col-span-3">
           <label htmlFor={checkboxId} className="block cursor-pointer truncate font-medium">{item.title}</label>
           {item.location && <span className="block truncate text-xs text-muted-foreground">{item.location}</span>}
         </div>
-        <div className="col-span-2 hidden truncate px-3 py-3 text-muted-foreground sm:block">{category?.name ?? '—'}</div>
+        <div className="col-span-2 hidden truncate px-3 py-3 text-muted-foreground sm:col-span-3 sm:block md:col-span-2">{category?.name ?? '—'}</div>
         <div className="col-span-2 hidden min-w-0 px-3 py-3 md:block">
           <Badge variant="outline" className="max-w-full truncate text-xs">{conditionLabel(t, item.condition)}</Badge>
         </div>
-        <div className="col-span-3 px-3 py-3 text-right font-mono text-xs tabular-nums sm:col-span-2 md:col-span-1">
+        <div className="col-span-4 px-3 py-3 text-right font-mono text-xs tabular-nums sm:col-span-3 md:col-span-1">
           {formatCurrency(value, displayCurrency)}
         </div>
         <div className="col-span-3 hidden min-w-0 px-3 py-3 md:col-span-4 md:block">
@@ -322,7 +322,7 @@ export default function AdminBulkActions() {
                 {t('bulk.selected', { count: selectedIds.size })}
               </Badge>
               {hasSelection && (
-                <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => setSelectedIds(new Set())}>
+                <Button variant="ghost" size="sm" className="h-9 sm:h-8 gap-1.5" onClick={() => setSelectedIds(new Set())}>
                   <X className="size-4" />
                   {t('bulk.clearSelection')}
                 </Button>
@@ -371,12 +371,12 @@ export default function AdminBulkActions() {
 
               <Popover open={locationPopoverOpen} onOpenChange={setLocationPopoverOpen}>
                 <PopoverTrigger asChild>
-                  <Button variant="outline" size="sm" className="gap-2" disabled={!hasSelection}>
+                  <Button variant="outline" size="sm" className="h-9 sm:h-8 gap-2" disabled={!hasSelection}>
                     <MapPin className="size-4" />
                     {t('bulk.setLocation')}
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-64 space-y-3" align="start">
+                <PopoverContent className="w-64 space-y-3" align="start" collisionPadding={12}>
                   <Label htmlFor="bulk-location" className="text-sm font-medium">{t('bulk.locationTitle')}</Label>
                   <Input
                     id="bulk-location"
@@ -386,18 +386,18 @@ export default function AdminBulkActions() {
                     onKeyDown={(event) => event.key === 'Enter' && handleLocation()}
                   />
                   <p className="text-xs text-muted-foreground">{t('bulk.locationHint')}</p>
-                  <Button size="sm" className="w-full" onClick={handleLocation}>{t('bulk.apply')}</Button>
+                  <Button size="sm" className="h-9 sm:h-8 w-full" onClick={handleLocation}>{t('bulk.apply')}</Button>
                 </PopoverContent>
               </Popover>
 
               <Popover open={valuePopoverOpen} onOpenChange={setValuePopoverOpen}>
                 <PopoverTrigger asChild>
-                  <Button variant="outline" size="sm" className="gap-2" disabled={!hasSelection}>
+                  <Button variant="outline" size="sm" className="h-9 sm:h-8 gap-2" disabled={!hasSelection}>
                     <Banknote className="size-4" />
                     {t('bulk.setValue')}
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-72 space-y-3" align="start">
+                <PopoverContent className="w-72 space-y-3" align="start" collisionPadding={12}>
                   <p className="text-sm font-medium">{t('bulk.valueTitle')}</p>
                   <div className="flex gap-2">
                     <div className="flex-1 space-y-1.5">
@@ -424,7 +424,7 @@ export default function AdminBulkActions() {
                     </div>
                   </div>
                   <p className="text-xs text-muted-foreground">{t('bulk.valueHint')}</p>
-                  <Button size="sm" className="w-full" onClick={handleValue} disabled={!valueIsValid}>{t('bulk.apply')}</Button>
+                  <Button size="sm" className="h-9 sm:h-8 w-full" onClick={handleValue} disabled={!valueIsValid}>{t('bulk.apply')}</Button>
                 </PopoverContent>
               </Popover>
 
@@ -444,12 +444,12 @@ export default function AdminBulkActions() {
             <div className="flex flex-wrap items-center gap-3 border-t pt-3">
               <Popover open={tagPopoverOpen} onOpenChange={setTagPopoverOpen}>
                 <PopoverTrigger asChild>
-                  <Button variant="outline" size="sm" className="gap-2" disabled={!hasSelection}>
+                  <Button variant="outline" size="sm" className="h-9 sm:h-8 gap-2" disabled={!hasSelection}>
                     <Tag className="size-4" />
                     {t('bulk.addTag')}
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-64 space-y-3" align="start">
+                <PopoverContent className="w-64 space-y-3" align="start" collisionPadding={12}>
                   <Label htmlFor="bulk-add-tag" className="text-sm font-medium">{t('bulk.addTagTitle')}</Label>
                   <Input
                     id="bulk-add-tag"
@@ -458,7 +458,7 @@ export default function AdminBulkActions() {
                     onChange={(event) => setTagInput(event.target.value)}
                     onKeyDown={(event) => event.key === 'Enter' && handleAddTag()}
                   />
-                  <Button size="sm" className="w-full" onClick={handleAddTag} disabled={!tagInput.trim()}>
+                  <Button size="sm" className="h-9 sm:h-8 w-full" onClick={handleAddTag} disabled={!tagInput.trim()}>
                     {t('bulk.addTag')}
                   </Button>
                 </PopoverContent>
@@ -480,7 +480,7 @@ export default function AdminBulkActions() {
                 </SelectContent>
               </Select>
 
-              <Button variant="outline" size="sm" className="gap-2" onClick={handleToggleFavorite} disabled={!hasSelection}>
+              <Button variant="outline" size="sm" className="h-9 sm:h-8 gap-2" onClick={handleToggleFavorite} disabled={!hasSelection}>
                 <Star className="size-4" />
                 {t('bulk.toggleFavorite')}
               </Button>
@@ -490,7 +490,7 @@ export default function AdminBulkActions() {
               <Button
                 variant="destructive"
                 size="sm"
-                className="gap-2"
+                className="h-9 sm:h-8 gap-2"
                 onClick={() => setShowDeleteDialog(true)}
                 disabled={!hasSelection}
               >

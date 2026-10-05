@@ -185,6 +185,7 @@ const collections: Record<string, string> = {
   'collections.card.totalValue': 'Toplam değer',
   'collections.card.averageValue': 'Ort. eşya',
   'collections.card.libraries': 'Alanlar',
+  'collections.card.topPiece': 'En değerli',
   'collections.card.updated': 'Güncel',
   'collections.card.spaceCount_one': '{formatted} alan',
   'collections.card.spaceCount_other': '{formatted} alan',

@@ -33,7 +33,7 @@ import { DocumentsPanel } from '@/components/items/DocumentsPanel';
 import { useT } from '@/i18n';
 import { isBookCategory } from '@/lib/categoryKind';
 import { ITEM_FORM_CURRENCIES } from '@/lib/itemForm';
-import { cn, formatCurrency, formatDate, formatRelativeDate, formatPercent } from '@/lib/utils';
+import { cn, formatCurrency, formatDate, formatPercent } from '@/lib/utils';
 import { useCollectionStore } from '@/store/useCollectionStore';
 import { ConfirmDialog } from '@/components/shared';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
@@ -42,6 +42,7 @@ import type { Category, CollectionItem } from '@/types';
 import { getConditionBadgeStyle } from '@/components/items/conditionBadge';
 import { conditionLabel } from '@/components/collections/conditionLabel';
 import { getPublicItemUrl } from '@/lib/publicUrl';
+import { RelativeTime } from '@/components/shared/RelativeTime';
 
 interface Props {
   itemId: string | null;
@@ -97,7 +98,7 @@ interface ItemDetailPanelContentProps {
 function Field({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
   return (
     <div className={className}>
-      <dt className="text-[10px] uppercase text-muted-foreground">{label}</dt>
+      <dt className="text-[11px] uppercase text-muted-foreground">{label}</dt>
       <dd className="text-sm">{children}</dd>
     </div>
   );
@@ -224,7 +225,7 @@ function ItemDetailPanelContent({
           <Button
             variant="ghost"
             size="icon"
-            className="size-7 shrink-0"
+            className="size-7 shrink-0 max-sm:size-9"
             onClick={onClose}
             aria-label={t('itemDetail.panel.close')}
           >
@@ -274,7 +275,7 @@ function ItemDetailPanelContent({
                   variant={item.isRead ? 'default' : 'outline'}
                   size="sm"
                   aria-pressed={Boolean(item.isRead)}
-                  className={cn('h-7 gap-1 text-xs', item.isRead && 'bg-green-600 text-white hover:bg-green-700')}
+                  className={cn('h-7 gap-1 text-xs max-sm:h-9', item.isRead && 'bg-green-600 text-white hover:bg-green-700')}
                   onClick={() => {
                     toggleRead(item.id);
                     toast.success(item.isRead ? t('itemDetail.panel.toast.unread') : t('itemDetail.panel.toast.read'));
@@ -288,7 +289,7 @@ function ItemDetailPanelContent({
                 variant={item.isFavorite ? 'default' : 'outline'}
                 size="sm"
                 aria-pressed={item.isFavorite}
-                className={cn('h-7 gap-1 text-xs', item.isFavorite && 'bg-amber-500 text-white hover:bg-amber-600')}
+                className={cn('h-7 gap-1 text-xs max-sm:h-9', item.isFavorite && 'bg-amber-500 text-white hover:bg-amber-600')}
                 onClick={() => {
                   toggleFavorite(item.id);
                   toast.success(item.isFavorite ? t('itemDetail.panel.toast.unfavorited') : t('itemDetail.panel.toast.favorited'));
@@ -300,7 +301,7 @@ function ItemDetailPanelContent({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 gap-1 text-xs"
+                className="h-7 gap-1 text-xs max-sm:h-9"
                 onClick={() => {
                   onClose();
                   openItemDialog(item.categoryId, item);
@@ -311,7 +312,7 @@ function ItemDetailPanelContent({
               <Button
                 variant="destructive"
                 size="sm"
-                className="h-7 gap-1 text-xs"
+                className="h-7 gap-1 text-xs max-sm:h-9"
                 onClick={() => setDeleteDialogOpen(true)}
               >
                 <Trash2 className="size-3" /> {t('common.delete')}
@@ -391,7 +392,7 @@ function ItemDetailPanelContent({
                   <>
                     <Separator />
                     <div>
-                      <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                      <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
                         {t('itemDetail.panel.valueAtPurchase')}
                       </p>
                       <div className="grid grid-cols-3 gap-1.5">
@@ -419,14 +420,14 @@ function ItemDetailPanelContent({
 
                 <div>
                   <div className="mb-1 flex items-center justify-between">
-                    <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                    <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
                       {t('itemDetail.panel.currentValuation')}
                     </p>
                     <select
                       value={valCurrency}
                       onChange={(e) => setValCurrency(e.target.value)}
                       aria-label={t('itemDetail.panel.valuationCurrency')}
-                      className="h-5 rounded border border-border bg-background px-1.5 text-[10px] text-muted-foreground outline-none focus:ring-1 focus:ring-ring"
+                      className="h-5 rounded border border-border bg-background px-1.5 text-[10px] text-muted-foreground outline-none focus:ring-1 focus:ring-ring dark:[color-scheme:dark]"
                     >
                       {currencyOptions.map((c) => (
                         <option key={c} value={c}>{c}</option>
@@ -465,7 +466,7 @@ function ItemDetailPanelContent({
                       const value = item.customFields[field.key];
                       return (
                         <div key={field.id} className="rounded-md border bg-muted/30 p-2">
-                          <dt className="text-[9px] font-medium uppercase tracking-wider text-muted-foreground">{field.label}</dt>
+                          <dt className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{field.label}</dt>
                           <dd className="mt-0.5 text-xs font-medium">
                             {field.type === 'boolean' ? (
                               value ? (
@@ -516,7 +517,7 @@ function ItemDetailPanelContent({
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-6 gap-1 px-2 text-[10px]"
+                      className="h-6 gap-1 px-2 text-[10px] max-sm:h-9 max-sm:px-3 max-sm:text-xs"
                       onClick={() => setIsEditingNotes(true)}
                     >
                       <Pencil className="size-2.5" /> {t('common.edit')}
@@ -526,7 +527,7 @@ function ItemDetailPanelContent({
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-6 px-2 text-[10px]"
+                        className="h-6 px-2 text-[10px] max-sm:h-9 max-sm:px-3 max-sm:text-xs"
                         onClick={() => {
                           setIsEditingNotes(false);
                           setNotesValue(getItemNotes(item));
@@ -534,7 +535,7 @@ function ItemDetailPanelContent({
                       >
                         {t('common.cancel')}
                       </Button>
-                      <Button size="sm" className="h-6 gap-1 px-2 text-[10px]" onClick={handleSaveNotes}>
+                      <Button size="sm" className="h-6 gap-1 px-2 text-[10px] max-sm:h-9 max-sm:px-3 max-sm:text-xs" onClick={handleSaveNotes}>
                         <Check className="size-2.5" /> {t('common.save')}
                       </Button>
                     </div>
@@ -601,7 +602,7 @@ function ItemDetailPanelContent({
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-7 w-full gap-1.5 text-xs"
+                    className="h-7 w-full gap-1.5 text-xs max-sm:h-9"
                     onClick={() => {
                       const svg = qrContainerRef.current?.querySelector('svg');
                       if (!svg) return;
@@ -626,12 +627,12 @@ function ItemDetailPanelContent({
               <div className="flex items-center gap-1">
                 <Clock className="size-2.5" aria-hidden="true" />
                 <dt>{t('itemDetail.record.created')}</dt>
-                <dd title={formatDate(item.createdAt)}>{formatRelativeDate(item.createdAt)}</dd>
+                <dd><RelativeTime date={item.createdAt} /></dd>
               </div>
               <div className="flex items-center gap-1">
                 <Clock className="size-2.5" aria-hidden="true" />
                 <dt>{t('itemDetail.record.updated')}</dt>
-                <dd title={formatDate(item.updatedAt)}>{formatRelativeDate(item.updatedAt)}</dd>
+                <dd><RelativeTime date={item.updatedAt} /></dd>
               </div>
             </dl>
           </div>

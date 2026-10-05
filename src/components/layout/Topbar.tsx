@@ -35,7 +35,7 @@ import {
   AlarmClock,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { cn, formatDate } from '@/lib/utils';
+import { cn, formatDate, todayISO } from '@/lib/utils';
 import { getCategoryIcon } from '@/lib/icons';
 import { describeSearchMatch, searchCategories, searchItems, tokenizeQuery } from '@/lib/search';
 import { getReminders, type Reminder } from '@/lib/reminders';
@@ -91,7 +91,7 @@ const actionMeta: Record<ActivityAction, { icon: LucideIcon; color: string }> = 
   export_created:    { icon: Download, color: 'text-green-500 bg-green-500/10' },
 };
 
-const eyebrowClass = 'text-[10px] font-semibold uppercase tracking-wider text-muted-foreground';
+const eyebrowClass = 'text-[11px] font-semibold uppercase tracking-wider text-muted-foreground';
 
 type Translate = ReturnType<typeof useT>;
 
@@ -389,6 +389,28 @@ function TopbarSearch({
 
 // ───────────────────────── Topbar ─────────────────────────
 
+
+const UNREAD_WINDOW_DAYS = 7;
+const SEEN_REMINDERS_KEY = 'curio-reminders-seen';
+
+/** Overdue reminders acknowledged via "Mark all as read" — reset every day so they come back tomorrow. */
+function loadSeenReminders(): string[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SEEN_REMINDERS_KEY) ?? 'null') as { date: string; ids: string[] } | null;
+    return raw && raw.date === todayISO() ? raw.ids : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveSeenReminders(ids: string[]) {
+  try {
+    localStorage.setItem(SEEN_REMINDERS_KEY, JSON.stringify({ date: todayISO(), ids }));
+  } catch {
+    // ignore — acknowledgement just won't persist
+  }
+}
+
 const Topbar = () => {
   const t = useT();
   const toggleSidebar = useCollectionStore((s) => s.toggleSidebar);
@@ -444,6 +466,7 @@ const Topbar = () => {
   const handleItemScanned = useCallback((itemId: string) => navigate(`/items/${itemId}`), [navigate]);
 
   const readSet = useMemo(() => new Set(readNotificationIds), [readNotificationIds]);
+  const [seenReminderIds, setSeenReminderIds] = useState<string[]>(loadSeenReminders);
 
   const notifications = useMemo(
     () => [...activityLog].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, 20),
@@ -454,16 +477,25 @@ const Topbar = () => {
     () => (remindersEnabled ? getReminders(items) : []),
     [items, remindersEnabled],
   );
-  const overdueReminderCount = useMemo(
-    () => reminders.filter((reminder) => reminder.daysUntil < 0).length,
-    [reminders],
-  );
 
+  // Only recent activity counts towards the badge; older entries are still listed.
+  const [unreadCutoff] = useState(() => Date.now() - UNREAD_WINDOW_DAYS * 24 * 60 * 60 * 1000);
   const unreadActivityCount = useMemo(
-    () => notifications.filter((n) => !readSet.has(n.id)).length,
-    [notifications, readSet],
+    () => notifications.filter((n) => !readSet.has(n.id) && new Date(n.timestamp).getTime() >= unreadCutoff).length,
+    [notifications, readSet, unreadCutoff],
   );
-  const unreadCount = unreadActivityCount + overdueReminderCount;
+  const unseenOverdueCount = useMemo(
+    () => reminders.filter((reminder) => reminder.daysUntil < 0 && !seenReminderIds.includes(reminder.id)).length,
+    [reminders, seenReminderIds],
+  );
+  const unreadCount = unreadActivityCount + unseenOverdueCount;
+
+  const handleMarkAllRead = useCallback(() => {
+    markAllNotificationsRead();
+    const ids = reminders.filter((reminder) => reminder.daysUntil < 0).map((reminder) => reminder.id);
+    setSeenReminderIds(ids);
+    saveSeenReminders(ids);
+  }, [markAllNotificationsRead, reminders]);
 
   const failedMutation = useMemo(
     () => syncMutations.find((mutation) => mutation.status === 'failed'),
@@ -713,8 +745,8 @@ const Topbar = () => {
                   </Badge>
                 )}
               </div>
-              {unreadActivityCount > 0 && (
-                <Button variant="ghost" size="sm" className="h-7 text-xs text-primary" onClick={markAllNotificationsRead}>
+              {unreadCount > 0 && (
+                <Button variant="ghost" size="sm" className="h-7 text-xs text-primary" onClick={handleMarkAllRead}>
                   <CheckCircle2 aria-hidden="true" className="mr-1 size-3" />
                   {t('nav.notifications.markAllRead')}
                 </Button>
@@ -782,11 +814,11 @@ const Topbar = () => {
                                   <p className={cn('text-xs', isOverdue ? 'font-medium text-red-500' : 'text-muted-foreground')}>
                                     {reminderText(reminder, t)}
                                   </p>
-                                  {detail && <p className="mt-0.5 truncate text-xs text-muted-foreground/70">{detail}</p>}
+                                  {detail && <p className="mt-0.5 truncate text-xs text-muted-foreground/80">{detail}</p>}
                                 </div>
                                 <div className="flex shrink-0 items-center gap-1 pt-0.5">
                                   <Clock aria-hidden="true" className="size-3 text-muted-foreground/50" />
-                                  <span className="text-[10px] tabular-nums text-muted-foreground/60">{formatDate(reminder.date)}</span>
+                                  <span className="text-[11px] tabular-nums text-muted-foreground/80">{formatDate(reminder.date)}</span>
                                 </div>
                               </button>
                             </li>
@@ -844,13 +876,13 @@ const Topbar = () => {
                                   </div>
                                   <p className="text-xs text-muted-foreground">{t(`nav.activityAction.${entry.action}`)}</p>
                                   {entry.details && (
-                                    <p className="mt-0.5 truncate text-xs text-muted-foreground/70">{entry.details}</p>
+                                    <p className="mt-0.5 truncate text-xs text-muted-foreground/80">{entry.details}</p>
                                   )}
                                 </div>
 
                                 <div className="flex shrink-0 items-center gap-1 pt-0.5">
                                   <Clock aria-hidden="true" className="size-3 text-muted-foreground/50" />
-                                  <span className="text-[10px] text-muted-foreground/60">{timeAgo(entry.timestamp, t)}</span>
+                                  <span className="text-[11px] text-muted-foreground/80">{timeAgo(entry.timestamp, t)}</span>
                                 </div>
                               </button>
                             </li>

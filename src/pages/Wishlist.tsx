@@ -361,7 +361,7 @@ export default function Wishlist() {
                       variant={priorityFilter === value ? 'default' : 'ghost'}
                       size="sm"
                       aria-pressed={priorityFilter === value}
-                      className="h-7 px-2.5 text-xs"
+                      className="h-7 px-2.5 text-xs max-sm:h-8"
                       onClick={() => setPriorityFilter(value)}
                     >
                       {value === 'all' ? t('common.all') : t(`wishlist.priority.${value}`)}
@@ -374,7 +374,7 @@ export default function Wishlist() {
                 <Button
                   variant={showAcquired ? 'secondary' : 'outline'}
                   size="sm"
-                  className="h-8 text-xs"
+                  className="h-8 text-xs max-sm:h-9"
                   aria-pressed={showAcquired}
                   onClick={() => setShowAcquired((prev) => !prev)}
                 >
@@ -449,7 +449,7 @@ export default function Wishlist() {
 
                         {/* Title & description */}
                         <div className="pr-20">
-                          <h3 className="line-clamp-1 text-lg font-semibold leading-tight tracking-tight">{item.title}</h3>
+                          <h3 className="line-clamp-1 text-lg font-semibold leading-tight tracking-tight" title={item.title}>{item.title}</h3>
                           {item.description && (
                             <p className="mt-1 line-clamp-2 text-sm leading-relaxed text-muted-foreground">
                               {item.description}
@@ -523,7 +523,7 @@ export default function Wishlist() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-8 gap-1 text-xs text-green-600 hover:bg-green-500/10 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
+                              className="h-8 gap-1 text-xs max-sm:h-9 text-green-600 hover:bg-green-500/10 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
                               onClick={() => openAcquire(item)}
                             >
                               <ShoppingCart className="size-3.5" />
@@ -534,7 +534,7 @@ export default function Wishlist() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-8 gap-1 text-xs text-primary hover:bg-primary/10 hover:text-primary"
+                              className="h-8 gap-1 text-xs max-sm:h-9 text-primary hover:bg-primary/10 hover:text-primary"
                               asChild
                             >
                               <Link to={`/items/${acquiredItem.id}`}>
@@ -632,7 +632,7 @@ export default function Wishlist() {
                     min={0}
                     step="0.01"
                     inputMode="decimal"
-                    className="tabular-nums"
+                    className="tabular-nums dark:[color-scheme:dark]"
                     value={form.targetPrice}
                     onChange={(e) => updateField('targetPrice', e.target.value)}
                     placeholder="0.00"

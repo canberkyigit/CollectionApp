@@ -59,7 +59,7 @@ export default function AdminCategories() {
           />
         ) : (
           <Card className="overflow-hidden">
-            <div className="overflow-x-auto">
+            <div className="relative overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/50">
@@ -112,7 +112,7 @@ export default function AdminCategories() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="size-8"
+                              className="size-9 sm:size-8"
                               aria-label={t('admin.category.editAria', { name: category.name })}
                               onClick={() => navigate(editPath(category.id))}
                             >
@@ -121,7 +121,7 @@ export default function AdminCategories() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="size-8 text-destructive hover:text-destructive"
+                              className="size-9 text-destructive hover:text-destructive sm:size-8"
                               aria-label={t('admin.category.deleteAria', { name: category.name })}
                               onClick={() => setDeleteId(category.id)}
                             >

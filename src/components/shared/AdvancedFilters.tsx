@@ -228,7 +228,7 @@ export function AdvancedFilters({
         <Button
           variant={activeCount > 0 ? 'default' : 'outline'}
           size="sm"
-          className="gap-1.5"
+          className="gap-1.5 max-sm:h-9"
           aria-expanded={open}
           aria-controls={panelId}
           onClick={() => setOpen(!open)}
@@ -246,7 +246,7 @@ export function AdvancedFilters({
         {toolbarSlot}
 
         {activeCount > 0 && (
-          <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={resetFilters}>
+          <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs max-sm:h-9" onClick={resetFilters}>
             <RotateCcw className="size-3" />
             {t('collections.filters.clearAll')}
           </Button>
@@ -441,7 +441,7 @@ export function AdvancedFilters({
                   value={filters.dateFrom}
                   onChange={(e) => update({ dateFrom: e.target.value })}
                   aria-label={t('collections.filters.dateFrom')}
-                  className="h-8 min-w-0 flex-1 text-xs tabular-nums"
+                  className="h-8 min-w-0 flex-1 text-xs tabular-nums dark:[color-scheme:dark]"
                 />
                 <span className="shrink-0 text-xs text-muted-foreground">{t('collections.filters.to')}</span>
                 <Input
@@ -449,7 +449,7 @@ export function AdvancedFilters({
                   value={filters.dateTo}
                   onChange={(e) => update({ dateTo: e.target.value })}
                   aria-label={t('collections.filters.dateTo')}
-                  className="h-8 min-w-0 flex-1 text-xs tabular-nums"
+                  className="h-8 min-w-0 flex-1 text-xs tabular-nums dark:[color-scheme:dark]"
                 />
               </div>
             </FilterGroup>

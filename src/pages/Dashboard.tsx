@@ -48,10 +48,11 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { formatCurrency, formatNumber, formatRelativeDate, cn } from '@/lib/utils';
+import { formatCurrency, formatNumber, cn } from '@/lib/utils';
 import { canEditContent, canManageCatalog } from '@/lib/permissions';
 import { getLocale, useT } from '@/i18n';
 import { currencyService } from '@/services/currencyService';
+import { RelativeTime } from '@/components/shared/RelativeTime';
 import {
   foldDashboardCategoryStats,
   getDashboardCategoryStats,
@@ -674,10 +675,10 @@ export default function Dashboard() {
                       className="-mx-2 flex w-[calc(100%+1rem)] items-center justify-between gap-4 rounded-lg px-2 py-3 text-left transition-colors hover:bg-muted/50"
                     >
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium">{item.title}</span>
+                        <span className="block truncate text-sm font-medium" title={item.title}>{item.title}</span>
                         <span className="mt-0.5 flex items-center gap-2">
                           {category && <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">{category.name}</Badge>}
-                          <span className="text-xs text-muted-foreground">{formatRelativeDate(item.createdAt)}</span>
+                          <RelativeTime date={item.createdAt} className="text-xs text-muted-foreground" />
                         </span>
                       </span>
                       <span className="shrink-0 text-sm font-semibold text-primary tabular-nums">
@@ -764,7 +765,7 @@ export default function Dashboard() {
                       className="flex w-full items-center justify-between rounded-lg p-2 text-left transition-colors hover:bg-muted/50"
                     >
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium">{item.title}</span>
+                        <span className="block truncate text-sm font-medium" title={item.title}>{item.title}</span>
                         {category && <span className="block truncate text-xs text-muted-foreground">{category.name}</span>}
                       </span>
                       <Star className="size-3.5 shrink-0 fill-amber-500 text-amber-500" aria-hidden="true" />
@@ -801,7 +802,7 @@ export default function Dashboard() {
               {wishlistPreviewItems.map((item) => (
                 <li key={item.id} className="flex items-center justify-between gap-3 rounded-lg p-2">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{item.title}</p>
+                    <p className="truncate text-sm font-medium" title={item.title}>{item.title}</p>
                     <Badge
                       variant={item.priority === 'must-have' ? 'destructive' : item.priority === 'high' ? 'warning' : 'secondary'}
                       className="mt-0.5 text-[10px]"
@@ -847,7 +848,7 @@ export default function Dashboard() {
                   <span className="mt-1.5 size-2 shrink-0 rounded-full bg-primary" aria-hidden="true" />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">{entry.entityTitle}</p>
-                    <p className="text-xs text-muted-foreground">{formatRelativeDate(entry.timestamp)}</p>
+                    <RelativeTime date={entry.timestamp} className="block text-xs text-muted-foreground" />
                   </div>
                 </li>
               ))}

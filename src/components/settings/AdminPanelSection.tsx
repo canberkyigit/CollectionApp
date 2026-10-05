@@ -155,7 +155,7 @@ export function AdminPanelSection() {
       <section>
         <h2 className="mb-4 text-lg font-semibold tracking-tight">{t('admin.categories.allTitle')}</h2>
         <Card className="overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="relative overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/50">
@@ -228,7 +228,7 @@ export function AdminPanelSection() {
 
         {libraries.length > 0 ? (
           <Card className="overflow-hidden">
-            <div className="overflow-x-auto">
+            <div className="relative overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/50">

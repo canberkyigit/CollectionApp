@@ -148,8 +148,11 @@ describe('topbar navigation & search', () => {
     const user = userEvent.setup();
     renderTopbar();
 
-    // Every seeded activity entry is unread, plus one overdue loan (Dune).
-    const expectedUnread = useCollectionStore.getState().activityLog.length + 1;
+    // Badge = unread activity from the last 7 days + overdue reminders not yet acknowledged today.
+    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const recentActivity = useCollectionStore.getState().activityLog
+      .filter((entry) => new Date(entry.timestamp).getTime() >= weekAgo).length;
+    const expectedUnread = recentActivity + 1;
     const bell = screen.getByRole('button', { name: /open notifications/i });
     expect(bell).toHaveAccessibleName(`Open notifications (${expectedUnread} unread)`);
     await user.click(bell);
@@ -161,6 +164,18 @@ describe('topbar navigation & search', () => {
 
     await user.click(within(reminders).getByRole('button', { name: /dune/i }));
     expect(screen.getByTestId('location')).toHaveTextContent('/items/item-1');
+  });
+
+  it('clears the badge with "Mark all as read", including today\'s overdue reminders', async () => {
+    const user = userEvent.setup();
+    localStorage.removeItem('curio-reminders-seen');
+    renderTopbar();
+
+    await user.click(screen.getByRole('button', { name: /open notifications/i }));
+    await user.click(await screen.findByRole('button', { name: /mark all read/i }));
+
+    expect(screen.getByRole('button', { name: /open notifications/i })).toHaveAccessibleName('Open notifications');
+    expect(JSON.parse(localStorage.getItem('curio-reminders-seen') ?? '{}').ids).toHaveLength(1);
   });
 
   it('hides reminders when loan & maintenance reminders are turned off', async () => {

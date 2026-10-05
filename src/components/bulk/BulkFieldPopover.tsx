@@ -98,7 +98,7 @@ export function BulkFieldPopover({ fields, disabled, disabledReason, onApply }: 
         <Button
           variant="outline"
           size="sm"
-          className="gap-2"
+          className="h-9 sm:h-8 gap-2"
           disabled={disabled || editable.length === 0}
           title={disabled ? disabledReason : undefined}
         >
@@ -106,7 +106,7 @@ export function BulkFieldPopover({ fields, disabled, disabledReason, onApply }: 
           {t('bulk.field.button')}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-72 space-y-3" align="start">
+      <PopoverContent className="w-72 space-y-3" align="start" collisionPadding={12}>
         <p className="flex items-center gap-2 text-sm font-medium">
           <SlidersHorizontal className="size-4 text-primary" aria-hidden="true" />
           {t('bulk.field.title')}
@@ -132,7 +132,7 @@ export function BulkFieldPopover({ fields, disabled, disabledReason, onApply }: 
             </div>
           </div>
         )}
-        <Button size="sm" className="w-full" onClick={apply} disabled={!canApply}>
+        <Button size="sm" className="h-9 sm:h-8 w-full" onClick={apply} disabled={!canApply}>
           {t('bulk.apply')}
         </Button>
       </PopoverContent>

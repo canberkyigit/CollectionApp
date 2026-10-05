@@ -161,10 +161,10 @@ export function TagManager({ className }: TagManagerProps) {
         <table className="w-full text-sm">
           <thead className="sticky top-0 z-10">
             <tr className="border-b bg-muted text-left text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              <th className="w-10 px-3 py-2.5"><span className="sr-only">{t('data.tags.select')}</span></th>
-              <th className="px-3 py-2.5 font-semibold">{t('data.tags.tag')}</th>
-              <th className="px-3 py-2.5 text-right font-semibold">{t('data.tags.items')}</th>
-              <th className="w-24 px-3 py-2.5"><span className="sr-only">{t('data.tags.actions')}</span></th>
+              <th className="w-10 px-2 py-2.5 sm:px-3"><span className="sr-only">{t('data.tags.select')}</span></th>
+              <th className="px-2 py-2.5 font-semibold sm:px-3">{t('data.tags.tag')}</th>
+              <th className="px-2 py-2.5 text-right font-semibold sm:px-3">{t('data.tags.items')}</th>
+              <th className="w-20 px-2 py-2.5 sm:w-24 sm:px-3"><span className="sr-only">{t('data.tags.actions')}</span></th>
             </tr>
           </thead>
           <tbody>
@@ -173,14 +173,14 @@ export function TagManager({ className }: TagManagerProps) {
               const isSelected = selected.has(entry.tag);
               return (
                 <tr key={entry.tag} className={cn('border-b transition-colors last:border-0 hover:bg-muted/30', isSelected && 'bg-primary/5 hover:bg-primary/5')}>
-                  <td className="px-3 py-1.5">
+                  <td className="px-2 py-1.5 sm:px-3">
                     <Checkbox
                       checked={isSelected}
                       onCheckedChange={() => toggle(entry.tag)}
                       aria-label={t('data.tags.selectTag', { tag: entry.tag })}
                     />
                   </td>
-                  <td className="px-3 py-1.5">
+                  <td className="px-2 py-1.5 sm:px-3">
                     {isEditing ? (
                       <div className="space-y-1">
                         <Input
@@ -199,20 +199,20 @@ export function TagManager({ className }: TagManagerProps) {
                         )}
                       </div>
                     ) : (
-                      <Badge variant="secondary" className="max-w-full break-all font-medium">{entry.tag}</Badge>
+                      <Badge variant="secondary" className="max-w-full font-medium wrap-anywhere">{entry.tag}</Badge>
                     )}
                   </td>
-                  <td className="px-3 py-1.5 text-right">
+                  <td className="px-2 py-1.5 text-right sm:px-3">
                     <Badge variant="outline" className="text-xs tabular-nums">{formatNumber(entry.count)}</Badge>
                   </td>
-                  <td className="px-3 py-1.5">
+                  <td className="px-2 py-1.5 sm:px-3">
                     <div className="flex justify-end gap-1">
                       {isEditing ? (
                         <>
-                          <Button size="icon" variant="ghost" className="size-8" onClick={commitRename} aria-label={t('common.save')}>
+                          <Button size="icon" variant="ghost" className="size-9 sm:size-8" onClick={commitRename} aria-label={t('common.save')}>
                             <Check className="size-4" />
                           </Button>
-                          <Button size="icon" variant="ghost" className="size-8" onClick={() => setEditing(null)} aria-label={t('common.cancel')}>
+                          <Button size="icon" variant="ghost" className="size-9 sm:size-8" onClick={() => setEditing(null)} aria-label={t('common.cancel')}>
                             <X className="size-4" />
                           </Button>
                         </>
@@ -221,7 +221,7 @@ export function TagManager({ className }: TagManagerProps) {
                           <Button
                             size="icon"
                             variant="ghost"
-                            className="size-8"
+                            className="size-9 sm:size-8"
                             onClick={() => startEdit(entry.tag)}
                             aria-label={t('data.tags.renameLabel', { tag: entry.tag })}
                           >
@@ -230,7 +230,7 @@ export function TagManager({ className }: TagManagerProps) {
                           <Button
                             size="icon"
                             variant="ghost"
-                            className="size-8 text-destructive hover:text-destructive"
+                            className="size-9 text-destructive hover:text-destructive sm:size-8"
                             onClick={() => setPendingDelete(entry.tag)}
                             aria-label={t('data.tags.deleteLabel', { tag: entry.tag })}
                           >

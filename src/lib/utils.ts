@@ -19,6 +19,28 @@ export function formatCurrency(value: number, currency = 'USD'): string {
   }).format(safeValue);
 }
 
+/**
+ * Compact currency for tight spots (cards, chips): $9.7K, ₺1.2M. Amounts under
+ * 10,000 stay exact. Pair it with the full amount in a title/tooltip.
+ */
+export function formatCurrencyShort(value: number, currency = 'USD'): string {
+  const safeValue = Number(value) || 0;
+  if (Math.abs(safeValue) < 10_000) return formatCurrency(safeValue, currency);
+  return new Intl.NumberFormat(getLocale(), {
+    style: 'currency',
+    currency,
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(safeValue);
+}
+
+/** Full, unambiguous date and time — for tooltips next to relative dates. */
+export function formatDateTime(date: string): string {
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return parsed.toLocaleString(getLocale(), { dateStyle: 'long', timeStyle: 'short' });
+}
+
 export function formatNumber(value: number): string {
   return new Intl.NumberFormat(getLocale()).format(value);
 }

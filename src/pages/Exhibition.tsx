@@ -277,8 +277,8 @@ export default function Exhibition() {
                       </div>
                       <div className="flex items-center justify-between gap-2 px-3 pb-3 pt-1">
                         <span className="flex min-w-0 items-center gap-1.5 text-sm font-semibold">
-                          <Icon className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
-                          <span className="truncate">{entry.label}</span>
+                          <Icon className="size-3.5 shrink-0 text-primary max-sm:hidden" aria-hidden="true" />
+                          <span className="truncate max-sm:line-clamp-2 max-sm:whitespace-normal max-sm:break-words">{entry.label}</span>
                         </span>
                         <Badge variant={active ? 'default' : 'secondary'} className="shrink-0 rounded-full px-2 text-[10px] tabular-nums">
                           {entry.count}

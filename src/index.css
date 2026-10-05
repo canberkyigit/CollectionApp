@@ -399,3 +399,12 @@ html.compact {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Native controls (date pickers, number spinners, scrollbars, selects) follow the theme. */
+html.light {
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
+}

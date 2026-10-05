@@ -314,7 +314,7 @@ function PaletteBody({ onClose, onScan }: { onClose: () => void; onScan?: () => 
             const headingId = `${baseId}-${section.group}`;
             return (
               <div key={section.group} role="group" aria-labelledby={headingId} className="pb-1">
-                <div id={headingId} className="px-3 pb-1.5 pt-2.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                <div id={headingId} className="px-3 pb-1.5 pt-2.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                   {t(GROUP_LABEL_KEYS[section.group])}
                 </div>
                 {section.entries.map((entry) => {

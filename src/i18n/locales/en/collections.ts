@@ -185,6 +185,7 @@ const collections: Record<string, string> = {
   'collections.card.totalValue': 'Total Value',
   'collections.card.averageValue': 'Avg Item',
   'collections.card.libraries': 'Libraries',
+  'collections.card.topPiece': 'Top piece',
   'collections.card.updated': 'Updated',
   'collections.card.spaceCount_one': '{formatted} space',
   'collections.card.spaceCount_other': '{formatted} spaces',

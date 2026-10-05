@@ -19,12 +19,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useT } from '@/i18n';
-import { cn, formatNumber, formatRelativeDate } from '@/lib/utils';
+import { cn, formatNumber } from '@/lib/utils';
 import { getAdminBreadcrumbs, getAdminRootPath } from '@/lib/adminNavigation';
 import { getCategoryIcon } from '@/lib/icons';
 import { matchesQuery } from '@/lib/search';
 import { useCollectionStore } from '@/store/useCollectionStore';
 import { selectArchivedItems } from '@/store/collectionStore.selectors';
+import { RelativeTime } from '@/components/shared/RelativeTime';
 
 type ConfirmAction = 'delete-one' | 'delete-selected' | 'delete-all';
 
@@ -196,7 +197,7 @@ export default function AdminArchive() {
                     size="sm"
                     disabled={selected.size === 0}
                     onClick={handleRecoverSelected}
-                    className="gap-1.5"
+                    className="h-9 sm:h-8 gap-1.5"
                   >
                     <RotateCcw className="size-3.5" />
                     {t('archive.recover')}
@@ -206,7 +207,7 @@ export default function AdminArchive() {
                     size="sm"
                     disabled={selected.size === 0}
                     onClick={() => setConfirmAction('delete-selected')}
-                    className="gap-1.5 text-destructive hover:text-destructive"
+                    className="h-9 sm:h-8 gap-1.5 text-destructive hover:text-destructive"
                   >
                     <Trash2 className="size-3.5" />
                     {t('archive.delete')}
@@ -215,7 +216,7 @@ export default function AdminArchive() {
                     variant="ghost"
                     size="sm"
                     onClick={() => setConfirmAction('delete-all')}
-                    className="gap-1.5 text-destructive hover:text-destructive"
+                    className="h-9 sm:h-8 gap-1.5 text-destructive hover:text-destructive"
                   >
                     {t('archive.empty')}
                   </Button>
@@ -286,7 +287,7 @@ export default function AdminArchive() {
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                               <Clock className="size-3" aria-hidden="true" />
-                              {formatRelativeDate(item.archivedAt ?? item.updatedAt)}
+                              <RelativeTime date={item.archivedAt ?? item.updatedAt} />
                             </div>
                           </td>
                           <td className="px-4 py-3">
@@ -294,7 +295,7 @@ export default function AdminArchive() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-7 gap-1 text-xs"
+                                className="h-9 sm:h-7 gap-1 text-xs"
                                 onClick={() => handleRecover(item.id)}
                               >
                                 <RotateCcw className="size-3" />
@@ -303,7 +304,7 @@ export default function AdminArchive() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-7 gap-1 text-xs text-destructive hover:text-destructive"
+                                className="h-9 sm:h-7 gap-1 text-xs text-destructive hover:text-destructive"
                                 aria-label={t('archive.deleteItem', { title: item.title })}
                                 title={t('archive.deleteForever')}
                                 onClick={() => {
