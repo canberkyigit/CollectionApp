@@ -1,7 +1,13 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  BookmarkPlus,
+  CalendarPlus,
   Clock,
+  History,
+  ShoppingBag,
+  Shuffle,
+  TrendingUp,
   Heart,
   Image as ImageIcon,
   Keyboard,
@@ -34,11 +40,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { useT } from '@/i18n';
 import {
+  SMART_PRESETS,
   buildExhibitionSlides,
   countSlides,
+  getSmartPresetItemIds,
   isSameSource,
+  parseSmartExhibitionId,
+  smartExhibitionId,
   type ExhibitionSource,
+  type SmartPreset,
 } from '@/lib/exhibition';
+import { getItemCurrentValue } from '@/lib/valuation';
+import type { CollectionItem } from '@/types';
 import { getCategoryIcon } from '@/lib/icons';
 import { useSavedExhibitions, useSavedExhibitionsStore, type SavedExhibition } from '@/lib/savedExhibitions';
 import { cn } from '@/lib/utils';
@@ -49,6 +62,14 @@ const ExhibitionStage = lazy(() => import('@/components/exhibition/ExhibitionSta
   .then((module) => ({ default: module.ExhibitionStage })));
 
 const INTERVALS = [5, 8, 12, 20] as const;
+
+const PRESET_ICONS: Record<SmartPreset, LucideIcon> = {
+  topValue: TrendingUp,
+  addedThisYear: CalendarPlus,
+  recentlyAcquired: ShoppingBag,
+  random: Shuffle,
+  chronological: History,
+};
 const PREFS_KEY = 'curio-exhibition-prefs';
 
 interface ExhibitionPrefs {
@@ -106,17 +127,31 @@ export default function Exhibition() {
   const [running, setRunning] = useState(false);
   const savedExhibitions = useSavedExhibitions();
   const removeExhibition = useSavedExhibitionsStore((state) => state.removeExhibition);
-  const [builder, setBuilder] = useState<{ open: boolean; exhibition: SavedExhibition | null }>({ open: false, exhibition: null });
+  const [builder, setBuilder] = useState<{
+    open: boolean;
+    exhibition: SavedExhibition | null;
+    initialName?: string;
+    initialItemIds?: string[];
+  }>({ open: false, exhibition: null });
+  const [randomSeed, setRandomSeed] = useState(() => Date.now());
+
+  const valueOf = useCallback((item: CollectionItem) => getItemCurrentValue(item, displayCurrency), [displayCurrency]);
+  const presetIds = useMemo(() => Object.fromEntries(SMART_PRESETS.map((preset) => [
+    preset,
+    getSmartPresetItemIds(preset, items, { onlyWithPhotos: prefs.onlyWithPhotos, valueOf, seed: randomSeed }),
+  ])) as Record<SmartPreset, string[]>, [items, prefs.onlyWithPhotos, valueOf, randomSeed]);
   const [pendingDelete, setPendingDelete] = useState<SavedExhibition | null>(null);
 
   // A saved exhibition is referenced by id; its item list always comes from the store (edits apply immediately).
   const effectiveSource = useMemo<ExhibitionSource>(() => {
     if (typeof source === 'object' && 'exhibitionId' in source) {
+      const preset = parseSmartExhibitionId(source.exhibitionId);
+      if (preset) return { exhibitionId: source.exhibitionId, itemIds: presetIds[preset] };
       const saved = savedExhibitions.find((exhibition) => exhibition.id === source.exhibitionId);
       return saved ? { exhibitionId: saved.id, itemIds: saved.itemIds } : 'all';
     }
     return source;
-  }, [source, savedExhibitions]);
+  }, [source, savedExhibitions, presetIds]);
 
   const updatePrefs = (patch: Partial<ExhibitionPrefs>) => {
     setPrefs((current) => {
@@ -190,12 +225,32 @@ export default function Exhibition() {
     };
   }), [savedExhibitions, items, prefs.onlyWithPhotos]);
 
-  const selectedSource = [...sources, ...exhibitionSources].find((entry) => isSameSource(entry.source, effectiveSource)) ?? sources[0];
+  const presetSources = useMemo(() => SMART_PRESETS.map((preset) => {
+    const ids = presetIds[preset];
+    const covers = ids
+      .map((id) => items.find((item) => item.id === id)?.images?.find(Boolean))
+      .filter((image): image is string => Boolean(image))
+      .slice(0, 4);
+    return {
+      key: `preset-${preset}`,
+      preset,
+      source: { exhibitionId: smartExhibitionId(preset), itemIds: ids } as ExhibitionSource,
+      label: t(`exhibition.smart.${preset}`),
+      icon: PRESET_ICONS[preset],
+      covers,
+      count: ids.length,
+    };
+  }), [presetIds, items, t]);
+
+  const selectedSource = [...sources, ...presetSources, ...exhibitionSources].find((entry) => isSameSource(entry.source, effectiveSource)) ?? sources[0];
   const heroCovers = slides.map((slide) => slide.image).filter((image): image is string => Boolean(image)).slice(0, 4);
   const durationMinutes = Math.max(1, Math.round((slides.length * prefs.intervalSeconds) / 60));
 
   const start = () => {
     if (prefs.shuffle) setSeed(Date.now());
+    if (typeof source === 'object' && 'exhibitionId' in source && parseSmartExhibitionId(source.exhibitionId) === 'random') {
+      setRandomSeed(Date.now());
+    }
     setRunning(true);
   };
 
@@ -416,6 +471,50 @@ export default function Exhibition() {
                   )}
                 </section>
 
+                {/* Ready-made exhibitions */}
+                <section className="space-y-3" aria-labelledby="exhibition-smart-heading">
+                  <div>
+                    <p id="exhibition-smart-heading" className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                      {t('exhibition.smart.title')}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">{t('exhibition.smart.description')}</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                    {presetSources.map((entry) => (
+                      <div key={entry.key} className="relative">
+                        {renderSourceTile(entry)}
+                        {entry.count > 0 && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="secondary"
+                                size="icon"
+                                className="absolute right-2 top-2 size-8 rounded-full bg-background/80 shadow-sm backdrop-blur-sm max-sm:size-9"
+                                aria-label={t('exhibition.saved.actions', { name: entry.label })}
+                              >
+                                <MoreHorizontal className="size-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => setBuilder({
+                                  open: true,
+                                  exhibition: null,
+                                  initialName: entry.label,
+                                  initialItemIds: presetIds[entry.preset],
+                                })}
+                              >
+                                <BookmarkPlus className="mr-2 size-4" aria-hidden="true" />
+                                {t('exhibition.smart.saveAs')}
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
                 {/* Collections */}
                 <section className="space-y-3" aria-labelledby="exhibition-collections-heading">
                   <p id="exhibition-collections-heading" className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
@@ -556,10 +655,12 @@ export default function Exhibition() {
       )}
       {builder.open && (
         <ExhibitionBuilder
-          key={builder.exhibition?.id ?? 'new'}
+          key={builder.exhibition?.id ?? `new-${builder.initialName ?? ''}`}
           open={builder.open}
           onOpenChange={(open) => setBuilder((current) => ({ ...current, open }))}
           exhibition={builder.exhibition}
+          initialName={builder.initialName}
+          initialItemIds={builder.initialItemIds}
           onSaved={(saved) => setSource({ exhibitionId: saved.id, itemIds: saved.itemIds })}
         />
       )}

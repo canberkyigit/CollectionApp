@@ -86,6 +86,14 @@ const exhibition: Record<string, string> = {
   'exhibition.minutes_other': '{count} dakika',
   'exhibition.qrLabel': '{title} için QR kod',
   'exhibition.qrHint': 'Detay için okut',
+  'exhibition.smart.title': 'Hazır sergiler',
+  'exhibition.smart.description': 'Koleksiyonundan otomatik oluşturulur; ince ayar için kayıtlı sergi olarak kaydedebilirsin.',
+  'exhibition.smart.topValue': 'En değerli 10',
+  'exhibition.smart.addedThisYear': 'Bu yıl eklenenler',
+  'exhibition.smart.recentlyAcquired': 'Son alınanlar',
+  'exhibition.smart.random': 'Rastgele 15',
+  'exhibition.smart.chronological': 'Eskiden yeniye',
+  'exhibition.smart.saveAs': 'Kayıtlı sergi olarak kaydet',
 };
 
 export default exhibition;

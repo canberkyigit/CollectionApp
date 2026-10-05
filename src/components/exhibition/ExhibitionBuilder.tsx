@@ -26,6 +26,9 @@ interface ExhibitionBuilderProps {
   onOpenChange: (open: boolean) => void;
   /** Edit this exhibition; omit to create a new one. */
   exhibition?: SavedExhibition | null;
+  /** Starting point for a new exhibition (e.g. saving a ready-made one). */
+  initialName?: string;
+  initialItemIds?: string[];
   onSaved?: (exhibition: SavedExhibition) => void;
 }
 
@@ -43,7 +46,7 @@ function Thumb({ item }: { item: CollectionItem }) {
 }
 
 /** Create or edit a saved exhibition: pick items on the left, order them on the right. */
-export function ExhibitionBuilder({ open, onOpenChange, exhibition, onSaved }: ExhibitionBuilderProps) {
+export function ExhibitionBuilder({ open, onOpenChange, exhibition, initialName, initialItemIds, onSaved }: ExhibitionBuilderProps) {
   const t = useT();
   const items = useCollectionStore((state) => state.items);
   const categories = useCollectionStore((state) => state.categories);
@@ -51,8 +54,8 @@ export function ExhibitionBuilder({ open, onOpenChange, exhibition, onSaved }: E
   const addExhibition = useSavedExhibitionsStore((state) => state.addExhibition);
   const updateExhibition = useSavedExhibitionsStore((state) => state.updateExhibition);
 
-  const [name, setName] = useState(exhibition?.name ?? '');
-  const [selectedIds, setSelectedIds] = useState<string[]>(exhibition?.itemIds ?? []);
+  const [name, setName] = useState(exhibition?.name ?? initialName ?? '');
+  const [selectedIds, setSelectedIds] = useState<string[]>(exhibition?.itemIds ?? initialItemIds ?? []);
   const [query, setQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
 

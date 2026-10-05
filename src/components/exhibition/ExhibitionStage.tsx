@@ -92,6 +92,20 @@ export function ExhibitionStage({
     setIndex((current) => (current + delta + count) % count);
   }, [count]);
 
+  // Preload the next two and the previous photo so transitions never wait for the network.
+  useEffect(() => {
+    if (count < 2) return;
+    const neighbours = [1, 2, -1]
+      .map((delta) => slides[(index + delta + count) % count]?.image)
+      .filter((url): url is string => Boolean(url));
+    for (const url of new Set(neighbours)) {
+      const image = new Image();
+      image.decoding = 'async';
+      image.src = url;
+      void image.decode?.().catch(() => undefined);
+    }
+  }, [index, slides, count]);
+
   // Autoplay: advance after the interval; restarting on every slide keeps the progress bar in sync.
   useEffect(() => {
     if (!playing || count < 2) return undefined;

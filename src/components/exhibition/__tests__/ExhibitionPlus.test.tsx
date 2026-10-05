@@ -52,6 +52,26 @@ describe('Exhibition – saved exhibitions, QR and kiosk', () => {
     expect(within(stage).getByRole('img', { name: `QR code for ${b.title}` })).toBeInTheDocument();
   });
 
+  it('plays a ready-made exhibition and can save it as an editable one', async () => {
+    const user = userEvent.setup();
+    const { items } = seedWithPhotos();
+    const mostValuable = [...items].sort((a, b) => b.valuationInfo.currentEstimatedValue - a.valuationInfo.currentEstimatedValue)[0];
+    renderWithRouter(<Exhibition />);
+
+    await user.click(screen.getByRole('radio', { name: /top 10 by value/i }));
+    await user.click(screen.getByRole('button', { name: /start exhibition/i }));
+    const stage = await screen.findByRole('dialog', { name: 'Exhibition' });
+    expect(within(stage).getByRole('heading', { name: mostValuable.title })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Exhibition' })).not.toBeInTheDocument());
+
+    await user.click(screen.getByRole('button', { name: /options for top 10 by value/i }));
+    await user.click(await screen.findByRole('menuitem', { name: /save as exhibition/i }));
+    const builder = await screen.findByRole('dialog', { name: /new exhibition/i });
+    expect(within(builder).getByLabelText(/exhibition name/i)).toHaveValue('Top 10 by value');
+    expect(within(builder).getByRole('button', { name: `Remove ${mostValuable.title}` })).toBeInTheDocument();
+  });
+
   it('hides the controls in kiosk mode after a few idle seconds and shows them again on movement', () => {
     vi.useFakeTimers();
     const { items, categories } = seedWithPhotos();

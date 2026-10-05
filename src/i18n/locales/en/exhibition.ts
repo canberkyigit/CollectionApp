@@ -86,6 +86,14 @@ const exhibition: Record<string, string> = {
   'exhibition.minutes_other': '{count} minutes',
   'exhibition.qrLabel': 'QR code for {title}',
   'exhibition.qrHint': 'Scan for details',
+  'exhibition.smart.title': 'Ready-made exhibitions',
+  'exhibition.smart.description': 'Built from your collection automatically; save one to fine-tune it.',
+  'exhibition.smart.topValue': 'Top 10 by value',
+  'exhibition.smart.addedThisYear': 'Added this year',
+  'exhibition.smart.recentlyAcquired': 'Recently acquired',
+  'exhibition.smart.random': 'Random 15',
+  'exhibition.smart.chronological': 'Oldest to newest',
+  'exhibition.smart.saveAs': 'Save as exhibition',
 };
 
 export default exhibition;
