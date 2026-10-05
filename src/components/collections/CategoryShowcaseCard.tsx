@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { useT } from '@/i18n';
 import { cn } from '@/lib/utils';
+import { RelativeTime } from '@/components/shared/RelativeTime';
 
 interface CategoryShowcaseCardProps {
   title: string;
@@ -13,15 +14,22 @@ interface CategoryShowcaseCardProps {
   thumbnails: string[];
   /** e.g. "12 items" */
   itemCountLabel: string;
-  /** e.g. "2 spaces" */
-  libraryCountLabel: string;
+  /** Bottom-left stat: libraries when the collection uses them, otherwise its most valuable piece. */
+  secondaryStat: { label: string; value: string; title?: string };
   totalValueLabel: string;
+  /** Exact amount shown on hover when the label is abbreviated. */
+  totalValueTitle?: string;
   averageValueLabel: string;
-  lastUpdatedLabel: string;
+  averageValueTitle?: string;
+  /** ISO timestamp of the latest change. */
+  lastUpdated: string;
   icon: LucideIcon;
   to: string;
   className?: string;
 }
+
+/** Long amounts (e.g. "$1,366.50") step down a size in narrow stat tiles instead of being cut off. */
+const LONG_VALUE = '@max-[5rem]:text-sm';
 
 function CoverMosaic({ thumbnails }: { thumbnails: string[] }) {
   const covers = thumbnails.slice(0, 4);
@@ -55,10 +63,12 @@ export function CategoryShowcaseCard({
   description,
   thumbnails,
   itemCountLabel,
-  libraryCountLabel,
+  secondaryStat,
   totalValueLabel,
+  totalValueTitle,
   averageValueLabel,
-  lastUpdatedLabel,
+  averageValueTitle,
+  lastUpdated,
   icon: Icon,
   to,
   className,
@@ -135,19 +145,19 @@ export function CategoryShowcaseCard({
 
       <div className="relative flex-1 space-y-4 px-6 pb-6">
         <div className="grid grid-cols-2 gap-3">
-          <div className="min-w-0 rounded-2xl border border-border/65 bg-background/45 px-3 py-3 backdrop-blur-sm sm:px-3.5">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-[11px] sm:tracking-[0.18em]">
+          <div className="@container min-w-0 rounded-2xl border border-border/65 bg-background/45 px-3 py-3 backdrop-blur-sm sm:px-3.5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:tracking-[0.18em]">
               {t('collections.card.totalValue')}
             </p>
-            <p className="mt-2 truncate text-[0.96rem] font-semibold tracking-tight sm:text-base">
+            <p className={cn('mt-2 truncate text-[0.96rem] font-semibold tabular-nums tracking-tight sm:text-base', totalValueLabel.length > 8 && LONG_VALUE)} title={totalValueTitle}>
               {totalValueLabel}
             </p>
           </div>
-          <div className="min-w-0 rounded-2xl border border-border/65 bg-background/45 px-3 py-3 backdrop-blur-sm sm:px-3.5">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-[11px] sm:tracking-[0.18em]">
+          <div className="@container min-w-0 rounded-2xl border border-border/65 bg-background/45 px-3 py-3 backdrop-blur-sm sm:px-3.5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:tracking-[0.18em]">
               {t('collections.card.averageValue')}
             </p>
-            <p className="mt-2 truncate text-[0.96rem] font-semibold tracking-tight sm:text-base">
+            <p className={cn('mt-2 truncate text-[0.96rem] font-semibold tabular-nums tracking-tight sm:text-base', averageValueLabel.length > 8 && LONG_VALUE)} title={averageValueTitle}>
               {averageValueLabel}
             </p>
           </div>
@@ -155,17 +165,17 @@ export function CategoryShowcaseCard({
 
         <div className="grid grid-cols-2 gap-3 rounded-2xl border border-border/65 bg-background/35 px-3 py-3 text-sm backdrop-blur-sm sm:px-3.5">
           <div className="min-w-0">
-            <p className="truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:text-[11px] sm:tracking-[0.18em]">
-              {t('collections.card.libraries')}
+            <p className="truncate text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:tracking-[0.18em]">
+              {secondaryStat.label}
             </p>
-            <p className="mt-1 truncate font-medium">{libraryCountLabel}</p>
+            <p className="mt-1 truncate font-medium" title={secondaryStat.title}>{secondaryStat.value}</p>
           </div>
           <div className="min-w-0 text-right">
-            <div className="inline-flex max-w-full items-center justify-end gap-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:gap-1.5 sm:text-[11px] sm:tracking-[0.18em]">
+            <div className="inline-flex max-w-full items-center justify-end gap-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:gap-1.5 sm:tracking-[0.18em]">
               <Clock3 className="size-3.5 shrink-0" aria-hidden="true" />
               <span className="truncate">{t('collections.card.updated')}</span>
             </div>
-            <p className="mt-1 truncate font-medium">{lastUpdatedLabel}</p>
+            <RelativeTime date={lastUpdated} className="mt-1 block truncate font-medium" />
           </div>
         </div>
       </div>

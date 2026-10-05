@@ -54,12 +54,12 @@ export function StatCard({
         </div>
 
         {hasMeta && (
-          <div className="mt-2 flex min-h-5 items-center gap-2 sm:mt-3">
+          <div className="mt-2 flex min-h-5 min-w-0 items-center gap-2 sm:mt-3">
             {trend && (
               <span
                 className={cn(
                   'inline-flex items-center gap-0.5 text-xs font-medium tabular-nums',
-                  trend.isPositive ? 'text-green-600' : 'text-red-600',
+                  trend.isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400',
                 )}
               >
                 {trend.isPositive ? (
@@ -71,7 +71,7 @@ export function StatCard({
               </span>
             )}
             {subtitle && (
-              <span className="hidden text-sm text-muted-foreground sm:inline">{subtitle}</span>
+              <span className="min-w-0 truncate text-xs text-muted-foreground sm:text-sm" title={subtitle}>{subtitle}</span>
             )}
           </div>
         )}

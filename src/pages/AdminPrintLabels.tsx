@@ -111,16 +111,16 @@ export default function AdminPrintLabels() {
           <div className="mt-4 flex flex-col gap-2">
             <p className={eyebrowClass}>{t('labels.modeLabel')}</p>
             <Tabs value={mode} onValueChange={setMode} className="w-full">
-              <TabsList aria-label={t('labels.modeLabel')} className="h-auto w-full max-w-xl justify-start rounded-xl p-1">
-                <TabsTrigger value="sheets" className="flex-1 gap-2 rounded-lg">
+              <TabsList aria-label={t('labels.modeLabel')} className="h-auto w-full max-w-xl justify-start overflow-x-auto rounded-xl p-1">
+                <TabsTrigger value="sheets" className="flex-1 shrink-0 gap-2 rounded-lg">
                   <FileText className="size-4" aria-hidden="true" />
                   {t('labels.mode.sheets')}
                 </TabsTrigger>
-                <TabsTrigger value="stickers" className="flex-1 gap-2 rounded-lg">
+                <TabsTrigger value="stickers" className="flex-1 shrink-0 gap-2 rounded-lg">
                   <QrCode className="size-4" aria-hidden="true" />
                   {t('labels.mode.stickers')}
                 </TabsTrigger>
-                <TabsTrigger value="report" className="flex-1 gap-2 rounded-lg">
+                <TabsTrigger value="report" className="flex-1 shrink-0 gap-2 rounded-lg">
                   <ClipboardList className="size-4" aria-hidden="true" />
                   {t('labels.mode.report')}
                 </TabsTrigger>
@@ -154,7 +154,7 @@ export default function AdminPrintLabels() {
                     className="pl-9"
                   />
                 </div>
-                <Button variant="outline" size="sm" onClick={toggleAll} className="shrink-0 gap-1.5" disabled={filtered.length === 0}>
+                <Button variant="outline" size="sm" onClick={toggleAll} className="h-9 sm:h-8 shrink-0 gap-1.5" disabled={filtered.length === 0}>
                   <Check className="size-3.5" />
                   {allFilteredSelected ? t('labels.deselectAll') : t('labels.selectAll')}
                 </Button>
@@ -190,7 +190,7 @@ export default function AdminPrintLabels() {
                   <p className="text-xs text-muted-foreground">{t('labels.noItemsHint')}</p>
                 </div>
               ) : (
-                <ul className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                <ul className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
                   {filtered.map((item) => {
                     const categoryName = categoryNameById.get(item.categoryId);
                     const isSelected = selected.has(item.id);
@@ -209,7 +209,7 @@ export default function AdminPrintLabels() {
                             <span className="block truncate text-sm font-medium">{item.title}</span>
                             <span className="mt-0.5 flex min-w-0 items-center gap-1.5">
                               {categoryName && (
-                                <Badge variant="secondary" className="shrink-0 text-[10px]">{categoryName}</Badge>
+                                <Badge variant="secondary" className="shrink-0 text-[11px]">{categoryName}</Badge>
                               )}
                               {item.location && (
                                 <span className="truncate text-[11px] text-muted-foreground">{item.location}</span>

@@ -62,6 +62,7 @@ import { currencyService } from '@/services/currencyService';
 import { useCollectionStore } from '@/store/useCollectionStore';
 import type { LendingRecord, ValueHistoryEntry } from '@/types';
 import { conditionLabel } from '@/components/collections/conditionLabel';
+import { RelativeTime } from '@/components/shared/RelativeTime';
 import {
   buildItemChartData,
   getItemDetailStats,
@@ -383,7 +384,7 @@ export default function ItemDetail() {
             { label: item.title },
           ]}
         >
-          <Button variant="outline" size="sm" onClick={() => navigate(`/collections/${category.slug}`)}>
+          <Button variant="outline" size="sm" className="max-sm:h-9" onClick={() => navigate(`/collections/${category.slug}`)}>
             <ArrowLeft className="size-3.5" />
             {t('common.back')}
           </Button>
@@ -395,16 +396,16 @@ export default function ItemDetail() {
               toggleFavorite(item.id);
               toast.success(item.isFavorite ? t('itemDetail.toast.unfavorited') : t('itemDetail.toast.favorited'));
             }}
-            className={item.isFavorite ? 'bg-amber-500 text-white hover:bg-amber-600' : ''}
+            className={cn('max-sm:h-9', item.isFavorite && 'bg-amber-500 text-white hover:bg-amber-600')}
           >
             <Star className={cn('size-3.5', item.isFavorite && 'fill-white')} />
             {item.isFavorite ? t('itemDetail.starred') : t('itemDetail.star')}
           </Button>
-          <Button variant="outline" size="sm" onClick={() => openItemDialog(item.categoryId, item)}>
+          <Button variant="outline" size="sm" className="max-sm:h-9" onClick={() => openItemDialog(item.categoryId, item)}>
             <Pencil className="size-3.5" />
             {t('common.edit')}
           </Button>
-          <Button variant="destructive" size="sm" onClick={() => setDeleteDialogOpen(true)}>
+          <Button variant="destructive" size="sm" className="max-sm:h-9" onClick={() => setDeleteDialogOpen(true)}>
             <Trash2 className="size-3.5" />
             {t('common.delete')}
           </Button>
@@ -546,9 +547,11 @@ export default function ItemDetail() {
                       <div className="rounded-2xl border border-border/65 bg-background/45 p-4">
                         <p className={EYEBROW}>{t('itemDetail.details.currentCurrency')}</p>
                         <p className="mt-2 text-lg font-semibold">{currentValueCurrency}</p>
-                        <p className="mt-1 font-mono text-sm text-muted-foreground">
-                          1 {currentValueCurrency} = {(Number(currentExchangeRate) || 0).toFixed(4)} USD
-                        </p>
+                        {currentValueCurrency !== 'USD' && (
+                          <p className="mt-1 font-mono text-sm text-muted-foreground">
+                            1 {currentValueCurrency} = {(Number(currentExchangeRate) || 0).toFixed(4)} USD
+                          </p>
+                        )}
                       </div>
                       <div className="rounded-2xl border border-border/65 bg-background/45 p-4">
                         <p className={EYEBROW}>{t('itemDetail.details.activity')}</p>
@@ -902,9 +905,12 @@ export default function ItemDetail() {
                           {item.purchaseInfo.purchaseLocation}
                         </ValueRow>
                       )}
-                      <ValueRow label={t('itemDetail.valuation.purchaseRate')} className="font-mono text-xs text-muted-foreground">
-                        1 {item.purchaseInfo.purchaseCurrency} = {(Number(item.purchaseInfo.exchangeRateAtPurchase) || 0).toFixed(4)} USD
-                      </ValueRow>
+                      {/* A USD purchase converted to USD is always 1 : 1 — only show real conversions. */}
+                      {item.purchaseInfo.purchaseCurrency !== 'USD' && Number(item.purchaseInfo.exchangeRateAtPurchase) > 0 && (
+                        <ValueRow label={t('itemDetail.valuation.purchaseRate')} className="font-mono text-xs text-muted-foreground">
+                          1 {item.purchaseInfo.purchaseCurrency} = {(Number(item.purchaseInfo.exchangeRateAtPurchase) || 0).toFixed(4)} USD
+                        </ValueRow>
+                      )}
                     </div>
                   </div>
 
@@ -924,9 +930,11 @@ export default function ItemDetail() {
                         <span className={cn('text-sm font-medium tabular-nums', gainClass)}>{signedDiff}</span>
                       </div>
                     </div>
-                    <ValueRow label={t('itemDetail.valuation.currentRate')} className="font-mono text-xs text-muted-foreground">
-                      1 {currentValueCurrency} = {(Number(currentExchangeRate) || 0).toFixed(4)} USD
-                    </ValueRow>
+                    {currentValueCurrency !== 'USD' && (
+                      <ValueRow label={t('itemDetail.valuation.currentRate')} className="font-mono text-xs text-muted-foreground">
+                        1 {currentValueCurrency} = {(Number(currentExchangeRate) || 0).toFixed(4)} USD
+                      </ValueRow>
+                    )}
                   </div>
 
                   {item.valuationInfo.targetYearProjection != null && projectionDisplay != null && (
@@ -963,12 +971,16 @@ export default function ItemDetail() {
                     </>
                   )}
 
-                  <Separator />
-
-                  <div className="rounded-lg bg-muted/50 p-3 text-center">
-                    <p className="text-xs text-muted-foreground">{t('itemDetail.valuation.usdEquivalent')}</p>
-                    <p className="mt-0.5 text-lg font-semibold tabular-nums">{formatCurrency(currentValueUSD, 'USD')}</p>
-                  </div>
+                  {/* The USD equivalent only adds information when neither the value nor the display currency is USD. */}
+                  {currentValueCurrency !== 'USD' && displayCurrency !== 'USD' && (
+                    <>
+                      <Separator />
+                      <div className="rounded-lg bg-muted/50 p-3 text-center">
+                        <p className="text-xs text-muted-foreground">{t('itemDetail.valuation.usdEquivalent')}</p>
+                        <p className="mt-0.5 text-lg font-semibold tabular-nums">{formatCurrency(currentValueUSD, 'USD')}</p>
+                      </div>
+                    </>
+                  )}
                 </CardContent>
               </Card>
             </div>
@@ -1006,10 +1018,10 @@ export default function ItemDetail() {
               </CardHeader>
               <CardContent className="space-y-2.5">
                 <ValueRow label={t('itemDetail.record.created')}>
-                  <span title={formatDate(item.createdAt)}>{formatRelativeDate(item.createdAt)}</span>
+                  <RelativeTime date={item.createdAt} />
                 </ValueRow>
                 <ValueRow label={t('itemDetail.record.updated')}>
-                  <span title={formatDate(item.updatedAt)}>{formatRelativeDate(item.updatedAt)}</span>
+                  <RelativeTime date={item.updatedAt} />
                 </ValueRow>
                 <Separator />
                 <div className="flex items-center justify-between gap-4">

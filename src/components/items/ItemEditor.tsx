@@ -591,7 +591,7 @@ export function ItemEditor({
             )}
 
             <EditorField id={`${p}quantity`} label={t('itemForm.field.quantity')} hint={t('itemForm.field.quantityHint')} dense={dense}>
-              <Input id={`${p}quantity`} type="number" min={1} inputMode="numeric" className="tabular-nums" placeholder="1" {...register('quantity')} />
+              <Input id={`${p}quantity`} type="number" min={1} inputMode="numeric" className="tabular-nums dark:[color-scheme:dark]" placeholder="1" {...register('quantity')} />
             </EditorField>
           </div>
         </EditorSection>
@@ -631,7 +631,7 @@ export function ItemEditor({
                   step="0.01"
                   inputMode="decimal"
                   placeholder="0.00"
-                  className="pl-8 tabular-nums"
+                  className="pl-8 tabular-nums dark:[color-scheme:dark]"
                   {...register('purchasePrice')}
                 />
               </div>
@@ -748,7 +748,7 @@ export function ItemEditor({
                   min={0}
                   inputMode="decimal"
                   placeholder={priceNumber > 0 ? String(priceNumber) : '0.00'}
-                  className="pl-8 tabular-nums"
+                  className="pl-8 tabular-nums dark:[color-scheme:dark]"
                   {...register('currentValue')}
                 />
               </div>
@@ -810,7 +810,7 @@ export function ItemEditor({
                 min={new Date().getFullYear()}
                 max={2100}
                 inputMode="numeric"
-                className="tabular-nums"
+                className="tabular-nums dark:[color-scheme:dark]"
                 {...register('targetYear')}
               />
             </EditorField>
@@ -823,7 +823,7 @@ export function ItemEditor({
                 min={0}
                 inputMode="decimal"
                 placeholder="0.00"
-                className="tabular-nums"
+                className="tabular-nums dark:[color-scheme:dark]"
                 {...register('targetValue')}
               />
             </EditorField>

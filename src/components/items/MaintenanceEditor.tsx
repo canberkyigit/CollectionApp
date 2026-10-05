@@ -137,6 +137,7 @@ function MaintenanceEntryForm({
           <Input
             id="maintenance-date"
             type="date"
+            className="dark:[color-scheme:dark]"
             value={form.date}
             onChange={(event) => update('date', event.target.value)}
             required
@@ -179,7 +180,7 @@ function MaintenanceEntryForm({
             min={0}
             step="0.01"
             inputMode="decimal"
-            className="tabular-nums"
+            className="tabular-nums dark:[color-scheme:dark]"
             value={form.cost}
             onChange={(event) => update('cost', event.target.value)}
             placeholder="0.00"
@@ -217,6 +218,7 @@ function MaintenanceEntryForm({
           <Input
             id="maintenance-next"
             type="date"
+            className="dark:[color-scheme:dark]"
             min={form.date || undefined}
             value={form.nextScheduled}
             onChange={(event) => update('nextScheduled', event.target.value)}
@@ -391,7 +393,7 @@ export function MaintenanceLog({ item, displayCurrency }: { item: CollectionItem
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="size-8 p-0 text-muted-foreground"
+                        className="size-8 p-0 max-sm:size-9 text-muted-foreground"
                         aria-label={t('itemDetail.maintenance.editEntry')}
                         onClick={() => {
                           setEditing(entry);
@@ -403,7 +405,7 @@ export function MaintenanceLog({ item, displayCurrency }: { item: CollectionItem
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="size-8 p-0 text-muted-foreground hover:text-destructive"
+                        className="size-8 p-0 max-sm:size-9 text-muted-foreground hover:text-destructive"
                         aria-label={t('itemDetail.maintenance.deleteEntry')}
                         onClick={() => {
                           removeMaintenanceEntry(item.id, entry.id);

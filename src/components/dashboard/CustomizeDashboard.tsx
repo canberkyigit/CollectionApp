@@ -179,7 +179,7 @@ export function CustomizeDashboard({ open, onOpenChange }: Props) {
                     onClick={() => withStoredWidgets(() => moveWidget(widget.id, 'up'))}
                     disabled={idx === 0}
                     aria-label={t('dashboard.moveUp', { name: label })}
-                    className="rounded p-0.5 transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-20"
+                    className="relative rounded p-0.5 transition-colors after:absolute after:-inset-x-2.5 after:-inset-y-1 hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-20"
                   >
                     <ChevronUp className="size-3.5" aria-hidden="true" />
                   </button>
@@ -189,7 +189,7 @@ export function CustomizeDashboard({ open, onOpenChange }: Props) {
                     onClick={() => withStoredWidgets(() => moveWidget(widget.id, 'down'))}
                     disabled={idx === sorted.length - 1}
                     aria-label={t('dashboard.moveDown', { name: label })}
-                    className="rounded p-0.5 transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-20"
+                    className="relative rounded p-0.5 transition-colors after:absolute after:-inset-x-2.5 after:-inset-y-1 hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-20"
                   >
                     <ChevronDown className="size-3.5" aria-hidden="true" />
                   </button>
@@ -226,7 +226,7 @@ export function CustomizeDashboard({ open, onOpenChange }: Props) {
                             title={t(`dashboard.size.${size}`)}
                             onClick={() => withStoredWidgets(() => setWidgetSize(widget.id, size))}
                             className={cn(
-                              'flex items-center justify-center p-1.5 transition-colors first:rounded-l-md last:rounded-r-md',
+                              'relative flex items-center justify-center p-1.5 transition-colors after:absolute after:inset-x-0 after:-inset-y-1.5 first:rounded-l-md last:rounded-r-md',
                               widget.size === size
                                 ? 'bg-primary text-primary-foreground'
                                 : 'text-muted-foreground hover:bg-accent hover:text-foreground',
@@ -245,7 +245,7 @@ export function CustomizeDashboard({ open, onOpenChange }: Props) {
                     aria-pressed={widget.visible}
                     onClick={() => withStoredWidgets(() => toggleWidgetVisibility(widget.id))}
                     className={cn(
-                      'flex items-center justify-center rounded-lg p-2 transition-colors',
+                      'flex items-center justify-center rounded-lg p-2 transition-colors max-sm:p-2.5',
                       widget.visible
                         ? 'text-foreground hover:bg-accent'
                         : 'text-muted-foreground hover:bg-accent hover:text-foreground',

@@ -467,7 +467,7 @@ export default function LendingTracker() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="size-8 text-muted-foreground hover:text-primary"
+                                className="size-9 text-muted-foreground hover:text-primary sm:size-8"
                                 aria-label={t('lending.addToCalendarNamed', { title: loan.itemTitle })}
                                 onClick={() =>
                                   downloadCalendarEvent({
@@ -481,7 +481,7 @@ export default function LendingTracker() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                className="gap-1.5"
+                                className="gap-1.5 max-sm:h-9"
                                 onClick={() => openReturnDialog(loan.itemId, loan.record.id, loan.itemTitle)}
                               >
                                 <ArrowDownLeft className="size-3.5" />
@@ -627,6 +627,7 @@ export default function LendingTracker() {
                 <Input
                   id="expected-return"
                   type="date"
+                  className="dark:[color-scheme:dark]"
                   min={today}
                   value={lendForm.expectedReturnDate}
                   onChange={(e) => setLendForm((f) => ({ ...f, expectedReturnDate: e.target.value }))}

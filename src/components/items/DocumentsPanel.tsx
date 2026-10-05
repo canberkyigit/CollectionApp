@@ -354,7 +354,7 @@ export function DocumentsPanel({ item, compact = false }: { item: CollectionItem
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="size-8 p-0 text-muted-foreground hover:text-foreground"
+                    className="size-8 p-0 max-sm:size-9 text-muted-foreground hover:text-foreground"
                     aria-label={t('itemDetail.documents.downloadNamed', { title: document.title })}
                     onClick={() => downloadDocument(document)}
                   >
@@ -363,7 +363,7 @@ export function DocumentsPanel({ item, compact = false }: { item: CollectionItem
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="size-8 p-0 text-muted-foreground hover:text-destructive"
+                    className="size-8 p-0 max-sm:size-9 text-muted-foreground hover:text-destructive"
                     aria-label={t('itemDetail.documents.deleteNamed', { title: document.title })}
                     onClick={() => setPendingDelete(document)}
                   >

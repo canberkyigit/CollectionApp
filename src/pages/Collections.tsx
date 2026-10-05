@@ -33,7 +33,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useT } from '@/i18n';
-import { cn, formatCurrency, formatNumber, formatRelativeDate } from '@/lib/utils';
+import { cn, formatCurrency, formatCurrencyShort, formatNumber } from '@/lib/utils';
+import { RelativeTime } from '@/components/shared/RelativeTime';
 import { matchesQuery } from '@/lib/search';
 import { useCollectionStore } from '@/store/useCollectionStore';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -108,9 +109,15 @@ export default function Collections() {
         category.updatedAt,
       );
 
+      const topItem = categoryItems.reduce<{ item: CollectionItem; value: number } | null>((best, item) => {
+        const value = getItemCurrentValue(item, displayCurrency);
+        return !best || value > best.value ? { item, value } : best;
+      }, null);
+
       return {
         category,
         count: categoryItems.length,
+        topItemTitle: topItem && topItem.value > 0 ? topItem.item.title : null,
         totalValue: getItemsCurrentValue(categoryItems, displayCurrency),
         lastUpdated,
         thumbnails: pickThumbnails(categoryItems, displayCurrency),
@@ -230,7 +237,7 @@ export default function Collections() {
               <Button
                 variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
                 size="sm"
-                className="h-8 px-2.5"
+                className="h-8 px-2.5 max-sm:h-9"
                 aria-label={t('collections.view.grid')}
                 aria-pressed={viewMode === 'grid'}
                 onClick={() => setViewMode('grid')}
@@ -240,7 +247,7 @@ export default function Collections() {
               <Button
                 variant={viewMode === 'list' ? 'secondary' : 'ghost'}
                 size="sm"
-                className="h-8 px-2.5"
+                className="h-8 px-2.5 max-sm:h-9"
                 aria-label={t('collections.view.list')}
                 aria-pressed={viewMode === 'list'}
                 onClick={() => setViewMode('list')}
@@ -281,7 +288,7 @@ export default function Collections() {
                   subtitle={t('collections.stats.categoriesHint')}
                 />
               </MotionItem>
-              <MotionItem variants={staggerItem}>
+              <MotionItem variants={staggerItem} className="col-span-2 sm:col-span-1">
                 <StatCard
                   title={t('collections.stats.portfolioValue')}
                   value={formatCurrency(totalValue, displayCurrency)}
@@ -301,7 +308,7 @@ export default function Collections() {
               <div className="flex items-center gap-2">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm">
+                    <Button variant="outline" size="sm" className="max-sm:h-9">
                       <ArrowUpDown className="mr-1.5 size-3.5" />
                       {t(CAT_SORT_OPTIONS.find((option) => option.value === catSort)?.labelKey ?? 'collections.sort.label')}
                     </Button>
@@ -321,7 +328,7 @@ export default function Collections() {
                 <Button
                   variant="outline"
                   size="icon"
-                  className="size-8"
+                  className="size-9 sm:size-8"
                   aria-label={catSortDir === 'asc' ? t('collections.sort.ascending') : t('collections.sort.descending')}
                   title={catSortDir === 'asc' ? t('collections.sort.ascending') : t('collections.sort.descending')}
                   onClick={() => setCatSortDir(catSortDir === 'asc' ? 'desc' : 'asc')}
@@ -338,17 +345,21 @@ export default function Collections() {
                 initial="hidden"
                 animate="visible"
               >
-                {categoryData.map(({ category, count, totalValue: categoryValue, lastUpdated, libraryCount, thumbnails }) => (
+                {categoryData.map(({ category, count, totalValue: categoryValue, lastUpdated, libraryCount, thumbnails, topItemTitle }) => (
                   <MotionItem key={category.id} variants={staggerItem} className="h-full">
                     <CategoryShowcaseCard
                       title={category.name}
                       description={category.description?.trim() || t('collections.card.defaultDescription')}
                       thumbnails={thumbnails}
                       itemCountLabel={itemCountLabel(count)}
-                      libraryCountLabel={t('collections.card.spaceCount', { count: libraryCount, formatted: formatNumber(libraryCount) })}
-                      totalValueLabel={formatCurrency(categoryValue, displayCurrency)}
-                      averageValueLabel={formatCurrency(count > 0 ? categoryValue / count : 0, displayCurrency)}
-                      lastUpdatedLabel={formatRelativeDate(lastUpdated)}
+                      secondaryStat={libraryCount > 0 || !topItemTitle
+                        ? { label: t('collections.card.libraries'), value: libraryCount > 0 ? t('collections.card.spaceCount', { count: libraryCount, formatted: formatNumber(libraryCount) }) : '—' }
+                        : { label: t('collections.card.topPiece'), value: topItemTitle, title: topItemTitle }}
+                      totalValueLabel={formatCurrencyShort(categoryValue, displayCurrency)}
+                      totalValueTitle={formatCurrency(categoryValue, displayCurrency)}
+                      averageValueLabel={formatCurrencyShort(count > 0 ? categoryValue / count : 0, displayCurrency)}
+                      averageValueTitle={formatCurrency(count > 0 ? categoryValue / count : 0, displayCurrency)}
+                      lastUpdated={lastUpdated}
                       icon={getCategoryIcon(category.icon)}
                       to={`/collections/${category.slug}`}
                     />
@@ -394,7 +405,7 @@ export default function Collections() {
                             <p className="text-xs text-muted-foreground">{t('collections.list.totalValue')}</p>
                           </div>
                           <div className="text-right">
-                            <p className="text-sm text-muted-foreground">{formatRelativeDate(lastUpdated)}</p>
+                            <RelativeTime date={lastUpdated} className="block text-sm text-muted-foreground" />
                             <p className="text-xs text-muted-foreground">{t('collections.list.lastUpdated')}</p>
                           </div>
                         </div>

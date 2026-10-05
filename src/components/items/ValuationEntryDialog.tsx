@@ -79,7 +79,7 @@ function ValuationEntryForm({
             min={0}
             step="0.01"
             inputMode="decimal"
-            className="tabular-nums"
+            className="tabular-nums dark:[color-scheme:dark]"
             value={value}
             onChange={(event) => {
               setValue(event.target.value);
@@ -111,6 +111,7 @@ function ValuationEntryForm({
         <Input
           id="valuation-date"
           type="date"
+          className="dark:[color-scheme:dark]"
           max={today}
           value={date}
           onChange={(event) => {

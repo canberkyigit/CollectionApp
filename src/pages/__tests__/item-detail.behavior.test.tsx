@@ -197,7 +197,9 @@ describe('ItemDetail behaviors', () => {
 
     expect(screen.getByText(/current valuation/i)).toBeInTheDocument();
     expect(screen.getByText(/projected value/i)).toBeInTheDocument();
-    expect(screen.getByText(/usd equivalent/i)).toBeInTheDocument();
+    // A USD-valued item shown in USD needs no separate USD equivalent or 1:1 rate rows.
+    expect(screen.queryByText(/usd equivalent/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('1 USD = 1.0000 USD')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('tab', { name: /lending/i }));
     expect(screen.getByText('John Reader')).toBeInTheDocument();

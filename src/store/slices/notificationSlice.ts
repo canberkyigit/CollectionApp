@@ -24,7 +24,11 @@ export function createNotificationSlice(
     },
 
     markAllNotificationsRead: () => {
-      const notificationIds = get().activityLog.slice(0, 20).map((entry) => entry.id);
+      // Same set the bell shows: the 20 most recent entries by time.
+      const notificationIds = [...get().activityLog]
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        .slice(0, 20)
+        .map((entry) => entry.id);
       const mergedIds = [...new Set([...get().readNotificationIds, ...notificationIds])];
       set({ readNotificationIds: mergedIds });
       dependencies.syncSettings({ readNotificationIds: mergedIds });

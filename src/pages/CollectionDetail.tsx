@@ -343,7 +343,7 @@ function CollectionDetailContent({ categorySlug }: CollectionDetailContentProps)
         <Button
           variant="ghost"
           size="icon"
-          className="size-8"
+          className="size-9 sm:size-8"
           aria-label={t('collections.item.moreActions', { title: item.title })}
         >
           <MoreHorizontal className="size-4" />
@@ -421,7 +421,7 @@ function CollectionDetailContent({ categorySlug }: CollectionDetailContentProps)
 
         <div className="flex flex-1 flex-col space-y-1 p-2.5 pt-2">
           <h3 className="line-clamp-2 text-sm font-semibold leading-tight tracking-tight">
-            <button
+            <button title={item.title}
               type="button"
               className="text-left after:absolute after:inset-0 focus-visible:outline-none"
               onClick={() => openDetail(item.id)}
@@ -486,7 +486,7 @@ function CollectionDetailContent({ categorySlug }: CollectionDetailContentProps)
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-2 p-2 text-center">
               <CategoryIcon className="size-8 text-muted-foreground/30" aria-hidden="true" />
-              <span className="line-clamp-3 text-[11px] text-muted-foreground">{item.title}</span>
+              <span className="line-clamp-3 text-[11px] text-muted-foreground" title={item.title}>{item.title}</span>
             </div>
           )}
         </div>
@@ -560,7 +560,7 @@ function CollectionDetailContent({ categorySlug }: CollectionDetailContentProps)
           onCheckedChange={() => toggleSelectItem(item.id)}
           aria-label={t('collections.item.select', { title: item.title })}
         />
-        <button
+        <button title={item.title}
           type="button"
           className="min-w-0 flex-1 truncate text-left text-sm font-medium after:absolute after:inset-0 focus-visible:underline focus-visible:outline-none"
           onClick={() => openDetail(item.id)}
@@ -602,7 +602,7 @@ function CollectionDetailContent({ categorySlug }: CollectionDetailContentProps)
         )}
       </div>
       <div className="min-w-0">
-        <button
+        <button title={item.title}
           type="button"
           className="block max-w-full truncate text-left font-medium hover:text-primary focus-visible:underline focus-visible:outline-none"
           onClick={(event) => { event.stopPropagation(); openDetail(item.id); }}
@@ -666,7 +666,7 @@ function CollectionDetailContent({ categorySlug }: CollectionDetailContentProps)
 
   const renderTableView = () => (
     <Card className="overflow-hidden">
-      <div className="overflow-x-auto">
+      <div className="relative overflow-x-auto">
         <div style={{ minWidth: TABLE_MIN_WIDTH }}>
           <div
             className="grid items-center border-b bg-muted/50 text-sm font-medium text-muted-foreground"
@@ -735,7 +735,7 @@ function CollectionDetailContent({ categorySlug }: CollectionDetailContentProps)
                     key={mode}
                     variant={viewMode === mode ? 'default' : 'ghost'}
                     size="icon"
-                    className="size-8"
+                    className="size-9 sm:size-8"
                     onClick={() => changeViewMode(mode)}
                     aria-label={t(labelKey)}
                     aria-pressed={viewMode === mode}
@@ -766,7 +766,7 @@ function CollectionDetailContent({ categorySlug }: CollectionDetailContentProps)
             )}
 
             <MotionGrid
-              className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4"
+              className={cn('grid grid-cols-2 gap-3 sm:gap-4', detailPanelItemId ? '2xl:grid-cols-4' : 'lg:grid-cols-4')}
               variants={staggerContainer}
               initial="hidden"
               animate="visible"
@@ -797,7 +797,7 @@ function CollectionDetailContent({ categorySlug }: CollectionDetailContentProps)
                 <div className="flex flex-wrap items-center gap-2">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm">
+                      <Button variant="outline" size="sm" className="max-sm:h-9">
                         <ArrowUpDown className="mr-1.5 size-3.5" />
                         {t(sortLabelKey)}
                       </Button>
@@ -820,7 +820,7 @@ function CollectionDetailContent({ categorySlug }: CollectionDetailContentProps)
                   <Button
                     variant="outline"
                     size="icon"
-                    className="size-8"
+                    className="size-9 sm:size-8"
                     aria-label={sortOrder === 'asc' ? t('collections.sort.ascending') : t('collections.sort.descending')}
                     title={sortOrder === 'asc' ? t('collections.sort.ascending') : t('collections.sort.descending')}
                     onClick={() => changeSort(sortField, sortOrder === 'asc' ? 'desc' : 'asc')}
@@ -861,7 +861,7 @@ function CollectionDetailContent({ categorySlug }: CollectionDetailContentProps)
                 </span>
                 <div className="hidden h-4 w-px bg-border sm:block" />
                 {categoryLibraries.length > 0 && (
-                  <Button variant="outline" size="sm" className="h-7 text-xs sm:h-8 sm:text-sm" onClick={() => setTransferDialogOpen(true)}>
+                  <Button variant="outline" size="sm" className="h-9 text-xs sm:h-8 sm:text-sm" onClick={() => setTransferDialogOpen(true)}>
                     <ArrowRightLeft className="mr-1 size-3 sm:mr-1.5 sm:size-3.5" />
                     {t('collections.transfer.action')}
                   </Button>
@@ -869,13 +869,13 @@ function CollectionDetailContent({ categorySlug }: CollectionDetailContentProps)
                 <Button
                   variant="destructive"
                   size="sm"
-                  className="h-7 text-xs sm:h-8 sm:text-sm"
+                  className="h-9 text-xs sm:h-8 sm:text-sm"
                   onClick={() => { setItemToDelete(null); setDeleteDialogOpen(true); }}
                 >
                   <Archive className="mr-1 size-3 sm:mr-1.5 sm:size-3.5" />
                   {t('collections.item.archive')}
                 </Button>
-                <Button variant="ghost" size="sm" className="h-7 text-xs sm:h-8 sm:text-sm" onClick={() => setSelectedItems([])}>
+                <Button variant="ghost" size="sm" className="h-9 text-xs sm:h-8 sm:text-sm" onClick={() => setSelectedItems([])}>
                   <X className="mr-1 size-3 sm:mr-1.5 sm:size-3.5" />
                   {t('collections.selection.clear')}
                 </Button>

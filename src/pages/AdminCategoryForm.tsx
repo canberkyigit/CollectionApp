@@ -91,6 +91,7 @@ export default function AdminCategoryForm() {
   const categoriesPath = withAdminSource('/admin/categories', searchSuffix);
 
   const { getCategoryById, addCategory, updateCategory, categories } = useCollectionStore();
+  const sidebarOpen = useCollectionStore((state) => state.sidebarOpen);
   const existingCategory = categoryId ? getCategoryById(categoryId) : undefined;
 
   const [expandedFields, setExpandedFields] = useState<Set<number>>(new Set());
@@ -297,8 +298,9 @@ export default function AdminCategoryForm() {
               name="icon"
               render={({ field }) => {
                 const SelectedIcon = getCategoryIcon(field.value);
+                // Radix's hidden native select can report "" while the edit form loads; never clear the icon from it.
                 return (
-                  <Select value={field.value} onValueChange={field.onChange}>
+                  <Select value={field.value} onValueChange={(next) => { if (next) field.onChange(next); }}>
                     <SelectTrigger id="category-icon" className="w-full sm:w-64">
                       <SelectValue>
                         <span className="flex items-center gap-2">
@@ -361,7 +363,7 @@ export default function AdminCategoryForm() {
                 type="button"
                 variant="outline"
                 size="sm"
-                className="mt-4"
+                className="h-9 sm:h-8 mt-4"
                 onClick={handleAddField}
               >
                 <Plus className="size-3.5" aria-hidden="true" />
@@ -390,7 +392,7 @@ export default function AdminCategoryForm() {
                       <GripVertical className="size-4" />
                     </div>
 
-                    <div className="flex-1 space-y-3">
+                    <div className="min-w-0 flex-1 space-y-3">
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                         <div className="space-y-1.5">
                           <Label htmlFor={`${idBase}-label`} className={labelClass}>{t('admin.form.fieldLabel')}</Label>
@@ -469,7 +471,7 @@ export default function AdminCategoryForm() {
                           type="button"
                           variant="ghost"
                           size="sm"
-                          className="text-xs text-muted-foreground"
+                          className="h-9 sm:h-8 text-xs text-muted-foreground"
                           aria-expanded={isExpanded}
                           onClick={() => toggleFieldExpansion(index)}
                         >
@@ -547,7 +549,7 @@ export default function AdminCategoryForm() {
                       type="button"
                       variant="ghost"
                       size="icon"
-                      className="mt-6 size-8 shrink-0 text-destructive hover:text-destructive"
+                      className="mt-6 size-9 shrink-0 text-destructive hover:text-destructive sm:size-8"
                       aria-label={t('admin.form.removeFieldAria', { name: fieldLabel })}
                       onClick={() => handleRemoveField(index)}
                     >
@@ -561,12 +563,18 @@ export default function AdminCategoryForm() {
         </CardContent>
       </Card>
 
-      <div className="fixed inset-x-0 bottom-0 z-50 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <div className="mx-auto flex max-w-screen-xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
+      {/* Fixed to the viewport, but kept beside the desktop sidebar and below the mobile sidebar overlay. */}
+      <div
+        className={cn(
+          'fixed inset-x-0 bottom-0 z-30 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80',
+          sidebarOpen && 'md:left-64',
+        )}
+      >
+        <div className="mx-auto flex max-w-screen-xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-4 sm:px-6">
           <p className="text-sm text-muted-foreground tabular-nums">
             {t('admin.form.fieldsDefined', { count: fields.length })}
           </p>
-          <div className="flex items-center gap-3">
+          <div className="ml-auto flex items-center gap-3">
             <Button type="button" variant="outline" onClick={() => navigate(categoriesPath)}>
               <X className="size-4" aria-hidden="true" />
               {t('common.cancel')}

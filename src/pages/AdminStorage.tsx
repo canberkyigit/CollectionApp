@@ -237,7 +237,7 @@ export default function AdminStorage() {
                           </div>
                         </td>
                         <td className="px-4 py-3 text-center tabular-nums">{formatNumber(cat.count)}</td>
-                        <td className="px-4 py-3 text-right font-mono text-xs">{formatBytes(cat.size)}</td>
+                        <td className="whitespace-nowrap px-4 py-3 text-right font-mono text-xs">{formatBytes(cat.size)}</td>
                         <td className="px-4 py-3 text-right">
                           <Badge variant="outline" className="text-xs tabular-nums">{formatPercent(cat.percentage)}</Badge>
                         </td>
@@ -310,6 +310,7 @@ export default function AdminStorage() {
                 <Button
                   variant="outline"
                   size="sm"
+                  className="h-9 sm:h-8"
                   onClick={() => setConfirmClearLog(true)}
                   disabled={activityLog.length === 0}
                 >
@@ -324,7 +325,7 @@ export default function AdminStorage() {
                   <h3 className="font-semibold text-destructive">{t('admin.storage.clearAllTitle')}</h3>
                 </div>
                 <p className="text-sm text-muted-foreground">{t('admin.storage.clearAllDescription')}</p>
-                <Button variant="outline" size="sm" className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive" asChild>
+                <Button variant="outline" size="sm" className="h-9 sm:h-8 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive" asChild>
                   <Link to={SETTINGS_DATA_PATH}>
                     {t('admin.storage.clearAllLink')}
                     <ArrowRight className="ml-2 size-4" aria-hidden="true" />

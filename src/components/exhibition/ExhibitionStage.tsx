@@ -1,4 +1,4 @@
-import { createElement, useCallback, useEffect, useRef, useState } from 'react';
+import { createElement, useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   ChevronLeft,
@@ -54,6 +54,21 @@ export function ExhibitionStage({
   const [showCaption, setShowCaption] = useState(true);
   const [showThumbs, setShowThumbs] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  // Caption height, so phones can lift the photo above the caption instead of hiding it behind.
+  const [captionEl, setCaptionEl] = useState<HTMLDivElement | null>(null);
+  const [captionHeight, setCaptionHeight] = useState(0);
+  const captionRef = useCallback((node: HTMLDivElement | null) => {
+    if (node) setCaptionEl(node);
+  }, []);
+
+  useEffect(() => {
+    if (!captionEl || typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(() => {
+      if (captionEl.isConnected) setCaptionHeight(captionEl.getBoundingClientRect().height);
+    });
+    observer.observe(captionEl);
+    return () => observer.disconnect();
+  }, [captionEl]);
 
   const count = slides.length;
   const slide = slides[index];
@@ -165,7 +180,14 @@ export function ExhibitionStage({
       </AnimatePresence>
 
       {/* Main photo */}
-      <div className={cn('absolute inset-0 flex items-center justify-center px-4 pt-24 sm:px-16', showThumbs ? 'pb-48' : 'pb-28')}>
+      <div
+        className={cn(
+          'absolute inset-0 flex items-center justify-center px-4 pt-24 sm:px-16',
+          showThumbs ? 'pb-48' : 'pb-28',
+          showCaption && (showThumbs ? 'max-sm:pb-[calc(var(--caption-h)+12.75rem)]' : 'max-sm:pb-[calc(var(--caption-h)+7.75rem)]'),
+        )}
+        style={{ '--caption-h': `${Math.round(captionHeight)}px` } as CSSProperties}
+      >
         <AnimatePresence mode="wait" initial={false}>
           <motion.figure
             key={item.id}
@@ -247,6 +269,7 @@ export function ExhibitionStage({
         {showCaption && (
           <motion.div
             key={`caption-${item.id}`}
+            ref={captionRef}
             className={cn('absolute left-4 right-4 z-10 transition-[bottom] duration-300 sm:left-8 sm:right-auto sm:max-w-xl', showThumbs ? 'bottom-48' : 'bottom-28')}
             initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
