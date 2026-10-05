@@ -117,7 +117,7 @@ describe('Scale Pack virtualized surfaces', () => {
     expect(screen.getByText('Detail Panel for scale-item-0')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /close detail panel/i }));
 
-    await user.click(within(firstCard as HTMLElement).getByRole('button'));
+    await user.click(within(firstCard as HTMLElement).getByRole('button', { name: /remove .* from favorites/i }));
     expect(useCollectionStore.getState().items.find((item) => item.id === 'scale-item-0')?.isFavorite).toBe(false);
   });
 

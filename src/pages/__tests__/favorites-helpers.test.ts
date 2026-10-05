@@ -14,9 +14,11 @@ import type { Category } from '@/types';
 
 describe('favorites helpers', () => {
   it('returns badge styles for known and unknown conditions', () => {
-    expect(getConditionBadgeProps('Mint')).toEqual(
-      expect.objectContaining({ variant: 'outline' }),
-    );
+    expect(getConditionBadgeProps('Mint')).toEqual({ variant: 'outline', className: expect.stringContaining('emerald') });
+    expect(getConditionBadgeProps('Fair')).toEqual({ variant: 'outline', className: expect.stringContaining('amber') });
+    expect(getConditionBadgeProps('Poor')).toEqual({ variant: 'outline', className: expect.stringContaining('red') });
+    // Other category scales map by tier onto the same palette.
+    expect(getConditionBadgeProps('Mint never hinged (MNH)').className).toContain('emerald');
     expect(getConditionBadgeProps('Unknown')).toEqual({
       variant: 'secondary',
       className: '',
@@ -138,6 +140,7 @@ describe('favorites helpers', () => {
       maxPrice: 30,
       maxValue: 60,
       tags: ['jazz', 'sci-fi', 'signed'],
+      conditions: expect.any(Array),
     });
 
     const stats = getFavoriteStats(favorites, 'USD');

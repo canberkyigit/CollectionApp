@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { useT } from '@/i18n';
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -28,10 +29,12 @@ export function ConfirmDialog({
   onConfirm,
   title,
   description,
-  confirmLabel = 'Confirm',
+  confirmLabel,
   destructive = false,
   children,
 }: ConfirmDialogProps) {
+  const t = useT();
+
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
       <DialogContent>
@@ -39,7 +42,7 @@ export function ConfirmDialog({
           <div className="flex items-center gap-3">
             {destructive && (
               <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-destructive/10">
-                <AlertTriangle className="size-5 text-destructive" />
+                <AlertTriangle className="size-5 text-destructive" aria-hidden="true" />
               </div>
             )}
             <div>
@@ -53,13 +56,13 @@ export function ConfirmDialog({
         {children && <div className="mt-2">{children}</div>}
         <DialogFooter className="mt-2">
           <Button variant="outline" onClick={onClose}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button
             variant={destructive ? 'destructive' : 'default'}
             onClick={onConfirm}
           >
-            {confirmLabel}
+            {confirmLabel ?? t('common.confirm')}
           </Button>
         </DialogFooter>
       </DialogContent>

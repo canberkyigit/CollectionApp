@@ -1,3 +1,5 @@
+import { t } from '@/i18n';
+
 const BASE = 'https://openlibrary.org';
 const COVER_BASE = 'https://covers.openlibrary.org/b/id';
 
@@ -62,7 +64,7 @@ function mapDoc(doc: OpenLibraryDoc): BookSearchResult {
   return {
     key: doc.key,
     title: doc.title,
-    author: doc.author_name?.[0] ?? 'Unknown Author',
+    author: doc.author_name?.[0] ?? t('itemForm.lookup.unknownAuthor'),
     publishYear: doc.first_publish_year,
     publisher: doc.publisher?.[0],
     isbn: doc.isbn?.[0],

@@ -1,36 +1,36 @@
-import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
+import { useState, useMemo, useRef, useCallback, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 
 import {
-  Download,
-  FileSpreadsheet,
-  FileJson,
-  FolderOpen,
-  Package,
-  Check,
-  Upload,
-  FileUp,
   AlertCircle,
-  Table2,
-  Info,
-  ShieldCheck,
-  GitMerge,
-  RotateCcw,
+  Check,
+  Download,
+  FileJson,
+  FileSpreadsheet,
+  FileText,
+  FileUp,
+  FolderOpen,
   HardDrive,
-  RefreshCw,
-  Lock,
+  Info,
+  Package,
+  Printer,
+  Tags,
+  Upload,
+  Wrench,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { ConfirmDialog } from '@/components/shared';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -41,48 +41,37 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useT } from '@/i18n';
+import { canEditContent, canManageCatalog } from '@/lib/permissions';
+import { getDesktopLocalSyncApi } from '@/lib/runtime';
 import { formatCurrency, formatNumber, generateId } from '@/lib/utils';
-import {
-  getDesktopLocalSyncApi,
-  type LocalSyncStatus,
-} from '@/lib/runtime';
 import { currencyService } from '@/services/currencyService';
 import {
   buildBackupRestorePreview,
   isBackupBundle,
   type BackupBundle,
   type BackupRestoreMode,
-  type RestorableBackupState,
 } from '@/services/backupRestoreService';
-import { parseCSV } from '@/services/csvService';
-import { exportService } from '@/services/exportService';
 import {
-  buildAutoCsvMapping,
-  buildCsvImportPreview,
-  buildItemFromCsvPreviewRow,
-} from '@/services/importPreviewService';
+  exportService,
+  getDefaultCsvDelimiter,
+  type CsvExportDelimiter,
+} from '@/services/exportService';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useCollectionStore } from '@/store/useCollectionStore';
-import { canManageCatalog } from '@/lib/permissions';
 import type { CollectionItem } from '@/types';
+
+import { CsvImportCard } from './data/CsvImportCard';
+import { LocalSyncTab } from './data/LocalSyncTab';
+import { PanelCardHeader } from './data/PanelCardHeader';
+import { RestoreConfirmSummary, RestorePreview } from './data/RestorePreview';
+import { useBackupState } from './data/useBackupState';
+import { TagManager } from './TagManager';
 
 type ImportExportTab = 'export' | 'import' | 'local-sync';
 
 function buildTimestampedExportName(slug: string): string {
-  return `${slug}-export-${Date.now()}.json`;
-}
-
-function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
-  if (bytes < 1024) return `${bytes} B`;
-  const kb = bytes / 1024;
-  if (kb < 1024) return `${kb.toFixed(1)} KB`;
-  return `${(kb / 1024).toFixed(2)} MB`;
-}
-
-function formatLocalSyncDate(value: string | null | undefined): string {
-  if (!value) return 'Never';
-  return new Date(value).toLocaleString();
+  return `curio-${slug}-${Date.now()}.json`;
 }
 
 function buildDefaultItem(
@@ -117,6 +106,10 @@ function buildDefaultItem(
   };
 }
 
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
 interface ImportExportPanelProps {
   activeTab: ImportExportTab;
   onTabChange: (nextTab: ImportExportTab) => void;
@@ -128,31 +121,27 @@ export function ImportExportPanel({
   onTabChange,
   className,
 }: ImportExportPanelProps) {
+  const t = useT();
   const user = useAuthStore((state) => state.user);
   const displayCurrency = useCollectionStore((s) => s.displayCurrency);
-  const {
-    categories,
-    items,
-    libraries,
-    wishlist,
-    activityLog,
-    contributors,
-    theme,
-    sidebarOpen,
-    menuCollectionStyle,
-    dashboardWidgets,
-    readNotificationIds,
-    notifications,
-    getItemsByCategory,
-    getCategoryById,
-    logActivity,
-    bulkAddItems,
-    restoreBackupBundle,
-  } =
-    useCollectionStore();
-  const canRestoreBackups = canManageCatalog(user?.role ?? 'viewer');
+  const categories = useCollectionStore((s) => s.categories);
+  const items = useCollectionStore((s) => s.items);
+  const getItemsByCategory = useCollectionStore((s) => s.getItemsByCategory);
+  const getCategoryById = useCollectionStore((s) => s.getCategoryById);
+  const logActivity = useCollectionStore((s) => s.logActivity);
+  const bulkAddItems = useCollectionStore((s) => s.bulkAddItems);
+  const restoreBackupBundle = useCollectionStore((s) => s.restoreBackupBundle);
+  const { currentBackupState, downloadFullBackup } = useBackupState();
+
+  const role = user?.role ?? 'viewer';
+  const canRestoreBackups = canManageCatalog(role);
+  const isAdmin = role === 'admin';
+  const canEditTags = canEditContent(role);
   const currentContributorId = user?.uid ?? 'offline';
+
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
+  const [csvDelimiter, setCsvDelimiter] = useState<CsvExportDelimiter>(() => getDefaultCsvDelimiter());
+  const [tagManagerOpen, setTagManagerOpen] = useState(false);
 
   const [jsonPreview, setJsonPreview] = useState<{ count: number; byCategory: Record<string, number> } | null>(null);
   const [jsonItems, setJsonItems] = useState<Partial<CollectionItem>[]>([]);
@@ -163,157 +152,27 @@ export function ImportExportPanel({
   const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
 
-  const [csvData, setCsvData] = useState<{ headers: string[]; rows: string[][] } | null>(null);
-  const [csvCategoryId, setCsvCategoryId] = useState<string>('');
-  const [csvFileName, setCsvFileName] = useState<string>('');
-
-  const [localSyncStatus, setLocalSyncStatus] = useState<LocalSyncStatus | null>(null);
-  const [isLocalSyncing, setIsLocalSyncing] = useState(false);
-  const [isLocalStatusLoading, setIsLocalStatusLoading] = useState(false);
-  const [localRestoreBundle, setLocalRestoreBundle] = useState<BackupBundle | null>(null);
-  const [localRestoreMode, setLocalRestoreMode] = useState<BackupRestoreMode>('merge');
-  const [localRestoreConfirmOpen, setLocalRestoreConfirmOpen] = useState(false);
-  const [localPreRestoreBackupDownloaded, setLocalPreRestoreBackupDownloaded] = useState(false);
-  const [isLocalRestoring, setIsLocalRestoring] = useState(false);
-
   const jsonInputRef = useRef<HTMLInputElement>(null);
-  const csvInputRef = useRef<HTMLInputElement>(null);
   const localSyncAvailable = Boolean(getDesktopLocalSyncApi());
 
-  const totalValueUSD = useMemo(
-    () =>
-      items.reduce(
-        (sum, item) =>
-          sum +
-          currencyService.convertToUSD(
-            item.valuationInfo.currentEstimatedValue,
-            item.valuationInfo.currentValueCurrency,
-          ),
-        0,
+  const totalValue = useMemo(() => {
+    const totalUSD = items.reduce(
+      (sum, item) => sum + currencyService.convertToUSD(
+        item.valuationInfo.currentEstimatedValue,
+        item.valuationInfo.currentValueCurrency,
       ),
-    [items],
-  );
+      0,
+    );
+    return currencyService.convert(totalUSD, 'USD', displayCurrency);
+  }, [items, displayCurrency]);
 
-  const totalValue = useMemo(
-    () => currencyService.convert(totalValueUSD, 'USD', displayCurrency),
-    [totalValueUSD, displayCurrency],
-  );
-
-  const selectedCategory = selectedCategoryId
-    ? getCategoryById(selectedCategoryId)
-    : undefined;
-  const selectedCsvCategory = csvCategoryId
-    ? getCategoryById(csvCategoryId)
-    : undefined;
-
-  const selectedCategoryItems = selectedCategoryId
-    ? getItemsByCategory(selectedCategoryId)
-    : [];
-
-  const currentBackupState = useMemo<RestorableBackupState>(() => ({
-    categories,
-    items,
-    libraries,
-    wishlist,
-    activityLog,
-    contributors,
-    settings: {
-      displayCurrency,
-      theme,
-      sidebarOpen,
-      menuCollectionStyle,
-      dashboardWidgets,
-      readNotificationIds,
-      notifications,
-    },
-  }), [
-    categories,
-    items,
-    libraries,
-    wishlist,
-    activityLog,
-    contributors,
-    displayCurrency,
-    theme,
-    sidebarOpen,
-    menuCollectionStyle,
-    dashboardWidgets,
-    readNotificationIds,
-    notifications,
-  ]);
+  const selectedCategory = selectedCategoryId ? getCategoryById(selectedCategoryId) : undefined;
+  const selectedCategoryItems = selectedCategoryId ? getItemsByCategory(selectedCategoryId) : [];
 
   const restorePreview = useMemo(
-    () => backupBundle ? buildBackupRestorePreview(backupBundle, currentBackupState, restoreMode) : null,
+    () => (backupBundle ? buildBackupRestorePreview(backupBundle, currentBackupState, restoreMode) : null),
     [backupBundle, currentBackupState, restoreMode],
   );
-
-  const localRestorePreview = useMemo(
-    () => localRestoreBundle
-      ? buildBackupRestorePreview(localRestoreBundle, currentBackupState, localRestoreMode)
-      : null,
-    [localRestoreBundle, currentBackupState, localRestoreMode],
-  );
-
-  const buildFullBackupBundle = useCallback(() => ({
-    schemaVersion: 1,
-    exportedAt: new Date().toISOString(),
-    categories,
-    items,
-    wishlist,
-    activityLog,
-    contributors,
-    libraries,
-    settings: {
-      displayCurrency,
-      theme,
-      sidebarOpen,
-      menuCollectionStyle,
-      dashboardWidgets,
-      readNotificationIds,
-      notifications,
-    },
-  }), [
-    categories,
-    items,
-    wishlist,
-    activityLog,
-    contributors,
-    libraries,
-    displayCurrency,
-    theme,
-    sidebarOpen,
-    menuCollectionStyle,
-    dashboardWidgets,
-    readNotificationIds,
-    notifications,
-  ]);
-
-  const refreshLocalSyncStatus = useCallback(async () => {
-    const api = getDesktopLocalSyncApi();
-    if (!api) {
-      setLocalSyncStatus(null);
-      return null;
-    }
-
-    setIsLocalStatusLoading(true);
-    try {
-      const status = await api.getStatus();
-      setLocalSyncStatus(status);
-      return status;
-    } catch (error) {
-      toast.error('Failed to read local sync status', {
-        description: error instanceof Error ? error.message : 'Desktop local sync is unavailable.',
-      });
-      return null;
-    } finally {
-      setIsLocalStatusLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!localSyncAvailable) return;
-    void refreshLocalSyncStatus();
-  }, [localSyncAvailable, refreshLocalSyncStatus]);
 
   const logExportActivity = useCallback((details: string) => {
     logActivity({
@@ -326,144 +185,129 @@ export function ImportExportPanel({
   }, [logActivity]);
 
   function handleFullCSV() {
-    exportService.exportToCSV(items, categories);
+    exportService.exportToCSV(items, categories, undefined, { delimiter: csvDelimiter });
     logExportActivity('CSV export of full collection');
-    toast.success('CSV export downloaded', {
-      description: `Exported ${items.length} items across all categories.`,
+    toast.success(t('data.export.csvDone'), {
+      description: t('data.export.allItems', { count: items.length }),
     });
   }
 
   function handleFullJSON() {
     exportService.exportToJSON(items);
     logExportActivity('JSON export of full collection');
-    toast.success('JSON export downloaded', {
-      description: `Exported ${items.length} items across all categories.`,
+    toast.success(t('data.export.jsonDone'), {
+      description: t('data.export.allItems', { count: items.length }),
     });
   }
-
-  const downloadFullBackup = useCallback((filename?: string) => {
-    const bundle = buildFullBackupBundle();
-    exportService.exportBackupBundle({
-      categories: bundle.categories,
-      items: bundle.items,
-      wishlist: bundle.wishlist,
-      activityLog: bundle.activityLog,
-      contributors: bundle.contributors,
-      libraries: bundle.libraries,
-      settings: bundle.settings!,
-    }, filename);
-  }, [buildFullBackupBundle]);
 
   function handleFullBackup() {
     downloadFullBackup();
     logExportActivity('Full JSON backup bundle');
-    toast.success('Backup bundle downloaded');
+    toast.success(t('data.export.backupDone'));
   }
 
   function handlePreRestoreBackup() {
-    downloadFullBackup(`collectvault-pre-restore-${Date.now()}.json`);
+    downloadFullBackup(`curio-pre-restore-${Date.now()}.json`);
     setPreRestoreBackupDownloaded(true);
-    toast.success('Current backup downloaded', {
-      description: 'Replace restore is now unlocked for this preview.',
+    toast.success(t('data.restore.backupDownloaded'), {
+      description: t('data.restore.replaceUnlocked'),
     });
   }
 
   function handleCategoryCSV() {
     if (!selectedCategory) return;
-    exportService.exportCategoryToCSV(selectedCategoryItems, selectedCategory);
+    exportService.exportCategoryToCSV(selectedCategoryItems, selectedCategory, undefined, { delimiter: csvDelimiter });
     logExportActivity(`CSV export of ${selectedCategory.name}`);
-    toast.success('CSV export downloaded', {
-      description: `Exported ${selectedCategoryItems.length} items from ${selectedCategory.name}.`,
+    toast.success(t('data.export.csvDone'), {
+      description: t('data.export.categoryItems', { count: selectedCategoryItems.length, category: selectedCategory.name }),
     });
   }
 
   function handleCategoryJSON() {
     if (!selectedCategory) return;
-    exportService.exportToJSON(
-      selectedCategoryItems,
-      buildTimestampedExportName(selectedCategory.slug),
-    );
+    exportService.exportToJSON(selectedCategoryItems, buildTimestampedExportName(selectedCategory.slug));
     logExportActivity(`JSON export of ${selectedCategory.name}`);
-    toast.success('JSON export downloaded', {
-      description: `Exported ${selectedCategoryItems.length} items from ${selectedCategory.name}.`,
+    toast.success(t('data.export.jsonDone'), {
+      description: t('data.export.categoryItems', { count: selectedCategoryItems.length, category: selectedCategory.name }),
     });
   }
 
-  const handleJsonFile = useCallback(
-    (file: File) => {
-      setJsonFileName(file.name);
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const parsed = JSON.parse(e.target?.result as string);
-          if (isBackupBundle(parsed)) {
-            const preview = buildBackupRestorePreview(parsed, currentBackupState, restoreMode);
-            setBackupBundle(parsed);
-            setPreRestoreBackupDownloaded(false);
-            setJsonItems([]);
-            setJsonPreview(null);
-
-            if (preview.errors.length > 0) {
-              toast.error('Backup cannot be restored', {
-                description: preview.errors[0],
-              });
-            } else {
-              toast.success('Backup preview ready', {
-                description: `${preview.incomingCounts.items} items, ${preview.incomingCounts.categories} categories detected.`,
-              });
-            }
-            return;
-          }
-
-          if (!Array.isArray(parsed)) {
-            toast.error('Invalid JSON', { description: 'Expected an array of items.' });
-            return;
-          }
-
-          setBackupBundle(null);
+  const handleJsonFile = useCallback((file: File) => {
+    setJsonFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const parsed: unknown = JSON.parse(String(event.target?.result ?? ''));
+        if (isBackupBundle(parsed)) {
+          const preview = buildBackupRestorePreview(parsed, currentBackupState, restoreMode);
+          setBackupBundle(parsed);
           setPreRestoreBackupDownloaded(false);
+          setJsonItems([]);
+          setJsonPreview(null);
 
-          const validCategoryIds = new Set(categories.map((c) => c.id));
-          const valid = parsed.filter(
-            (entry: Record<string, unknown>) =>
-              typeof entry.title === 'string' &&
-              entry.title.trim() !== '' &&
-              typeof entry.categoryId === 'string' &&
-              validCategoryIds.has(entry.categoryId as string),
-          );
-
-          const byCategory: Record<string, number> = {};
-          for (const item of valid) {
-            const catName = getCategoryById(item.categoryId as string)?.name ?? 'Unknown';
-            byCategory[catName] = (byCategory[catName] ?? 0) + 1;
-          }
-
-          setJsonItems(valid);
-          setJsonPreview({ count: valid.length, byCategory });
-
-          if (valid.length < parsed.length) {
-            toast.warning(`${parsed.length - valid.length} entries skipped`, {
-              description: 'Missing required title or invalid categoryId.',
+          if (preview.errors.length > 0) {
+            toast.error(t('data.restore.cannotRestore'), { description: preview.errors[0] });
+          } else {
+            toast.success(t('data.restore.previewReady'), {
+              description: t('data.restore.previewReadyHint', {
+                items: preview.incomingCounts.items,
+                categories: preview.incomingCounts.categories,
+              }),
             });
           }
-        } catch {
-          toast.error('Failed to parse JSON file');
+          return;
         }
-      };
-      reader.readAsText(file);
-    },
-    [categories, getCategoryById, currentBackupState, restoreMode],
-  );
+
+        if (!Array.isArray(parsed)) {
+          toast.error(t('data.json.invalid'), { description: t('data.json.expectedArray') });
+          return;
+        }
+
+        setBackupBundle(null);
+        setPreRestoreBackupDownloaded(false);
+
+        const validCategoryIds = new Set(categories.map((c) => c.id));
+        const valid = (parsed as Record<string, unknown>[]).filter(
+          (entry) =>
+            entry !== null
+            && typeof entry === 'object'
+            && typeof entry.title === 'string'
+            && entry.title.trim() !== ''
+            && typeof entry.categoryId === 'string'
+            && validCategoryIds.has(entry.categoryId),
+        ) as Partial<CollectionItem>[];
+
+        const byCategory: Record<string, number> = {};
+        for (const item of valid) {
+          const catName = getCategoryById(item.categoryId as string)?.name ?? t('data.json.unknownCategory');
+          byCategory[catName] = (byCategory[catName] ?? 0) + 1;
+        }
+
+        setJsonItems(valid);
+        setJsonPreview({ count: valid.length, byCategory });
+
+        if (valid.length < parsed.length) {
+          toast.warning(t('data.json.skipped', { count: parsed.length - valid.length }), {
+            description: t('data.json.skippedHint'),
+          });
+        }
+      } catch {
+        toast.error(t('data.json.parseFailed'));
+      }
+    };
+    reader.onerror = () => toast.error(t('data.json.parseFailed'));
+    reader.readAsText(file);
+  }, [categories, getCategoryById, currentBackupState, restoreMode, t]);
 
   const handleRestoreBackup = useCallback(async () => {
     if (!backupBundle || !restorePreview?.canRestore) return;
     if (!canRestoreBackups) {
-      toast.error('Only admins can restore backups');
+      toast.error(t('data.restore.adminOnly'));
       return;
     }
     if (restoreMode === 'replace' && !preRestoreBackupDownloaded) {
-      toast.error('Download a current backup first', {
-        description: 'Replace restore is destructive, so a fresh safety backup is required.',
+      toast.error(t('data.restore.downloadFirstToast'), {
+        description: t('data.restore.downloadFirstHint'),
       });
       return;
     }
@@ -471,16 +315,18 @@ export function ImportExportPanel({
     setIsRestoring(true);
     try {
       await restoreBackupBundle(backupBundle, restoreMode);
-      toast.success(restoreMode === 'replace' ? 'Backup restored' : 'Backup merged', {
-        description: restoreMode === 'replace'
-          ? 'Your local and Firestore collection data now match the backup.'
-          : 'Backup records were merged into your current collection.',
+      toast.success(t(restoreMode === 'replace' ? 'data.restore.restored' : 'data.restore.merged'), {
+        description: t(restoreMode === 'replace' ? 'data.restore.restoredHint' : 'data.restore.mergedHint'),
       });
       setBackupBundle(null);
       setJsonFileName('');
       setRestoreConfirmOpen(false);
       setPreRestoreBackupDownloaded(false);
       if (jsonInputRef.current) jsonInputRef.current.value = '';
+    } catch (error) {
+      toast.error(t('data.restore.failed'), {
+        description: errorMessage(error, t('data.restore.failedHint')),
+      });
     } finally {
       setIsRestoring(false);
     }
@@ -491,6 +337,7 @@ export function ImportExportPanel({
     restoreMode,
     preRestoreBackupDownloaded,
     restoreBackupBundle,
+    t,
   ]);
 
   const handleJsonImport = useCallback(() => {
@@ -502,215 +349,70 @@ export function ImportExportPanel({
       ),
     );
     const count = bulkAddItems(mapped);
-    toast.success(`Imported ${count} items`, { description: 'Items have been added to your collection.' });
+    toast.success(t('data.import.success', { count }), { description: t('data.import.successHint') });
     setJsonPreview(null);
     setJsonItems([]);
     setJsonFileName('');
     if (jsonInputRef.current) jsonInputRef.current.value = '';
-  }, [jsonItems, bulkAddItems, currentContributorId]);
+  }, [jsonItems, bulkAddItems, currentContributorId, t]);
 
-  const handleCsvFile = useCallback((file: File) => {
-    setCsvFileName(file.name);
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const text = e.target?.result as string;
-      const parsed = parseCSV(text);
-      if (parsed.headers.length === 0) {
-        toast.error('Empty or invalid CSV file');
-        return;
-      }
-      setCsvData(parsed);
-    };
-    reader.readAsText(file);
-  }, []);
+  const categoryOptions = categories.map((cat) => (
+    <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+  ));
 
-  const csvMappingPreview = useMemo(() => {
-    if (!csvData || !selectedCsvCategory) return null;
-    const mapping = buildAutoCsvMapping(csvData.headers, selectedCsvCategory);
-    const preview = buildCsvImportPreview(csvData.headers, csvData.rows, selectedCsvCategory, mapping);
-    return { mapping, preview };
-  }, [csvData, selectedCsvCategory]);
-  const csvImportableCount = useMemo(
-    () => csvMappingPreview?.preview.filter((row) => row.canImport).length ?? 0,
-    [csvMappingPreview],
-  );
-  const csvIssueCount = useMemo(
-    () => csvMappingPreview?.preview.reduce((sum, row) => sum + row.issues.length, 0) ?? 0,
-    [csvMappingPreview],
-  );
+  const eyebrowClass = 'text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground';
 
-  const handleCsvImport = useCallback(() => {
-    if (!csvData || !selectedCsvCategory || !csvMappingPreview) return;
-
-    if (!csvMappingPreview.mapping.builtInFields.title) {
-      toast.error('No title column found', { description: 'CSV must have a column matching "title" or "name".' });
-      return;
-    }
-
-    const importableRows = csvMappingPreview.preview.filter((row) => row.canImport);
-    const mapped = importableRows.map((row) => buildItemFromCsvPreviewRow(
-      row,
-      csvData.headers,
-      csvData.rows[row.rowIndex],
-      csvMappingPreview.mapping,
-      currentContributorId,
-    ));
-
-    const count = bulkAddItems(mapped);
-    const skipped = csvMappingPreview.preview.length - count;
-    toast.success(`Imported ${count} items`, {
-      description: skipped > 0
-        ? `${skipped} row${skipped > 1 ? 's were' : ' was'} skipped due to validation issues.`
-        : 'Items have been added to your collection.',
-    });
-    setCsvData(null);
-    setCsvCategoryId('');
-    setCsvFileName('');
-    if (csvInputRef.current) csvInputRef.current.value = '';
-  }, [csvData, selectedCsvCategory, csvMappingPreview, bulkAddItems, currentContributorId]);
-
-  const handleLocalSync = useCallback(async () => {
-    const api = getDesktopLocalSyncApi();
-    if (!api) {
-      toast.error('Desktop app required', {
-        description: 'Local sync can only write to disk from the desktop app.',
-      });
-      return;
-    }
-
-    setIsLocalSyncing(true);
-    try {
-      const status = await api.syncSnapshot(buildFullBackupBundle());
-      setLocalSyncStatus(status);
-      setLocalRestoreBundle(null);
-      logExportActivity('Desktop local sync snapshot');
-      toast.success('Local copy updated', {
-        description: `${status.counts?.items ?? items.length} items saved to ${status.path}`,
-      });
-      if (status.failedAssets.length > 0) {
-        toast.warning(`${status.failedAssets.length} asset${status.failedAssets.length === 1 ? '' : 's'} could not be copied`, {
-          description: 'The data snapshot was saved, but a few remote files still need internet access.',
-        });
-      }
-    } catch (error) {
-      toast.error('Local sync failed', {
-        description: error instanceof Error ? error.message : 'Unable to write the local desktop copy.',
-      });
-    } finally {
-      setIsLocalSyncing(false);
-    }
-  }, [buildFullBackupBundle, items.length, logExportActivity]);
-
-  const handleOpenLocalSyncFolder = useCallback(async () => {
-    const api = getDesktopLocalSyncApi();
-    if (!api) return;
-
-    try {
-      await api.openFolder();
-    } catch (error) {
-      toast.error('Could not open local folder', {
-        description: error instanceof Error ? error.message : 'The folder could not be opened.',
-      });
-    }
-  }, []);
-
-  const handleLoadLocalSnapshot = useCallback(async () => {
-    const api = getDesktopLocalSyncApi();
-    if (!api) {
-      toast.error('Desktop app required');
-      return;
-    }
-
-    try {
-      const snapshot = await api.restoreSnapshot();
-      if (!isBackupBundle(snapshot)) {
-        toast.error('Local copy is invalid', {
-          description: 'The saved desktop copy is not a valid ESC backup file.',
-        });
-        return;
-      }
-
-      const preview = buildBackupRestorePreview(snapshot, currentBackupState, localRestoreMode);
-      setLocalRestoreBundle(snapshot);
-      setLocalPreRestoreBackupDownloaded(false);
-
-      if (preview.errors.length > 0) {
-        toast.error('Local copy cannot be restored', {
-          description: preview.errors[0],
-        });
-      } else {
-        toast.success('Local copy loaded', {
-          description: `${preview.incomingCounts.items} items and ${preview.incomingCounts.categories} categories are ready to restore.`,
-        });
-      }
-    } catch (error) {
-      toast.error('No local copy found', {
-        description: error instanceof Error ? error.message : 'Run Sync With Local first.',
-      });
-    }
-  }, [currentBackupState, localRestoreMode]);
-
-  const handleLocalPreRestoreBackup = useCallback(() => {
-    downloadFullBackup(`collectvault-pre-local-restore-${Date.now()}.json`);
-    setLocalPreRestoreBackupDownloaded(true);
-    toast.success('Current backup downloaded', {
-      description: 'Replace restore is now unlocked for the local copy.',
-    });
-  }, [downloadFullBackup]);
-
-  const handleLocalRestore = useCallback(async () => {
-    if (!localRestoreBundle || !localRestorePreview?.canRestore) return;
-    if (!canRestoreBackups) {
-      toast.error('Only admins can restore backups');
-      return;
-    }
-    if (localRestoreMode === 'replace' && !localPreRestoreBackupDownloaded) {
-      toast.error('Download a current backup first', {
-        description: 'Replace restore is destructive, so a fresh safety backup is required.',
-      });
-      return;
-    }
-
-    setIsLocalRestoring(true);
-    try {
-      await restoreBackupBundle(localRestoreBundle, localRestoreMode);
-      toast.success(localRestoreMode === 'replace' ? 'Local copy restored' : 'Local copy merged', {
-        description: localRestoreMode === 'replace'
-          ? 'Your collection now matches the desktop local copy.'
-          : 'Desktop local copy records were merged into your current collection.',
-      });
-      setLocalRestoreConfirmOpen(false);
-      setLocalPreRestoreBackupDownloaded(false);
-      setLocalRestoreBundle(null);
-      await refreshLocalSyncStatus();
-    } finally {
-      setIsLocalRestoring(false);
-    }
-  }, [
-    localRestoreBundle,
-    localRestorePreview,
-    canRestoreBackups,
-    localRestoreMode,
-    localPreRestoreBackupDownloaded,
-    restoreBackupBundle,
-    refreshLocalSyncStatus,
-  ]);
-
-  const handleDrop = useCallback(
-    (e: React.DragEvent<HTMLDivElement>, type: 'json' | 'csv') => {
-      e.preventDefault();
-      const file = e.dataTransfer.files[0];
-      if (!file) return;
-      if (type === 'json') handleJsonFile(file);
-      else handleCsvFile(file);
+  const toolRows: {
+    key: string;
+    icon: typeof FileText;
+    title: string;
+    hint: string;
+    action: ReactNode;
+  }[] = [
+    ...(isAdmin
+      ? [
+          {
+            key: 'report',
+            icon: FileText,
+            title: t('data.tools.report'),
+            hint: t('data.tools.reportHint'),
+            action: (
+              <Button asChild variant="outline" size="sm" className="shrink-0">
+                <Link to="/admin/print-labels?mode=report&from=settings">{t('data.tools.reportOpen')}</Link>
+              </Button>
+            ),
+          },
+          {
+            key: 'labels',
+            icon: Printer,
+            title: t('data.tools.labels'),
+            hint: t('data.tools.labelsHint'),
+            action: (
+              <Button asChild variant="outline" size="sm" className="shrink-0">
+                <Link to="/admin/print-labels?from=settings">{t('data.tools.labelsOpen')}</Link>
+              </Button>
+            ),
+          },
+        ]
+      : []),
+    {
+      key: 'tags',
+      icon: Tags,
+      title: t('data.tools.tags'),
+      hint: t('data.tools.tagsHint'),
+      action: (
+        <Button
+          variant="outline"
+          size="sm"
+          className="shrink-0"
+          disabled={!canEditTags}
+          onClick={() => setTagManagerOpen(true)}
+        >
+          {t('data.tools.tagsOpen')}
+        </Button>
+      ),
     },
-    [handleJsonFile, handleCsvFile],
-  );
-
-  const preventDefaults = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-  }, []);
+  ];
 
   return (
     <div className={className}>
@@ -718,104 +420,101 @@ export function ImportExportPanel({
         <TabsList>
           <TabsTrigger value="export">
             <Download className="mr-2 size-4" />
-            Export
+            {t('data.tab.export')}
           </TabsTrigger>
           <TabsTrigger value="import">
             <Upload className="mr-2 size-4" />
-            Import
+            {t('data.tab.import')}
           </TabsTrigger>
           <TabsTrigger
             value="local-sync"
             disabled={!localSyncAvailable}
-            title={localSyncAvailable ? undefined : 'Available in the desktop app only'}
+            title={localSyncAvailable ? undefined : t('data.tab.localDisabled')}
           >
             <HardDrive className="mr-2 size-4" />
-            Sync With Local
+            {t('data.tab.local')}
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="export" className="space-y-6">
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <Card>
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <div className="rounded-xl bg-primary/10 p-3">
-                    <Package className="size-6 text-primary" />
-                  </div>
-                  <div className="space-y-1">
-                    <CardTitle>Full Collection Export</CardTitle>
-                    <CardDescription>
-                      Export all items across all categories
-                    </CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
+              <PanelCardHeader
+                icon={Package}
+                title={t('data.export.fullTitle')}
+                description={t('data.export.fullDescription')}
+              />
               <CardContent className="space-y-4">
-                <div className="flex items-center gap-4 text-sm">
+                <div className="flex flex-wrap items-center gap-4 text-sm">
                   <div className="flex items-center gap-1.5">
-                    <Badge variant="secondary">{formatNumber(items.length)}</Badge>
-                    <span className="text-muted-foreground">items</span>
+                    <Badge variant="secondary" className="tabular-nums">{formatNumber(items.length)}</Badge>
+                    <span className="text-muted-foreground">{t('data.export.itemsLabel')}</span>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <Badge variant="secondary">{formatCurrency(totalValue)}</Badge>
-                    <span className="text-muted-foreground">total value</span>
+                    <Badge variant="secondary" className="tabular-nums">{formatCurrency(totalValue, displayCurrency)}</Badge>
+                    <span className="text-muted-foreground">{t('data.export.totalValueLabel')}</span>
                   </div>
                 </div>
 
                 <Separator />
 
+                <div className="space-y-2">
+                  <Label htmlFor="csv-export-delimiter" className={eyebrowClass}>
+                    {t('data.export.separator')}
+                  </Label>
+                  <Select value={csvDelimiter} onValueChange={(next) => setCsvDelimiter(next as CsvExportDelimiter)}>
+                    <SelectTrigger id="csv-export-delimiter">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value=",">{t('data.export.separatorComma')}</SelectItem>
+                      <SelectItem value=";">{t('data.export.separatorSemicolon')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">{t('data.export.separatorHint')}</p>
+                </div>
+
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <Button className="flex-1" onClick={handleFullCSV}>
                     <FileSpreadsheet className="size-4" />
-                    Export as CSV
+                    {t('data.export.asCsv')}
                   </Button>
                   <Button variant="outline" className="flex-1" onClick={handleFullJSON}>
                     <FileJson className="size-4" />
-                    Export as JSON
+                    {t('data.export.asJson')}
                   </Button>
                 </div>
                 <Button variant="secondary" className="w-full" onClick={handleFullBackup}>
                   <Download className="size-4" />
-                  Download Full Backup Bundle
+                  {t('data.export.backup')}
                 </Button>
               </CardContent>
             </Card>
 
             <Card>
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <div className="rounded-xl bg-primary/10 p-3">
-                    <FolderOpen className="size-6 text-primary" />
-                  </div>
-                  <div className="space-y-1">
-                    <CardTitle>Export by Category</CardTitle>
-                    <CardDescription>
-                      Export items from a specific category
-                    </CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
+              <PanelCardHeader
+                icon={FolderOpen}
+                title={t('data.export.categoryTitle')}
+                description={t('data.export.categoryDescription')}
+              />
               <CardContent className="space-y-4">
-                <Select value={selectedCategoryId} onValueChange={setSelectedCategoryId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categories.map((cat) => (
-                      <SelectItem key={cat.id} value={cat.id}>
-                        {cat.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="space-y-2">
+                  <Label htmlFor="export-category" className={eyebrowClass}>
+                    {t('data.export.category')}
+                  </Label>
+                  <Select value={selectedCategoryId} onValueChange={setSelectedCategoryId}>
+                    <SelectTrigger id="export-category">
+                      <SelectValue placeholder={t('data.selectCategory')} />
+                    </SelectTrigger>
+                    <SelectContent>{categoryOptions}</SelectContent>
+                  </Select>
+                </div>
 
                 {selectedCategory && (
                   <div className="flex items-center gap-1.5 text-sm">
-                    <Badge variant="secondary">
-                      {formatNumber(selectedCategoryItems.length)}
-                    </Badge>
+                    <Badge variant="secondary" className="tabular-nums">{formatNumber(selectedCategoryItems.length)}</Badge>
                     <span className="text-muted-foreground">
-                      items in {selectedCategory.name}
+                      {t('data.export.itemsInLabel', { count: selectedCategoryItems.length, category: selectedCategory.name })}
                     </span>
                   </div>
                 )}
@@ -829,7 +528,7 @@ export function ImportExportPanel({
                     onClick={handleCategoryCSV}
                   >
                     <FileSpreadsheet className="size-4" />
-                    Export as CSV
+                    {t('data.export.asCsv')}
                   </Button>
                   <Button
                     variant="outline"
@@ -838,7 +537,7 @@ export function ImportExportPanel({
                     onClick={handleCategoryJSON}
                   >
                     <FileJson className="size-4" />
-                    Export as JSON
+                    {t('data.export.asJson')}
                   </Button>
                 </div>
               </CardContent>
@@ -846,43 +545,56 @@ export function ImportExportPanel({
           </div>
 
           <Card>
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <div className="rounded-xl bg-primary/10 p-3">
-                  <Download className="size-6 text-primary" />
-                </div>
-                <div className="space-y-1">
-                  <CardTitle>What&apos;s Included</CardTitle>
-                  <CardDescription>
-                    Information about your exported data
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
+            <PanelCardHeader
+              icon={Wrench}
+              title={t('data.tools.title')}
+              description={t('data.tools.description')}
+            />
+            <CardContent>
+              <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {toolRows.map((row) => {
+                  const Icon = row.icon;
+                  return (
+                    <li
+                      key={row.key}
+                      className="flex flex-col justify-between gap-4 rounded-xl border bg-muted/30 p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-muted/50"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="shrink-0 rounded-lg bg-primary/10 p-2">
+                          <Icon className="size-4 text-primary" aria-hidden="true" />
+                        </div>
+                        <div className="min-w-0 space-y-1">
+                          <p className="text-sm font-semibold">{row.title}</p>
+                          <p className="text-xs leading-5 text-muted-foreground">{row.hint}</p>
+                        </div>
+                      </div>
+                      <div className="flex justify-end">{row.action}</div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <PanelCardHeader
+              icon={Download}
+              title={t('data.included.title')}
+              description={t('data.included.description')}
+            />
             <CardContent className="space-y-4">
               <ul className="space-y-2 text-sm text-muted-foreground">
-                {[
-                  'Item titles, descriptions, and conditions',
-                  'Purchase prices, dates, and currencies',
-                  'Current valuations and gain/loss percentages',
-                  'Tags, notes, and location information',
-                  'Category-specific custom fields',
-                  'Favorite status and timestamps',
-                  'Full backup bundles include categories, libraries, wishlist, activity, contributors, and settings',
-                ].map((text) => (
-                  <li key={text} className="flex items-start gap-2">
-                    <Check className="mt-0.5 size-4 shrink-0 text-green-500" />
-                    {text}
+                {['fields', 'prices', 'values', 'tags', 'custom', 'favorites', 'backup'].map((key) => (
+                  <li key={key} className="flex items-start gap-2">
+                    <Check className="mt-0.5 size-4 shrink-0 text-green-500" aria-hidden="true" />
+                    {t(`data.included.${key}`)}
                   </li>
                 ))}
               </ul>
 
               <Separator />
 
-              <p className="text-xs text-muted-foreground">
-                Your data is exported directly to your device. No data is sent to
-                external servers during the export process.
-              </p>
+              <p className="text-xs text-muted-foreground">{t('data.included.local')}</p>
             </CardContent>
           </Card>
         </TabsContent>
@@ -890,517 +602,144 @@ export function ImportExportPanel({
         <TabsContent value="import" className="space-y-6">
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <Card>
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <div className="rounded-xl bg-primary/10 p-3">
-                    <FileJson className="size-6 text-primary" />
-                  </div>
-                  <div className="space-y-1">
-                    <CardTitle>Import JSON</CardTitle>
-                    <CardDescription>
-                      Import a JSON array of collection items
-                    </CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
+              <PanelCardHeader
+                icon={FileJson}
+                title={t('data.json.title')}
+                description={t('data.json.description')}
+              />
               <CardContent className="space-y-4">
                 <input
                   ref={jsonInputRef}
                   type="file"
                   accept=".json"
                   className="hidden"
+                  aria-label={t('data.json.chooseFile')}
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) handleJsonFile(file);
                   }}
                 />
 
-                <div
-                  className="flex cursor-pointer flex-col items-center gap-3 rounded-lg border-2 border-dashed border-muted-foreground/25 p-8 transition-colors hover:border-primary/50 hover:bg-muted/50"
+                <button
+                  type="button"
+                  className="flex w-full cursor-pointer flex-col items-center gap-3 rounded-lg border-2 border-dashed border-muted-foreground/25 p-8 text-center transition-colors hover:border-primary/50 hover:bg-muted/50"
                   onClick={() => jsonInputRef.current?.click()}
-                  onDrop={(e) => handleDrop(e, 'json')}
-                  onDragOver={preventDefaults}
-                  onDragEnter={preventDefaults}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    const file = event.dataTransfer.files[0];
+                    if (file) handleJsonFile(file);
+                  }}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDragEnter={(event) => event.preventDefault()}
                 >
-                  <FileUp className="size-8 text-muted-foreground" />
-                  <div className="text-center">
-                    <p className="text-sm font-medium">
-                      {jsonFileName || 'Drop a .json file here or click to browse'}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Accepts JSON arrays of collection items
-                    </p>
-                  </div>
-                </div>
+                  <FileUp className="size-8 text-muted-foreground" aria-hidden="true" />
+                  <span className="space-y-0.5">
+                    <span className="block text-sm font-medium">{jsonFileName || t('data.json.drop')}</span>
+                    <span className="block text-xs text-muted-foreground">{t('data.json.dropHint')}</span>
+                  </span>
+                </button>
 
                 {jsonPreview && (
-                  <div className="space-y-3 rounded-lg border bg-muted/30 p-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium">Preview</span>
-                      <Badge variant="secondary">{jsonPreview.count} items found</Badge>
+                  <section className="space-y-3 rounded-lg border bg-muted/30 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="text-sm font-medium">{t('data.json.preview')}</h3>
+                      <Badge variant="secondary" className="tabular-nums">
+                        {t('data.json.found', { count: jsonPreview.count })}
+                      </Badge>
                     </div>
                     <Separator />
-                    <div className="space-y-1">
+                    <ul className="space-y-1">
                       {Object.entries(jsonPreview.byCategory).map(([cat, count]) => (
-                        <div key={cat} className="flex items-center justify-between text-sm">
+                        <li key={cat} className="flex items-center justify-between text-sm">
                           <span className="text-muted-foreground">{cat}</span>
-                          <Badge variant="outline" className="text-xs">
-                            {count}
-                          </Badge>
-                        </div>
+                          <Badge variant="outline" className="text-xs tabular-nums">{formatNumber(count)}</Badge>
+                        </li>
                       ))}
-                    </div>
-                  </div>
+                    </ul>
+                  </section>
                 )}
 
                 {restorePreview && (
-                  <div className="space-y-4 rounded-lg border bg-muted/30 p-4">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <ShieldCheck className="size-4 text-primary" />
-                          <span className="text-sm font-medium">Full Backup Restore Preview</span>
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          {restorePreview.exportedAt
-                            ? `Exported ${new Date(restorePreview.exportedAt).toLocaleString()}`
-                            : 'Backup export date not available'}
-                        </p>
-                      </div>
-                      <Badge variant={restorePreview.errors.length > 0 ? 'destructive' : 'secondary'}>
-                        Schema v{restorePreview.schemaVersion ?? 'unknown'}
-                      </Badge>
-                    </div>
-
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setRestoreMode('merge');
-                          setPreRestoreBackupDownloaded(false);
-                        }}
-                        className={`rounded-lg border p-3 text-left transition-colors ${restoreMode === 'merge' ? 'border-primary bg-primary/10' : 'hover:bg-background'}`}
-                      >
-                        <span className="flex items-center gap-2 text-sm font-medium">
-                          <GitMerge className="size-4" />
-                          Merge
-                        </span>
-                        <span className="mt-1 block text-xs text-muted-foreground">
-                          Adds backup data and overwrites same-ID conflicts with backup versions.
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setRestoreMode('replace');
-                          setPreRestoreBackupDownloaded(false);
-                        }}
-                        className={`rounded-lg border p-3 text-left transition-colors ${restoreMode === 'replace' ? 'border-destructive bg-destructive/10' : 'hover:bg-background'}`}
-                      >
-                        <span className="flex items-center gap-2 text-sm font-medium">
-                          <RotateCcw className="size-4" />
-                          Replace All
-                        </span>
-                        <span className="mt-1 block text-xs text-muted-foreground">
-                          Replaces local data and Firestore data with this backup.
-                        </span>
-                      </button>
-                    </div>
-
-                    <div className="grid gap-2 text-xs sm:grid-cols-3">
-                      <div className="rounded-md bg-background px-3 py-2">
-                        <span className="text-muted-foreground">Current</span>
-                        <p className="mt-1 font-medium">
-                          {restorePreview.currentCounts.items} items, {restorePreview.currentCounts.categories} categories
-                        </p>
-                      </div>
-                      <div className="rounded-md bg-background px-3 py-2">
-                        <span className="text-muted-foreground">Backup</span>
-                        <p className="mt-1 font-medium">
-                          {restorePreview.incomingCounts.items} items, {restorePreview.incomingCounts.categories} categories
-                        </p>
-                      </div>
-                      <div className="rounded-md bg-background px-3 py-2">
-                        <span className="text-muted-foreground">After Restore</span>
-                        <p className="mt-1 font-medium">
-                          {restorePreview.resultCounts.items} items, {restorePreview.resultCounts.categories} categories
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="grid gap-2 text-xs sm:grid-cols-3">
-                      <div className="rounded-md bg-background px-3 py-2">
-                        <span className="text-muted-foreground">Wishlist</span>
-                        <p className="mt-1 font-medium">
-                          {restorePreview.resultCounts.wishlist} after restore
-                        </p>
-                      </div>
-                      <div className="rounded-md bg-background px-3 py-2">
-                        <span className="text-muted-foreground">Activity</span>
-                        <p className="mt-1 font-medium">
-                          {restorePreview.resultCounts.activityLog} entries
-                        </p>
-                      </div>
-                      <div className="rounded-md bg-background px-3 py-2">
-                        <span className="text-muted-foreground">Conflicts</span>
-                        <p className="mt-1 font-medium">
-                          {restorePreview.conflicts.length} same-ID conflict{restorePreview.conflicts.length === 1 ? '' : 's'}
-                        </p>
-                      </div>
-                    </div>
-
-                    {(restorePreview.errors.length > 0 || restorePreview.warnings.length > 0) && (
-                      <div className="space-y-1">
-                        {[...restorePreview.errors, ...restorePreview.warnings].slice(0, 4).map((message) => (
-                          <div key={message} className="flex items-start gap-2 text-xs text-muted-foreground">
-                            <AlertCircle className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
-                            <span>{message}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {restorePreview.conflicts.length > 0 && (
-                      <div className="space-y-1">
-                        <p className="text-xs font-medium">Conflict Summary</p>
-                        {restorePreview.conflicts.slice(0, 5).map((conflict) => (
-                          <div key={`${conflict.collection}-${conflict.id}`} className="flex items-center justify-between gap-3 rounded-md bg-background px-3 py-1.5 text-xs">
-                            <span className="truncate">{conflict.label}</span>
-                            <Badge variant="outline" className="shrink-0 text-[10px]">
-                              {conflict.collection}
-                            </Badge>
-                          </div>
-                        ))}
-                        {restorePreview.conflicts.length > 5 && (
-                          <p className="text-xs text-muted-foreground">
-                            +{restorePreview.conflicts.length - 5} more conflicts
-                          </p>
-                        )}
-                      </div>
-                    )}
-
-                    {restorePreview.skipped.length > 0 && (
-                      <div className="space-y-1">
-                        <p className="text-xs font-medium">Skipped Report</p>
-                        {restorePreview.skipped.slice(0, 5).map((issue) => (
-                          <div key={`${issue.collection}-${issue.index}-${issue.id ?? issue.title}`} className="rounded-md bg-background px-3 py-1.5 text-xs">
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="truncate">{issue.title ?? issue.id ?? `Row ${issue.index}`}</span>
-                              <Badge variant="outline" className="shrink-0 text-[10px]">
-                                {issue.collection}
-                              </Badge>
-                            </div>
-                            <p className="mt-0.5 text-muted-foreground">{issue.reason}</p>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {restoreMode === 'replace' && (
-                      <div className="space-y-2 rounded-md border border-destructive/25 bg-destructive/5 p-3">
-                        <p className="text-xs text-muted-foreground">
-                          Replace mode is destructive. Download a fresh backup of the current state before continuing.
-                        </p>
-                        <Button variant="outline" className="w-full" onClick={handlePreRestoreBackup}>
-                          <Download className="size-4" />
-                          {preRestoreBackupDownloaded ? 'Current Backup Downloaded' : 'Download Current Backup First'}
-                        </Button>
-                      </div>
-                    )}
-
-                    <Button
-                      className="w-full"
-                      variant={restoreMode === 'replace' ? 'destructive' : 'default'}
-                      disabled={
-                        !restorePreview.canRestore
-                        || !canRestoreBackups
-                        || isRestoring
-                        || (restoreMode === 'replace' && !preRestoreBackupDownloaded)
-                      }
-                      onClick={() => setRestoreConfirmOpen(true)}
-                    >
-                      <Upload className="size-4" />
-                      {isRestoring
-                        ? 'Restoring...'
-                        : restoreMode === 'replace'
-                          ? 'Restore and Replace All'
-                          : 'Merge Backup'}
-                    </Button>
-                  </div>
+                  <RestorePreview
+                    source="file"
+                    preview={restorePreview}
+                    mode={restoreMode}
+                    onModeChange={(mode) => {
+                      setRestoreMode(mode);
+                      setPreRestoreBackupDownloaded(false);
+                    }}
+                    safetyBackupDownloaded={preRestoreBackupDownloaded}
+                    onDownloadSafetyBackup={handlePreRestoreBackup}
+                    canRestore={canRestoreBackups}
+                    isRestoring={isRestoring}
+                    onRestore={() => setRestoreConfirmOpen(true)}
+                  />
                 )}
 
-                <Button
-                  className="w-full"
-                  disabled={jsonItems.length === 0 || backupBundle !== null}
-                  onClick={handleJsonImport}
-                >
-                  <Upload className="size-4" />
-                  Import {jsonItems.length > 0 ? `${jsonItems.length} Items` : ''}
-                </Button>
+                {!backupBundle && (
+                  <Button
+                    className="w-full"
+                    disabled={jsonItems.length === 0}
+                    onClick={handleJsonImport}
+                  >
+                    <Upload className="size-4" />
+                    {jsonItems.length > 0 ? t('data.import.importCount', { count: jsonItems.length }) : t('data.import.import')}
+                  </Button>
+                )}
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <div className="rounded-xl bg-primary/10 p-3">
-                    <FileSpreadsheet className="size-6 text-primary" />
-                  </div>
-                  <div className="space-y-1">
-                    <CardTitle>Import CSV</CardTitle>
-                    <CardDescription>
-                      Import items from a CSV spreadsheet
-                    </CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <input
-                  ref={csvInputRef}
-                  type="file"
-                  accept=".csv"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) handleCsvFile(file);
-                  }}
-                />
-
-                <div
-                  className="flex cursor-pointer flex-col items-center gap-3 rounded-lg border-2 border-dashed border-muted-foreground/25 p-8 transition-colors hover:border-primary/50 hover:bg-muted/50"
-                  onClick={() => csvInputRef.current?.click()}
-                  onDrop={(e) => handleDrop(e, 'csv')}
-                  onDragOver={preventDefaults}
-                  onDragEnter={preventDefaults}
-                >
-                  <FileUp className="size-8 text-muted-foreground" />
-                  <div className="text-center">
-                    <p className="text-sm font-medium">
-                      {csvFileName || 'Drop a .csv file here or click to browse'}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      First row should contain column headers
-                    </p>
-                  </div>
-                </div>
-
-                {csvData && (
-                  <div className="space-y-4 rounded-lg border bg-muted/30 p-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium">Preview</span>
-                      <Badge variant="secondary">{csvData.rows.length} rows</Badge>
-                    </div>
-
-                    <Separator />
-
-                    <div className="space-y-2">
-                      <Label className="text-xs text-muted-foreground">Detected Columns</Label>
-                      <div className="space-y-1">
-                        {csvData.headers.map((header, idx) => (
-                          <div key={idx} className="flex items-center justify-between rounded-md bg-background px-3 py-1.5 text-sm">
-                            <span className="font-medium">{header}</span>
-                            <span className="max-w-[50%] truncate text-xs text-muted-foreground">
-                              {csvData.rows[0]?.[idx] ?? '—'}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <Separator />
-
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Table2 className="size-3.5 text-muted-foreground" />
-                        <Label className="text-xs text-muted-foreground">
-                          First {Math.min(5, csvData.rows.length)} rows
-                        </Label>
-                      </div>
-                      <div className="overflow-x-auto rounded-md border">
-                        <table className="w-full text-xs">
-                          <thead>
-                            <tr className="border-b bg-muted/50">
-                              {csvData.headers.map((h, i) => (
-                                <th key={i} className="whitespace-nowrap px-3 py-2 text-left font-medium">
-                                  {h}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {csvData.rows.slice(0, 5).map((row, ri) => (
-                              <tr key={ri} className="border-b last:border-0">
-                                {row.map((cell, ci) => (
-                                  <td key={ci} className="max-w-[200px] truncate whitespace-nowrap px-3 py-1.5">
-                                    {cell || '—'}
-                                  </td>
-                                ))}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-
-                    <Separator />
-
-                    <div className="space-y-2">
-                      <Label>Assign to Category</Label>
-                      <Select value={csvCategoryId} onValueChange={setCsvCategoryId}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select a category" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {categories.map((cat) => (
-                            <SelectItem key={cat.id} value={cat.id}>
-                              {cat.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    {csvMappingPreview && (
-                      <>
-                        <Separator />
-
-                        <div className="space-y-3 rounded-md border bg-background p-3">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div>
-                              <p className="text-sm font-medium">Mapping Review</p>
-                              <p className="text-xs text-muted-foreground">
-                                {csvImportableCount} ready, {csvData.rows.length - csvImportableCount} skipped
-                              </p>
-                            </div>
-                            <Badge variant={csvIssueCount > 0 ? 'outline' : 'secondary'}>
-                              {csvIssueCount} issue{csvIssueCount === 1 ? '' : 's'}
-                            </Badge>
-                          </div>
-
-                          <div className="grid gap-2 text-xs sm:grid-cols-2">
-                            <div className="rounded-md bg-muted/40 px-3 py-2">
-                              <span className="text-muted-foreground">Title column</span>
-                              <p className="mt-1 font-medium">
-                                {csvMappingPreview.mapping.builtInFields.title ?? 'Not detected'}
-                              </p>
-                            </div>
-                            <div className="rounded-md bg-muted/40 px-3 py-2">
-                              <span className="text-muted-foreground">Custom fields</span>
-                              <p className="mt-1 font-medium">
-                                {Object.keys(csvMappingPreview.mapping.customFields).length} mapped
-                              </p>
-                            </div>
-                          </div>
-
-                          {csvIssueCount > 0 && (
-                            <div className="space-y-1">
-                              {csvMappingPreview.preview
-                                .flatMap((row) =>
-                                  row.issues.map((issue) => ({
-                                    ...issue,
-                                    rowNumber: row.rowIndex + 2,
-                                  })),
-                                )
-                                .slice(0, 4)
-                                .map((issue) => (
-                                  <div key={`${issue.rowNumber}-${issue.field}-${issue.message}`} className="flex items-start gap-2 text-xs text-muted-foreground">
-                                    <AlertCircle className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
-                                    <span>
-                                      Row {issue.rowNumber}: {issue.message}
-                                    </span>
-                                  </div>
-                                ))}
-                            </div>
-                          )}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
-
-                <Button
-                  className="w-full"
-                  disabled={!csvData || !csvCategoryId || csvImportableCount === 0}
-                  onClick={handleCsvImport}
-                >
-                  <Upload className="size-4" />
-                  Import {csvImportableCount > 0 ? `${csvImportableCount} Items` : ''}
-                </Button>
-              </CardContent>
-            </Card>
+            <CsvImportCard contributorId={currentContributorId} />
           </div>
 
           <Card>
-            <CardHeader>
-              <div className="flex items-center gap-3">
-                <div className="rounded-xl bg-primary/10 p-3">
-                  <Info className="size-6 text-primary" />
-                </div>
-                <div className="space-y-1">
-                  <CardTitle>Import Guidelines</CardTitle>
-                  <CardDescription>
-                    Tips for preparing your import files
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
+            <PanelCardHeader
+              icon={Info}
+              title={t('data.guide.title')}
+              description={t('data.guide.description')}
+            />
             <CardContent className="space-y-5">
-              <div className="space-y-3">
-                <h4 className="flex items-center gap-2 text-sm font-semibold">
-                  <FileJson className="size-4 text-primary" />
-                  JSON Format
-                </h4>
+              <section className="space-y-3">
+                <h3 className="flex items-center gap-2 text-sm font-semibold">
+                  <FileJson className="size-4 text-primary" aria-hidden="true" />
+                  {t('data.guide.json')}
+                </h3>
                 <ul className="space-y-1.5 pl-6 text-sm text-muted-foreground">
-                  {[
-                    'Item import files must contain a JSON array of objects',
-                    'Full backup files open a restore preview with merge and replace options',
-                    'Each object must have "title" (string) and "categoryId" (string)',
-                    'Optional fields: description, condition, tags, notes, purchaseInfo, valuationInfo',
-                    'categoryId must match an existing category in your collection',
-                  ].map((tip) => (
-                    <li key={tip} className="flex items-start gap-2">
-                      <Check className="mt-0.5 size-3.5 shrink-0 text-green-500" />
-                      {tip}
+                  {['array', 'backup', 'required', 'optional', 'category'].map((key) => (
+                    <li key={key} className="flex items-start gap-2">
+                      <Check className="mt-0.5 size-3.5 shrink-0 text-green-500" aria-hidden="true" />
+                      {t(`data.guide.json.${key}`)}
                     </li>
                   ))}
                 </ul>
-              </div>
+              </section>
 
               <Separator />
 
-              <div className="space-y-3">
-                <h4 className="flex items-center gap-2 text-sm font-semibold">
-                  <FileSpreadsheet className="size-4 text-primary" />
-                  CSV Format
-                </h4>
+              <section className="space-y-3">
+                <h3 className="flex items-center gap-2 text-sm font-semibold">
+                  <FileSpreadsheet className="size-4 text-primary" aria-hidden="true" />
+                  {t('data.guide.csv')}
+                </h3>
                 <ul className="space-y-1.5 pl-6 text-sm text-muted-foreground">
-                  {[
-                    'First row must contain column headers',
-                    'Use commas as column separators',
-                    'Include a "title" or "name" column (required)',
-                    'Optional columns: description, condition, price/cost/value',
-                    'Wrap values containing commas in double quotes',
-                  ].map((tip) => (
-                    <li key={tip} className="flex items-start gap-2">
-                      <Check className="mt-0.5 size-3.5 shrink-0 text-green-500" />
-                      {tip}
+                  {['headers', 'separator', 'title', 'mapping', 'encoding'].map((key) => (
+                    <li key={key} className="flex items-start gap-2">
+                      <Check className="mt-0.5 size-3.5 shrink-0 text-green-500" aria-hidden="true" />
+                      {t(`data.guide.csv.${key}`)}
                     </li>
                   ))}
                 </ul>
-              </div>
+              </section>
 
               <Separator />
 
               <div className="flex items-start gap-3 rounded-lg border border-amber-500/20 bg-amber-500/5 p-4">
-                <AlertCircle className="mt-0.5 size-5 shrink-0 text-amber-500" />
+                <AlertCircle className="mt-0.5 size-5 shrink-0 text-amber-500" aria-hidden="true" />
                 <div className="space-y-1">
                   <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
-                    Import Review
+                    {t('data.guide.reviewTitle')}
                   </p>
-                  <p className="text-xs text-muted-foreground">
-                    CSV imports now validate rows before saving. Use the duplicates screen
-                    after large imports to merge ISBN or title matches.
-                  </p>
+                  <p className="text-xs text-muted-foreground">{t('data.guide.review')}</p>
                 </div>
               </div>
             </CardContent>
@@ -1408,317 +747,12 @@ export function ImportExportPanel({
         </TabsContent>
 
         <TabsContent value="local-sync" className="space-y-6">
-          {!localSyncAvailable ? (
-            <Card>
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <div className="rounded-xl bg-muted p-3">
-                    <Lock className="size-6 text-muted-foreground" />
-                  </div>
-                  <div className="space-y-1">
-                    <CardTitle>Desktop App Required</CardTitle>
-                    <CardDescription>
-                      Local disk sync is disabled in the web app because browsers cannot write silently to your Documents folder.
-                    </CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="text-sm text-muted-foreground">
-                Open ESC Desktop to save an offline copy with collection data, notes, photos, wishlist records, activity history, contributors, and settings.
-              </CardContent>
-            </Card>
-          ) : (
-            <>
-              <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
-                <Card>
-                  <CardHeader>
-                    <div className="flex items-center gap-3">
-                      <div className="rounded-xl bg-primary/10 p-3">
-                        <HardDrive className="size-6 text-primary" />
-                      </div>
-                      <div className="space-y-1">
-                        <CardTitle>Sync With Local</CardTitle>
-                        <CardDescription>
-                          Save a complete desktop copy to your Mac for offline recovery.
-                        </CardDescription>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-5">
-                    <div className="grid gap-3 sm:grid-cols-3">
-                      <div className="rounded-lg border bg-muted/30 p-3">
-                        <p className="text-xs text-muted-foreground">Current App Data</p>
-                        <p className="mt-1 text-lg font-semibold">{formatNumber(items.length)}</p>
-                        <p className="text-xs text-muted-foreground">items</p>
-                      </div>
-                      <div className="rounded-lg border bg-muted/30 p-3">
-                        <p className="text-xs text-muted-foreground">Categories</p>
-                        <p className="mt-1 text-lg font-semibold">{formatNumber(categories.length)}</p>
-                        <p className="text-xs text-muted-foreground">schemas</p>
-                      </div>
-                      <div className="rounded-lg border bg-muted/30 p-3">
-                        <p className="text-xs text-muted-foreground">Estimated Value</p>
-                        <p className="mt-1 text-lg font-semibold">{formatCurrency(totalValue)}</p>
-                        <p className="text-xs text-muted-foreground">{displayCurrency}</p>
-                      </div>
-                    </div>
-
-                    <Separator />
-
-                    <div className="space-y-2 text-sm text-muted-foreground">
-                      <p>
-                        ESC Desktop keeps this local copy updated automatically after collection changes. Use Sync With Local for an immediate refresh.
-                      </p>
-                      <p>
-                        The desktop copy stores a full backup bundle plus local asset files under your Documents folder.
-                      </p>
-                      <ul className="grid gap-2 sm:grid-cols-2">
-                        {[
-                          'Collections, libraries, and custom fields',
-                          'Items, notes, tags, lending, and maintenance',
-                          'Wishlist and activity history',
-                          'Photos and documents when they can be copied',
-                        ].map((text) => (
-                          <li key={text} className="flex items-start gap-2">
-                            <Check className="mt-0.5 size-4 shrink-0 text-green-500" />
-                            <span>{text}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-
-                    <div className="flex flex-col gap-2 sm:flex-row">
-                      <Button className="flex-1" disabled={isLocalSyncing} onClick={handleLocalSync}>
-                        <RefreshCw className={`size-4 ${isLocalSyncing ? 'animate-spin' : ''}`} />
-                        {isLocalSyncing ? 'Syncing...' : 'Sync With Local'}
-                      </Button>
-                      <Button variant="outline" className="flex-1" onClick={handleOpenLocalSyncFolder}>
-                        <FolderOpen className="size-4" />
-                        Open Local Folder
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <ShieldCheck className="size-5 text-primary" />
-                      Local Copy Status
-                    </CardTitle>
-                    <CardDescription>
-                      The latest desktop snapshot stored on this Mac.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-2 rounded-lg border bg-muted/30 p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-sm text-muted-foreground">Status</span>
-                        <Badge variant={localSyncStatus?.exists ? 'secondary' : 'outline'}>
-                          {isLocalStatusLoading ? 'Checking...' : localSyncStatus?.exists ? 'Available' : 'Not synced'}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-sm text-muted-foreground">Auto-sync</span>
-                        <Badge variant="secondary">Enabled on desktop</Badge>
-                      </div>
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-sm text-muted-foreground">Last synced</span>
-                        <span className="text-right text-sm font-medium">
-                          {formatLocalSyncDate(localSyncStatus?.syncedAt)}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-sm text-muted-foreground">Local size</span>
-                        <span className="text-sm font-medium">{formatBytes(localSyncStatus?.sizeBytes ?? 0)}</span>
-                      </div>
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-sm text-muted-foreground">Copied assets</span>
-                        <span className="text-sm font-medium">{formatNumber(localSyncStatus?.assetCount ?? 0)}</span>
-                      </div>
-                    </div>
-
-                    {localSyncStatus?.counts && (
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        {Object.entries(localSyncStatus.counts).map(([label, count]) => (
-                          <div key={label} className="rounded-md bg-background px-3 py-2">
-                            <span className="capitalize text-muted-foreground">{label}</span>
-                            <p className="mt-1 font-medium">{formatNumber(count)}</p>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {(localSyncStatus?.failedAssets.length ?? 0) > 0 && (
-                      <div className="space-y-2 rounded-lg border border-amber-500/25 bg-amber-500/5 p-3">
-                        <div className="flex items-center gap-2 text-sm font-medium">
-                          <AlertCircle className="size-4 text-amber-500" />
-                          {localSyncStatus?.failedAssets.length} asset issue{localSyncStatus?.failedAssets.length === 1 ? '' : 's'}
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          Some remote files could not be copied. Their original URLs stayed in the snapshot.
-                        </p>
-                      </div>
-                    )}
-
-                    <Button variant="outline" className="w-full" onClick={() => void refreshLocalSyncStatus()}>
-                      <RefreshCw className="size-4" />
-                      Refresh Status
-                    </Button>
-                  </CardContent>
-                </Card>
-              </div>
-
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center gap-3">
-                    <div className="rounded-xl bg-primary/10 p-3">
-                      <RotateCcw className="size-6 text-primary" />
-                    </div>
-                    <div className="space-y-1">
-                      <CardTitle>Restore From Local Copy</CardTitle>
-                      <CardDescription>
-                        Load the saved desktop snapshot and restore it into the current collection.
-                      </CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-5">
-                  <div className="flex flex-col gap-2 sm:flex-row">
-                    <Button
-                      variant="outline"
-                      className="flex-1"
-                      disabled={!localSyncStatus?.exists}
-                      onClick={handleLoadLocalSnapshot}
-                    >
-                      <Upload className="size-4" />
-                      Load Local Copy
-                    </Button>
-                    <Button variant="outline" className="flex-1" onClick={handleOpenLocalSyncFolder}>
-                      <FolderOpen className="size-4" />
-                      Open Folder
-                    </Button>
-                  </div>
-
-                  {localRestorePreview && (
-                    <div className="space-y-4 rounded-lg border bg-muted/30 p-4">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-medium">Local Restore Preview</p>
-                          <p className="text-xs text-muted-foreground">
-                            {localRestorePreview.exportedAt
-                              ? `Snapshot exported ${new Date(localRestorePreview.exportedAt).toLocaleString()}`
-                              : 'Snapshot export date not available'}
-                          </p>
-                        </div>
-                        <Badge variant={localRestorePreview.errors.length > 0 ? 'destructive' : 'secondary'}>
-                          Schema v{localRestorePreview.schemaVersion ?? 'unknown'}
-                        </Badge>
-                      </div>
-
-                      <div className="grid gap-2 text-xs sm:grid-cols-3">
-                        <div className="rounded-md bg-background px-3 py-2">
-                          <span className="text-muted-foreground">Current</span>
-                          <p className="mt-1 font-medium">
-                            {localRestorePreview.currentCounts.items} items
-                          </p>
-                        </div>
-                        <div className="rounded-md bg-background px-3 py-2">
-                          <span className="text-muted-foreground">Local Copy</span>
-                          <p className="mt-1 font-medium">
-                            {localRestorePreview.incomingCounts.items} items
-                          </p>
-                        </div>
-                        <div className="rounded-md bg-background px-3 py-2">
-                          <span className="text-muted-foreground">Conflicts</span>
-                          <p className="mt-1 font-medium">
-                            {localRestorePreview.conflicts.length}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setLocalRestoreMode('merge');
-                            setLocalPreRestoreBackupDownloaded(false);
-                          }}
-                          className={`rounded-lg border p-3 text-left transition-colors ${localRestoreMode === 'merge' ? 'border-primary bg-primary/10' : 'hover:bg-background'}`}
-                        >
-                          <span className="flex items-center gap-2 text-sm font-medium">
-                            <GitMerge className="size-4" />
-                            Merge Local Copy
-                          </span>
-                          <span className="mt-1 block text-xs text-muted-foreground">
-                            Adds local records and overwrites same-ID conflicts with local versions.
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setLocalRestoreMode('replace');
-                            setLocalPreRestoreBackupDownloaded(false);
-                          }}
-                          className={`rounded-lg border p-3 text-left transition-colors ${localRestoreMode === 'replace' ? 'border-destructive bg-destructive/10' : 'hover:bg-background'}`}
-                        >
-                          <span className="flex items-center gap-2 text-sm font-medium">
-                            <RotateCcw className="size-4" />
-                            Replace With Local
-                          </span>
-                          <span className="mt-1 block text-xs text-muted-foreground">
-                            Replaces the current collection and cloud data with the local snapshot.
-                          </span>
-                        </button>
-                      </div>
-
-                      {(localRestorePreview.errors.length > 0 || localRestorePreview.warnings.length > 0) && (
-                        <div className="space-y-1">
-                          {[...localRestorePreview.errors, ...localRestorePreview.warnings].slice(0, 4).map((message) => (
-                            <div key={message} className="flex items-start gap-2 text-xs text-muted-foreground">
-                              <AlertCircle className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
-                              <span>{message}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {localRestoreMode === 'replace' && (
-                        <div className="space-y-2 rounded-md border border-destructive/25 bg-destructive/5 p-3">
-                          <p className="text-xs text-muted-foreground">
-                            Replace mode is destructive. Download a fresh backup of the current state before continuing.
-                          </p>
-                          <Button variant="outline" className="w-full" onClick={handleLocalPreRestoreBackup}>
-                            <Download className="size-4" />
-                            {localPreRestoreBackupDownloaded ? 'Current Backup Downloaded' : 'Download Current Backup First'}
-                          </Button>
-                        </div>
-                      )}
-
-                      <Button
-                        className="w-full"
-                        variant={localRestoreMode === 'replace' ? 'destructive' : 'default'}
-                        disabled={
-                          !localRestorePreview.canRestore
-                          || !canRestoreBackups
-                          || isLocalRestoring
-                          || (localRestoreMode === 'replace' && !localPreRestoreBackupDownloaded)
-                        }
-                        onClick={() => setLocalRestoreConfirmOpen(true)}
-                      >
-                        <Upload className="size-4" />
-                        {isLocalRestoring
-                          ? 'Restoring...'
-                          : localRestoreMode === 'replace'
-                            ? 'Restore and Replace All'
-                            : 'Merge Local Copy'}
-                      </Button>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </>
-          )}
+          <LocalSyncTab
+            available={localSyncAvailable}
+            canRestoreBackups={canRestoreBackups}
+            totalValue={totalValue}
+            displayCurrency={displayCurrency}
+          />
         </TabsContent>
       </Tabs>
 
@@ -1726,69 +760,39 @@ export function ImportExportPanel({
         open={restoreConfirmOpen}
         onClose={() => setRestoreConfirmOpen(false)}
         onConfirm={handleRestoreBackup}
-        title={restoreMode === 'replace' ? 'Replace All Data From Backup?' : 'Merge Backup Into Collection?'}
-        description={
-          restoreMode === 'replace'
-            ? `This will replace your current local and Firestore collection data with ${restorePreview?.incomingCounts.items ?? 0} backup items.`
-            : `This will merge ${restorePreview?.incomingCounts.items ?? 0} backup items into your current collection. Same-ID conflicts will use the backup version.`
-        }
-        confirmLabel={isRestoring ? 'Restoring...' : restoreMode === 'replace' ? 'Replace All Data' : 'Merge Backup'}
+        title={t(restoreMode === 'replace' ? 'data.restore.confirmReplaceTitle' : 'data.restore.confirmMergeTitle')}
+        description={t(
+          restoreMode === 'replace' ? 'data.restore.confirmReplaceBody' : 'data.restore.confirmMergeBody',
+          { count: restorePreview?.incomingCounts.items ?? 0 },
+        )}
+        confirmLabel={isRestoring
+          ? t('data.restore.restoring')
+          : t(restoreMode === 'replace' ? 'data.restore.replaceAllData' : 'data.restore.file.merge')}
         destructive={restoreMode === 'replace'}
       >
         {restorePreview && (
-          <div className="space-y-2 text-sm">
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="rounded-md bg-muted/40 px-3 py-2">
-                <span className="text-muted-foreground">After restore</span>
-                <p className="mt-1 font-medium">{restorePreview.resultCounts.items} items</p>
-              </div>
-              <div className="rounded-md bg-muted/40 px-3 py-2">
-                <span className="text-muted-foreground">Conflicts</span>
-                <p className="mt-1 font-medium">{restorePreview.conflicts.length}</p>
-              </div>
-            </div>
-            {restorePreview.skipped.length > 0 && (
-              <p className="text-xs text-muted-foreground">
-                {restorePreview.skipped.length} invalid backup record{restorePreview.skipped.length === 1 ? '' : 's'} will be skipped.
-              </p>
-            )}
-          </div>
+          <RestoreConfirmSummary
+            resultItems={restorePreview.resultCounts.items}
+            conflicts={restorePreview.conflicts.length}
+            skippedLabel={restorePreview.skipped.length > 0
+              ? t('data.restore.skippedRecords', { count: restorePreview.skipped.length })
+              : null}
+          />
         )}
       </ConfirmDialog>
 
-      <ConfirmDialog
-        open={localRestoreConfirmOpen}
-        onClose={() => setLocalRestoreConfirmOpen(false)}
-        onConfirm={handleLocalRestore}
-        title={localRestoreMode === 'replace' ? 'Replace All Data From Local Copy?' : 'Merge Local Copy Into Collection?'}
-        description={
-          localRestoreMode === 'replace'
-            ? `This will replace your current local and Firestore collection data with ${localRestorePreview?.incomingCounts.items ?? 0} locally synced items.`
-            : `This will merge ${localRestorePreview?.incomingCounts.items ?? 0} locally synced items into your current collection. Same-ID conflicts will use the local copy.`
-        }
-        confirmLabel={isLocalRestoring ? 'Restoring...' : localRestoreMode === 'replace' ? 'Replace All Data' : 'Merge Local Copy'}
-        destructive={localRestoreMode === 'replace'}
-      >
-        {localRestorePreview && (
-          <div className="space-y-2 text-sm">
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="rounded-md bg-muted/40 px-3 py-2">
-                <span className="text-muted-foreground">After restore</span>
-                <p className="mt-1 font-medium">{localRestorePreview.resultCounts.items} items</p>
-              </div>
-              <div className="rounded-md bg-muted/40 px-3 py-2">
-                <span className="text-muted-foreground">Conflicts</span>
-                <p className="mt-1 font-medium">{localRestorePreview.conflicts.length}</p>
-              </div>
-            </div>
-            {localRestorePreview.skipped.length > 0 && (
-              <p className="text-xs text-muted-foreground">
-                {localRestorePreview.skipped.length} invalid local record{localRestorePreview.skipped.length === 1 ? '' : 's'} will be skipped.
-              </p>
-            )}
-          </div>
-        )}
-      </ConfirmDialog>
+      <Dialog open={tagManagerOpen} onOpenChange={setTagManagerOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Tags className="size-5 text-primary" aria-hidden="true" />
+              {t('data.tags.title')}
+            </DialogTitle>
+            <DialogDescription>{t('data.tags.description')}</DialogDescription>
+          </DialogHeader>
+          <TagManager />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

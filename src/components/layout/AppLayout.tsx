@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useRef } from 'react';
-import { Outlet, Navigate } from 'react-router-dom';
-import { Toaster, toast } from 'sonner';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { Outlet, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
-import { AddEditItemDialog } from '@/components/shared/AddEditItemDialog';
-import { useAuthStore } from '@/store/useAuthStore';
+import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
+import { ShellLoading } from '@/components/shared/ShellLoading';
+import { t } from '@/i18n';
+import type { AuthUser } from '@/services/authService';
+import { OFFLINE_USER_ID, useAuthStore } from '@/store/useAuthStore';
 import {
   useCollectionStore,
   setFirebaseUserId,
@@ -15,12 +18,60 @@ import { useSyncStore } from '@/store/useSyncStore';
 import { collectionSyncService } from '@/services/collectionSyncService';
 import { isBackupBundle, type BackupBundle } from '@/services/backupRestoreService';
 import { getDesktopLocalSyncApi } from '@/lib/runtime';
-import { Layers } from 'lucide-react';
+import { BRAND_NAME } from '@/lib/brand';
+import { todayISO } from '@/lib/utils';
+
+// The item editor is heavy (photos, lookups, AI review); load it on first use.
+const AddEditItemDialog = lazy(() => import('@/components/shared/AddEditItemDialog')
+  .then((module) => ({ default: module.AddEditItemDialog })));
+
+/** Mounts the lazily-loaded item dialog the first time it opens, then keeps it for exit animations. */
+function LazyItemDialog() {
+  const itemDialogOpen = useCollectionStore((s) => s.itemDialogOpen);
+  const [mounted, setMounted] = useState(itemDialogOpen);
+  if (itemDialogOpen && !mounted) setMounted(true);
+  if (!mounted) return null;
+  return (
+    <Suspense fallback={null}>
+      <AddEditItemDialog />
+    </Suspense>
+  );
+}
 
 const LOCAL_AUTO_SYNC_DELAY_MS = 10_000;
 
+/**
+ * Auth guard for every signed-in route. `init()` runs once at the app root (App.tsx);
+ * this component only reads the result. `user` is the single source of truth.
+ */
 const AppLayout = () => {
-  const { user, isAuthenticated, isLoading, init } = useAuthStore();
+  const user = useAuthStore((s) => s.user);
+  const isLoading = useAuthStore((s) => s.isLoading);
+  const location = useLocation();
+
+  useEffect(() => {
+    if (isLoading || user) return;
+    // A cloud session ended (e.g. signed out elsewhere): drop that user's cached data.
+    // Offline (device-local) data is never wiped implicitly.
+    const { ownerUserId, resetForUser } = useCollectionStore.getState();
+    if (ownerUserId && ownerUserId !== OFFLINE_USER_ID) {
+      setFirebaseUserId(null);
+      setCurrentCollectionActor(null);
+      resetForUser(null, 'empty');
+    }
+  }, [isLoading, user]);
+
+  if (!user) {
+    if (isLoading) return <ShellLoading className="desktop-content-shell h-screen" />;
+    return <Navigate to="/login" replace state={{ from: location }} />;
+  }
+
+  return <AuthenticatedShell user={user} />;
+};
+
+function AuthenticatedShell({ user }: { user: AuthUser }) {
+  const location = useLocation();
+  const navigate = useNavigate();
   const loadFromFirestore = useCollectionStore((s) => s.loadFromFirestore);
   const subscribeToFirestore = useCollectionStore((s) => s.subscribeToFirestore);
   const resetForUser = useCollectionStore((s) => s.resetForUser);
@@ -52,11 +103,6 @@ const AppLayout = () => {
   const lastLocalAutoSyncFingerprintRef = useRef('');
 
   useEffect(() => {
-    const unsub = init();
-    return unsub;
-  }, [init]);
-
-  useEffect(() => {
     const handleOnline = () => {
       setOnlineState(true);
       void collectionSyncService.retryPending();
@@ -76,7 +122,7 @@ const AppLayout = () => {
     const api = getDesktopLocalSyncApi();
     if (!api) return false;
 
-    const attemptKey = `${user?.uid ?? 'anonymous'}:${reason}`;
+    const attemptKey = `${user.uid}:${reason}`;
     if (localFallbackAttemptRef.current === attemptKey) return false;
     localFallbackAttemptRef.current = attemptKey;
 
@@ -88,36 +134,36 @@ const AppLayout = () => {
       pushSyncEvent({
         level: 'warn',
         message: reason === 'offline'
-          ? 'Loaded desktop local copy while offline'
-          : 'Loaded desktop local copy after cloud load failed',
+          ? t('shell.sync.localCopyOffline')
+          : t('shell.sync.localCopyCloudFailed'),
       });
-      toast.success('Loaded desktop local copy', {
-        description: 'ESC is using the saved local snapshot on this Mac.',
+      toast.success(t('shell.sync.localCopyLoaded'), {
+        description: t('shell.sync.localCopyDescription', { brand: BRAND_NAME }),
       });
       return true;
     } catch {
       pushSyncEvent({
         level: 'warn',
-        message: 'Desktop local copy was not available',
+        message: t('shell.sync.localCopyUnavailable'),
       });
       return false;
     }
-  }, [user?.uid, restoreBackupBundle, pushSyncEvent]);
+  }, [user.uid, restoreBackupBundle, pushSyncEvent]);
 
   useEffect(() => {
     remoteUnsubRef.current?.();
 
-    if (user && user.uid !== 'offline') {
+    if (user.uid !== OFFLINE_USER_ID) {
       setFirebaseUserId(user.uid);
       setCurrentCollectionActor({
         id: user.uid,
-        name: user.displayName ?? user.email ?? 'User',
+        name: user.displayName ?? user.email ?? t('shell.defaultUserName'),
         avatar: user.photoURL ?? '',
         role: user.role,
       });
       upsertContributorProfile({
         id: user.uid,
-        name: user.displayName ?? user.email ?? 'User',
+        name: user.displayName ?? user.email ?? t('shell.defaultUserName'),
         avatar: user.photoURL ?? '',
         role: user.role,
         joinedAt: new Date().toISOString(),
@@ -150,18 +196,32 @@ const AppLayout = () => {
           void loadDesktopLocalFallback('offline');
         }
       }
-    } else if (user?.uid === 'offline') {
+    } else {
+      const localName = user.displayName ?? t('auth.localUser');
       setFirebaseUserId(null);
       setCurrentCollectionActor({
-        id: 'offline',
-        name: user.displayName ?? 'Local User',
+        id: OFFLINE_USER_ID,
+        name: localName,
         avatar: '',
         role: 'admin',
       });
-      resetForUser('offline');
+      const collection = useCollectionStore.getState();
+      if (collection.ownerUserId !== OFFLINE_USER_ID) {
+        // Keep whatever is already on this device; demo data only for a brand-new, empty profile.
+        const hasLocalData = collection.ownerUserId === null && (
+          collection.items.length > 0
+          || collection.categories.length > 0
+          || collection.wishlist.length > 0
+        );
+        if (hasLocalData) {
+          useCollectionStore.setState({ ownerUserId: OFFLINE_USER_ID, isRemoteDataLoading: false });
+        } else {
+          resetForUser(OFFLINE_USER_ID, 'starter');
+        }
+      }
       upsertContributorProfile({
-        id: 'offline',
-        name: user.displayName ?? 'Local User',
+        id: OFFLINE_USER_ID,
+        name: localName,
         avatar: '',
         role: 'admin',
         joinedAt: new Date().toISOString(),
@@ -170,11 +230,6 @@ const AppLayout = () => {
         lastContributionAt: new Date().toISOString(),
       });
       void loadDesktopLocalFallback('offline');
-    } else {
-      setFirebaseUserId(null);
-      setCurrentCollectionActor(null);
-      resetForUser(null, 'empty');
-      loadedUidRef.current = null;
     }
     overdueNotifiedRef.current = false;
 
@@ -196,7 +251,7 @@ const AppLayout = () => {
 
   useEffect(() => {
     const api = getDesktopLocalSyncApi();
-    if (!api || !isAuthenticated || isRemoteDataLoading) return;
+    if (!api || isRemoteDataLoading) return;
 
     const snapshot: BackupBundle = {
       schemaVersion: 1,
@@ -245,14 +300,14 @@ const AppLayout = () => {
         lastLocalAutoSyncFingerprintRef.current = fingerprint;
         pushSyncEvent({
           level: 'info',
-          message: 'Desktop local copy auto-synced',
+          message: t('shell.sync.autoSynced'),
         });
       }).catch((error) => {
         pushSyncEvent({
           level: 'error',
           message: error instanceof Error
-            ? `Desktop local auto-sync failed: ${error.message}`
-            : 'Desktop local auto-sync failed',
+            ? t('shell.sync.autoSyncFailedWithReason', { reason: error.message })
+            : t('shell.sync.autoSyncFailed'),
         });
       });
     }, LOCAL_AUTO_SYNC_DELAY_MS);
@@ -264,7 +319,6 @@ const AppLayout = () => {
       }
     };
   }, [
-    isAuthenticated,
     isRemoteDataLoading,
     categories,
     items,
@@ -283,8 +337,8 @@ const AppLayout = () => {
   ]);
 
   useEffect(() => {
-    if (!isAuthenticated || overdueNotifiedRef.current) return;
-    const today = new Date().toISOString().slice(0, 10);
+    if (overdueNotifiedRef.current) return;
+    const today = todayISO();
     const lentItems = getLentItems();
     const overdueCount = lentItems.reduce((count, item) => {
       return count + item.lendingHistory.filter(
@@ -294,28 +348,11 @@ const AppLayout = () => {
     if (overdueCount > 0) {
       overdueNotifiedRef.current = true;
       toast.warning(
-        `${overdueCount} lent item${overdueCount > 1 ? 's are' : ' is'} overdue`,
-        { description: 'Check Lending Tracker for details', duration: 6000 },
+        t('shell.overdue.title', { count: overdueCount }),
+        { description: t('shell.overdue.description'), duration: 6000 },
       );
     }
-  }, [isAuthenticated, getLentItems]);
-
-  if (isLoading) {
-    return (
-      <div className="desktop-content-shell surface-page flex h-screen items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <div className="flex size-14 items-center justify-center rounded-xl border border-primary/20 bg-primary/10">
-            <Layers className="size-7 animate-pulse text-primary" />
-          </div>
-          <div className="size-6 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
-        </div>
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
+  }, [getLentItems]);
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -328,21 +365,17 @@ const AppLayout = () => {
             <Topbar />
           </div>
           <main className="min-h-0 flex-1 overflow-y-auto scrollbar-thin p-3 sm:p-4 md:p-6 print:block print:h-auto print:overflow-visible print:p-0">
-            <Outlet />
+            <ErrorBoundary resetKey={location.pathname} onNavigateHome={() => navigate('/collections')}>
+              <Suspense fallback={<ShellLoading fullScreen={false} className="py-24" />}>
+                <Outlet />
+              </Suspense>
+            </ErrorBoundary>
           </main>
         </div>
       </div>
-      <AddEditItemDialog />
-      <Toaster
-        position="top-center"
-        richColors
-        closeButton
-        toastOptions={{
-          className: 'border border-border bg-card text-foreground',
-        }}
-      />
+      <LazyItemDialog />
     </TooltipProvider>
   );
-};
+}
 
 export default AppLayout;

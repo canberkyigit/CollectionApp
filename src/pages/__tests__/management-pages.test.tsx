@@ -8,6 +8,7 @@ import AdminCategories from '@/pages/AdminCategories';
 import AdminCategoryForm from '@/pages/AdminCategoryForm';
 import AdminDuplicates from '@/pages/AdminDuplicates';
 import Admin from '@/pages/Admin';
+import { AdminPanelSection } from '@/components/settings/AdminPanelSection';
 import Contributors from '@/pages/Contributors';
 import Settings from '@/pages/Settings';
 import { exportService } from '@/services/exportService';
@@ -41,6 +42,7 @@ vi.mock('@/services/exportService', () => ({
     exportToJSON: mocks.exportToJSON,
     exportCategoryToCSV: mocks.exportToCSV,
   },
+  getDefaultCsvDelimiter: () => ',',
 }));
 
 describe('management pages', () => {
@@ -316,7 +318,7 @@ describe('management pages', () => {
       ],
     });
 
-    renderWithRouter(<Admin />);
+    renderWithRouter(<AdminPanelSection />);
 
     await user.click(screen.getByRole('button', { name: /add library/i }));
     await user.type(screen.getByLabelText(/library name/i), 'Cross Shelf');
@@ -366,7 +368,7 @@ describe('management pages', () => {
       </MemoryRouter>,
     );
 
-    await user.click(screen.getByText('Manage Categories'));
+    await user.click(screen.getByText('Manage categories'));
 
     expect(await screen.findByRole('heading', { name: 'Categories' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/settings?section=admin');
@@ -384,11 +386,36 @@ describe('management pages', () => {
       </MemoryRouter>,
     );
 
-    await user.click(screen.getByText('Manage Categories'));
+    await user.click(screen.getByText('Manage categories'));
     expect(await screen.findByRole('heading', { name: 'Categories' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: 'Settings' }));
     expect(await screen.findByRole('heading', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /^admin$/i })).toHaveAttribute('data-state', 'active');
+  });
+
+  it('redirects /admin to the Settings admin section', async () => {
+    render(
+      <MemoryRouter initialEntries={['/admin']}>
+        <Routes>
+          <Route path="/admin" element={<Admin />} />
+          <Route path="/settings" element={<Settings />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /^admin$/i })).toHaveAttribute('data-state', 'active');
+  });
+
+  it('falls back to a known section when ?section= is unknown', () => {
+    renderRoute({
+      path: '/settings',
+      initialEntry: '/settings?section=bogus',
+      ui: <Settings />,
+    });
+
+    expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /^admin$/i })).toHaveAttribute('data-state', 'active');
   });
 });

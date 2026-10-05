@@ -19,7 +19,7 @@ describe('Profile', () => {
 
     renderWithRouter(<Profile />);
 
-    const nameInput = screen.getByLabelText('Display Name');
+    const nameInput = screen.getByLabelText('Display name');
     await user.clear(nameInput);
     await user.type(nameInput, 'New Name');
     await user.click(screen.getByRole('button', { name: /save/i }));
@@ -35,8 +35,8 @@ describe('Profile', () => {
 
     renderWithRouter(<Profile />);
 
-    await user.type(screen.getByLabelText('New Password'), 'secret1');
-    await user.type(screen.getByLabelText('Confirm Password'), 'secret2');
+    await user.type(screen.getByLabelText('New password'), 'secret1');
+    await user.type(screen.getByLabelText('Confirm password'), 'secret2');
     await user.click(screen.getByRole('button', { name: /update password/i }));
 
     expect(changePassword).not.toHaveBeenCalled();

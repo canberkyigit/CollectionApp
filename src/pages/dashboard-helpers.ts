@@ -9,6 +9,7 @@ import type {
 import { buildContributorSummaries } from '@/lib/contributors';
 import { currencyService } from '@/services/currencyService';
 import { getItemCurrentValueUSD } from '@/lib/valuation';
+import { DEFAULT_WIDGETS } from '@/store/collectionStore.defaults';
 
 export interface DashboardCategoryStat {
   categoryId: string;
@@ -149,4 +150,40 @@ export function getWishlistPendingCount(wishlist: WishlistItem[]) {
 
 export function getRecentActivityPreview(activityLog: ActivityLogEntry[], limit = 5) {
   return activityLog.slice(0, limit);
+}
+
+/**
+ * Persisted layouts predate newer widgets; append any default widget that is
+ * missing (keeping its default order) so new widgets show up for existing users.
+ */
+export function normalizeDashboardWidgets(
+  dashboardWidgets: DashboardWidgetConfig[],
+  defaults: DashboardWidgetConfig[] = DEFAULT_WIDGETS,
+): DashboardWidgetConfig[] {
+  const known = new Set(dashboardWidgets.map((widget) => widget.id));
+  const missing = defaults.filter((widget) => !known.has(widget.id)).map((widget) => ({ ...widget }));
+  return missing.length > 0 ? [...dashboardWidgets, ...missing] : dashboardWidgets;
+}
+
+export const OTHER_CATEGORY_ID = '__other__';
+
+/** Keep the largest `max - 1` categories by count and fold the rest into one "Other" slice. */
+export function foldDashboardCategoryStats(
+  stats: DashboardCategoryStat[],
+  otherLabel: string,
+  max = 6,
+): DashboardCategoryStat[] {
+  if (stats.length <= max) return stats;
+  const sorted = [...stats].sort((left, right) => right.count - left.count);
+  const head = sorted.slice(0, max - 1);
+  const rest = sorted.slice(max - 1);
+  return [
+    ...head,
+    {
+      categoryId: OTHER_CATEGORY_ID,
+      name: otherLabel,
+      count: rest.reduce((sum, stat) => sum + stat.count, 0),
+      totalValue: rest.reduce((sum, stat) => sum + stat.totalValue, 0),
+    },
+  ];
 }

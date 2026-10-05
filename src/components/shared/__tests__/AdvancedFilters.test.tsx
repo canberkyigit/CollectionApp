@@ -40,6 +40,7 @@ function FiltersHarness() {
       availableCurrencies={['USD', 'EUR']}
       currencySymbol="$"
       category={bookCategory}
+      availableConditions={["Mint"]}
     />
   );
 }

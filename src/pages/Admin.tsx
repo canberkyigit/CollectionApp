@@ -1,17 +1,8 @@
-import { PageHeader } from '@/components/shared';
-import { PageTransition } from '@/components/shared/motion';
-import { AdminPanelSection } from '@/components/settings/AdminPanelSection';
+import { Navigate } from 'react-router-dom';
 
+import { SETTINGS_ADMIN_PATH } from '@/lib/adminNavigation';
+
+/** The admin hub lives in Settings → Admin; keep /admin working as a redirect. */
 export default function Admin() {
-  return (
-    <PageTransition>
-      <div className="space-y-4 sm:space-y-6 md:space-y-8">
-        <PageHeader
-          title="Admin Panel"
-          description="Manage categories, fields, and application settings"
-        />
-        <AdminPanelSection />
-      </div>
-    </PageTransition>
-  );
+  return <Navigate to={SETTINGS_ADMIN_PATH} replace />;
 }

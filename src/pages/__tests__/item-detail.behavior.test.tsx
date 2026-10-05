@@ -46,7 +46,7 @@ describe('ItemDetail behaviors', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole('heading', { name: 'Loading Item' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Loading item' })).toBeInTheDocument();
     loadingView.unmount();
 
     seedCollectionStore(buildSeedData());
@@ -58,7 +58,7 @@ describe('ItemDetail behaviors', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole('heading', { name: 'Item Not Found' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Item not found' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /browse collections/i })).toBeInTheDocument();
   });
 
@@ -105,12 +105,24 @@ describe('ItemDetail behaviors', () => {
 
     await user.click(screen.getByRole('tab', { name: /maintenance/i }));
     await user.click(screen.getByRole('button', { name: /add entry/i }));
+    const maintenanceDialog = screen.getByRole('dialog');
+    await user.click(within(maintenanceDialog).getByRole('button', { name: /add entry/i }));
+    expect(within(maintenanceDialog).getByRole('alert')).toHaveTextContent(/describe what was done/i);
+    expect(addMaintenanceEntry).not.toHaveBeenCalled();
+    await user.type(within(maintenanceDialog).getByLabelText(/description/i), 'Checked binding');
+    await user.type(within(maintenanceDialog).getByLabelText(/^cost$/i), '12.5');
+    await user.type(within(maintenanceDialog).getByLabelText(/provider/i), 'Local bindery');
+    await user.click(within(maintenanceDialog).getByRole('button', { name: /add entry/i }));
     expect(addMaintenanceEntry).toHaveBeenCalledWith(
       'item-1',
       expect.objectContaining({
         type: 'inspection',
+        description: 'Checked binding',
+        cost: 12.5,
+        provider: 'Local bindery',
       }),
     );
+    expect(mocks.toastSuccess).toHaveBeenCalledWith('Maintenance entry added');
 
     act(() => {
       useCollectionStore.setState({
@@ -145,9 +157,8 @@ describe('ItemDetail behaviors', () => {
     });
 
     await user.click(screen.getByRole('tab', { name: /maintenance/i }));
-    const maintenanceEntry = screen.getByText('Repaired dust jacket').closest('.group');
-    expect(maintenanceEntry).not.toBeNull();
-    await user.click(within(maintenanceEntry as HTMLElement).getAllByRole('button')[0]);
+    expect(screen.getByText('Repaired dust jacket')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Delete entry' }));
     expect(removeMaintenanceEntry).toHaveBeenCalledWith('item-1', 'maint-1');
 
     await user.click(screen.getByRole('button', { name: /^delete$/i }));

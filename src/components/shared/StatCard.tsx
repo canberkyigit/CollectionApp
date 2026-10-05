@@ -3,13 +3,14 @@ import type { LucideIcon } from 'lucide-react';
 import { TrendingDown, TrendingUp } from 'lucide-react';
 
 import { Card, CardContent } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
+import { cn, formatPercent } from '@/lib/utils';
 
 interface StatCardProps {
   title: string;
   value: string | number;
   subtitle?: string;
-  icon: LucideIcon;
+  /** Rendered inside the soft primary circle in the top-right corner. */
+  icon?: LucideIcon;
   trend?: {
     value: number;
     isPositive: boolean;
@@ -41,13 +42,15 @@ export function StatCard({
             <p className="text-xs font-medium leading-snug text-muted-foreground sm:text-sm">
               {title}
             </p>
-            <p className="text-xl font-bold leading-none tracking-tight sm:text-3xl">
+            <p className="text-xl font-bold leading-none tracking-tight tabular-nums sm:text-3xl">
               {value}
             </p>
           </div>
-          <div className="shrink-0 rounded-full bg-primary/10 p-2 sm:p-2.5">
-            <Icon className="size-4 text-primary sm:size-5" />
-          </div>
+          {Icon && (
+            <div className="shrink-0 rounded-full bg-primary/10 p-2 sm:p-2.5" aria-hidden="true">
+              <Icon className="size-4 text-primary sm:size-5" />
+            </div>
+          )}
         </div>
 
         {hasMeta && (
@@ -55,16 +58,16 @@ export function StatCard({
             {trend && (
               <span
                 className={cn(
-                  'inline-flex items-center gap-0.5 text-xs font-medium',
+                  'inline-flex items-center gap-0.5 text-xs font-medium tabular-nums',
                   trend.isPositive ? 'text-green-600' : 'text-red-600',
                 )}
               >
                 {trend.isPositive ? (
-                  <TrendingUp className="size-3.5" />
+                  <TrendingUp className="size-3.5" aria-hidden="true" />
                 ) : (
-                  <TrendingDown className="size-3.5" />
+                  <TrendingDown className="size-3.5" aria-hidden="true" />
                 )}
-                {Math.abs(trend.value).toFixed(1)}%
+                <span>{formatPercent(Math.abs(trend.value))}</span>
               </span>
             )}
             {subtitle && (

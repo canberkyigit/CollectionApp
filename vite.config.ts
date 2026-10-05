@@ -10,10 +10,10 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'prompt',
-      includeAssets: ['favicon.png', 'apple-touch-icon.png'],
+      includeAssets: ['favicon.svg', 'favicon.png', 'apple-touch-icon.png'],
       manifest: {
-        name: 'ESC — Premium Collection Management',
-        short_name: 'ESC',
+        name: 'Curio — Premium Collection Management',
+        short_name: 'Curio',
         description: 'Manage and track your personal collections — books, vinyl records, art, and more.',
         theme_color: '#6366f1',
         background_color: '#09090b',
@@ -36,7 +36,7 @@ export default defineConfig({
             purpose: 'any',
           },
           {
-            src: 'pwa-512x512.png',
+            src: 'pwa-maskable-512x512.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable',
@@ -107,7 +107,11 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
+          // Vite's preload helper must not get hoisted into a lazy vendor chunk.
+          if (id.includes('preload-helper')) return 'vendor-utils';
           if (!id.includes('node_modules')) return undefined;
+          // Loaded on demand (AI cataloging / key test) — keep it out of the eager vendor chunk.
+          if (id.includes('@anthropic-ai')) return 'vendor-anthropic';
           if (id.includes('firebase')) return 'vendor-firebase';
           if (id.includes('recharts')) return 'vendor-charts';
           if (id.includes('@radix-ui')) return 'vendor-radix';

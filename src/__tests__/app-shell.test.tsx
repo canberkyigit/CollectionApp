@@ -51,4 +51,53 @@ describe('App shell', () => {
       expect(screen.getAllByText(/collections/i)[0]).toBeInTheDocument();
     });
   });
+
+  it('sends signed-in users away from /login', async () => {
+    window.history.pushState({}, '', '/login');
+    seedAuthStore({ uid: 'admin-1', displayName: 'Admin', role: 'admin' });
+    useAuthStore.setState({ init: vi.fn(() => vi.fn()) });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/collections');
+    });
+  });
+
+  it('shows a not-found view for unknown URLs when signed in', async () => {
+    window.history.pushState({}, '', '/definitely-not-a-page');
+    seedAuthStore({ uid: 'admin-1', displayName: 'Admin', role: 'admin' });
+    useAuthStore.setState({ init: vi.fn(() => vi.fn()) });
+
+    render(<App />);
+
+    expect(await screen.findByText('Page not found')).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/definitely-not-a-page');
+  });
+
+  it('sends signed-out users on unknown URLs to /login', async () => {
+    window.history.pushState({}, '', '/definitely-not-a-page');
+    useAuthStore.setState({
+      user: null,
+      isAuthenticated: false,
+      isLoading: false,
+      firebaseReady: true,
+      error: null,
+      init: vi.fn(() => vi.fn()),
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole('button', { name: /continue with google/i })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/login');
+  });
+
+  it('initialises auth once at the app root', () => {
+    window.history.pushState({}, '', '/login');
+    const init = vi.fn(() => vi.fn());
+    useAuthStore.setState({ user: null, isAuthenticated: false, isLoading: false, init });
+
+    render(<App />);
+    expect(init).toHaveBeenCalled();
+  });
 });

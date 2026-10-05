@@ -209,6 +209,7 @@ export function migrateCollectionStoreState(persistedState: unknown): Partial<Co
     itemDialogOpen: false,
     itemDialogCategoryId: null,
     itemDialogItem: null,
+    itemDialogOptions: null,
   } satisfies Partial<CollectionStore>;
 }
 

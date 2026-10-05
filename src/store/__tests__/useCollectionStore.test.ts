@@ -152,6 +152,37 @@ describe('useCollectionStore', () => {
       );
       expect(mocks.toastInfo).toHaveBeenCalled();
     });
+
+    it('does not add a second point when the caller already recorded the new value', () => {
+      const store = useCollectionStore.getState();
+      const item = store.addItem(createMockItem({
+        title: 'Backdated Valuation',
+        valuationInfo: {
+          currentEstimatedValue: 100,
+          currentValueCurrency: 'USD',
+          currentExchangeRate: 1,
+          valueHistory: [{ date: '2024-01-01', value: 100, currency: 'USD' }],
+        },
+      }));
+
+      store.updateItem(item.id, {
+        valuationInfo: {
+          currentEstimatedValue: 150,
+          currentValueCurrency: 'USD',
+          currentExchangeRate: 1,
+          valueHistory: [
+            { date: '2024-01-01', value: 100, currency: 'USD' },
+            { date: '2024-06-01', value: 150, currency: 'USD' },
+          ],
+        },
+      });
+
+      const updated = useCollectionStore.getState().items.find((entry) => entry.id === item.id);
+      expect(updated?.valuationInfo.valueHistory).toEqual([
+        { date: '2024-01-01', value: 100, currency: 'USD' },
+        { date: '2024-06-01', value: 150, currency: 'USD' },
+      ]);
+    });
   });
 
   describe('deleteItem (soft delete)', () => {
@@ -282,12 +313,29 @@ describe('useCollectionStore', () => {
   describe('addCategory', () => {
     it('adds a category with generated id and slug', () => {
       const store = useCollectionStore.getState();
-      const cat = store.addCategory(createMockCategory({ name: 'Vinyl Records' }));
+      const cat = store.addCategory(createMockCategory({ name: 'Vinyl Records', slug: '' }));
 
       expect(cat.id).toBeDefined();
       expect(cat.slug).toBe('vinyl-records');
       expect(cat.createdAt).toBeDefined();
       expect(useCollectionStore.getState().categories).toHaveLength(1);
+    });
+
+    it('respects the typed slug and de-duplicates collisions', () => {
+      const store = useCollectionStore.getState();
+      const first = store.addCategory(createMockCategory({ name: 'Plaklar', slug: 'Vinyl Shelf' }));
+      const second = useCollectionStore.getState().addCategory(createMockCategory({ name: 'Other', slug: 'vinyl-shelf' }));
+      const third = useCollectionStore.getState().addCategory(createMockCategory({ name: 'Third', slug: 'vinyl-shelf' }));
+
+      expect(first.slug).toBe('vinyl-shelf');
+      expect(second.slug).toBe('vinyl-shelf-2');
+      expect(third.slug).toBe('vinyl-shelf-3');
+
+      useCollectionStore.getState().updateCategory(third.id, { slug: 'vinyl-shelf' });
+      expect(useCollectionStore.getState().categories.find((c) => c.id === third.id)?.slug).toBe('vinyl-shelf-3');
+
+      useCollectionStore.getState().updateCategory(first.id, { slug: 'Vinyl Shelf' });
+      expect(useCollectionStore.getState().categories.find((c) => c.id === first.id)?.slug).toBe('vinyl-shelf');
     });
   });
 

@@ -104,10 +104,12 @@ describe('auth page behaviors', () => {
     );
 
     expect(screen.getByText(/offline mode/i)).toBeInTheDocument();
-    await user.type(screen.getByLabelText(/email address/i), 'offline@example.com');
-    await user.type(screen.getByLabelText(/^password$/i), 'secret123');
-    await user.click(screen.getByRole('button', { name: /sign in/i }));
+    // No fake credential fields or register toggle when Firebase is not configured.
+    expect(screen.queryByLabelText(/email address/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /create one/i })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /continue offline/i }));
     expect(loginOffline).toHaveBeenCalled();
+    expect(screen.getByText('Collections Landing')).toBeInTheDocument();
   });
 
   it('handles avatar validation and recent-login password errors on the profile page', async () => {

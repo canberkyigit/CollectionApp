@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
-import { motion } from 'framer-motion';
+import { motion, useReducedMotion } from 'framer-motion';
 import {
   Pencil,
   Trash2,
@@ -17,51 +17,31 @@ import {
   ZoomIn,
   QrCode,
   Download,
+  Paperclip,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { QRCodeSVG } from 'qrcode.react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  Dialog,
-  DialogContent,
-} from '@/components/ui/dialog';
-import {
-  cn,
-  formatCurrency,
-  formatDate,
-  formatRelativeDate,
-} from '@/lib/utils';
-import { QRCodeSVG } from 'qrcode.react';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { DocumentsPanel } from '@/components/items/DocumentsPanel';
+import { useT } from '@/i18n';
+import { isBookCategory } from '@/lib/categoryKind';
+import { ITEM_FORM_CURRENCIES } from '@/lib/itemForm';
+import { cn, formatCurrency, formatDate, formatRelativeDate, formatPercent } from '@/lib/utils';
 import { useCollectionStore } from '@/store/useCollectionStore';
 import { ConfirmDialog } from '@/components/shared';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
-import {
-  getItemNotes,
-  getValuationSummary,
-} from '@/components/shared/itemDetailPanelHelpers';
+import { getItemNotes, getValuationSummary } from '@/components/shared/itemDetailPanelHelpers';
 import type { Category, CollectionItem } from '@/types';
-
-function getConditionBadgeProps(condition: string) {
-  switch (condition) {
-    case 'Mint':
-    case 'Near Mint':
-      return { variant: 'success' as const };
-    case 'Very Good':
-    case 'Good':
-      return { variant: 'outline' as const, className: 'border-blue-500/30 bg-blue-500/15 text-blue-700 dark:text-blue-400' };
-    case 'Fair':
-      return { variant: 'warning' as const };
-    case 'Poor':
-      return { variant: 'destructive' as const };
-    default:
-      return { variant: 'secondary' as const };
-  }
-}
+import { getConditionBadgeStyle } from '@/components/items/conditionBadge';
+import { conditionLabel } from '@/components/collections/conditionLabel';
+import { getPublicItemUrl } from '@/lib/publicUrl';
 
 interface Props {
   itemId: string | null;
@@ -113,6 +93,16 @@ interface ItemDetailPanelContentProps {
   openItemDialog: (categoryId: string, item?: CollectionItem) => void;
 }
 
+/** Small uppercase label/value cell (original panel style). */
+function Field({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
+  return (
+    <div className={className}>
+      <dt className="text-[10px] uppercase text-muted-foreground">{label}</dt>
+      <dd className="text-sm">{children}</dd>
+    </div>
+  );
+}
+
 function ItemDetailPanelContent({
   item,
   category,
@@ -124,6 +114,8 @@ function ItemDetailPanelContent({
   updateItem,
   openItemDialog,
 }: ItemDetailPanelContentProps) {
+  const t = useT();
+  const reduceMotion = useReducedMotion();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [activeImage, setActiveImage] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -134,8 +126,10 @@ function ItemDetailPanelContent({
   const qrContainerRef = useRef<HTMLDivElement>(null);
   const [notesValue, setNotesValue] = useState(() => getItemNotes(item));
   const [isEditingNotes, setIsEditingNotes] = useState(false);
-  const [isSavingNotes, setIsSavingNotes] = useState(false);
-  const [valCurrency, setValCurrency] = useState(displayCurrency);
+  const currencyOptions = ITEM_FORM_CURRENCIES as readonly string[];
+  const [valCurrency, setValCurrency] = useState(
+    currencyOptions.includes(displayCurrency) ? displayCurrency : 'USD',
+  );
   const isMobile = useMediaQuery('(max-width: 767px)');
   const { currentValuation, purchaseDateValuation, gainLoss } = getValuationSummary(item, valCurrency);
 
@@ -168,36 +162,44 @@ function ItemDetailPanelContent({
 
   const handleDelete = () => {
     deleteItem(item.id);
-    toast.success('Item archived');
+    toast.success(t('itemDetail.panel.toast.archived'));
     onClose();
   };
 
   function handleSaveNotes() {
-    setIsSavingNotes(true);
     updateItem(item.id, {
       notes: notesValue,
       customFields: { ...item.customFields, notes: notesValue },
     });
-    setIsSavingNotes(false);
     setIsEditingNotes(false);
-    toast.success('Notes saved');
+    toast.success(t('itemDetail.panel.toast.notesSaved'));
   }
 
-  const condBadge = getConditionBadgeProps(item.condition);
-  const isBookCategory = category.id === 'cat-books';
+  const condBadge = getConditionBadgeStyle(item.condition);
+  const isBook = isBookCategory(category);
   const qty = (item.customFields?.quantity as number) || item.quantity || 1;
   const edition = item.customFields?.edition;
   const publisher = item.customFields?.publisher as string;
   const currEquivs = item.purchaseInfo.currencyEquivalents || [];
+  const visibleFields = category.fields.filter((f) => {
+    if (f.key === 'notes' || f.type === 'rich-notes' || f.key === 'title' || f.key === 'condition' || f.key === 'quantity') return false;
+    if (f.type === 'boolean') return true;
+    const v = item.customFields[f.key];
+    return v != null && v !== '';
+  });
+  const hasDocuments = (item.documents?.length ?? 0) > 0;
 
   return (
     <>
       <motion.div
-        initial={{ x: isMobile ? '100%' : 80, opacity: 0 }}
+        initial={reduceMotion ? { opacity: 0 } : { x: isMobile ? '100%' : 80, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
-        transition={isMobile
-          ? { type: 'spring', damping: 28, stiffness: 300 }
-          : { duration: 0.25, ease: 'easeOut' }
+        transition={
+          reduceMotion
+            ? { duration: 0.1 }
+            : isMobile
+              ? { type: 'spring', damping: 28, stiffness: 300 }
+              : { duration: 0.25, ease: 'easeOut' }
         }
         className={cn(
           'relative flex h-full shrink-0 flex-col border-l bg-background',
@@ -209,16 +211,23 @@ function ItemDetailPanelContent({
         {!isMobile && (
           <div
             onMouseDown={handleMouseDown}
-            className="absolute -left-1 top-0 bottom-0 z-10 flex w-2.5 cursor-col-resize items-center justify-center hover:bg-primary/10 active:bg-primary/20 transition-colors"
+            aria-hidden="true"
+            className="absolute -left-1 bottom-0 top-0 z-10 flex w-2.5 cursor-col-resize items-center justify-center transition-colors hover:bg-primary/10 active:bg-primary/20"
           >
             <GripVertical className="size-3.5 text-muted-foreground/40" />
           </div>
         )}
 
-        {/* Close button */}
-        <div className="flex items-center justify-between border-b px-4 py-2.5 shrink-0">
-          <h3 className="text-sm font-semibold text-muted-foreground truncate pr-2">Detail</h3>
-          <Button variant="ghost" size="icon" className="size-7 shrink-0" onClick={onClose}>
+        {/* Header bar */}
+        <div className="flex shrink-0 items-center justify-between border-b px-4 py-2.5">
+          <h3 className="truncate pr-2 text-sm font-semibold text-muted-foreground">{t('itemDetail.panel.title')}</h3>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7 shrink-0"
+            onClick={onClose}
+            aria-label={t('itemDetail.panel.close')}
+          >
             <X className="size-4" />
           </Button>
         </div>
@@ -234,63 +243,105 @@ function ItemDetailPanelContent({
               )}
               {publisher && <p className="text-xs text-muted-foreground">{publisher}</p>}
               <div className="flex flex-wrap items-center gap-1.5">
-                <Badge {...condBadge} className={cn('text-[10px]', condBadge.className)}>{item.condition}</Badge>
-                {item.isRead && <Badge variant="success" className="text-[10px] gap-0.5"><Check className="size-2.5" /> Read</Badge>}
-                {edition != null && edition !== '' && <Badge variant="outline" className="text-[10px]">{String(edition)}. Edition</Badge>}
-                <Badge variant="secondary" className="text-[10px]">{qty} {qty > 1 ? 'copies' : 'copy'}</Badge>
-                {item.isFavorite && <Badge className="bg-amber-500 text-white text-[10px] gap-0.5"><Star className="size-2.5 fill-white" /> Starred</Badge>}
+                <Badge variant={condBadge.variant} className={cn('text-[10px]', condBadge.className)}>
+                  {conditionLabel(t, item.condition)}
+                </Badge>
+                {item.isRead && (
+                  <Badge variant="success" className="gap-0.5 text-[10px]">
+                    <Check className="size-2.5" aria-hidden="true" /> {t('itemDetail.panel.read')}
+                  </Badge>
+                )}
+                {edition != null && edition !== '' && (
+                  <Badge variant="outline" className="text-[10px]">
+                    {t('itemDetail.panel.edition', { edition: String(edition) })}
+                  </Badge>
+                )}
+                <Badge variant="secondary" className="text-[10px] tabular-nums">
+                  {t('itemDetail.panel.copies', { count: qty })}
+                </Badge>
+                {item.isFavorite && (
+                  <Badge className="gap-0.5 border-transparent bg-amber-500 text-[10px] text-white">
+                    <Star className="size-2.5 fill-white" aria-hidden="true" /> {t('itemDetail.starred')}
+                  </Badge>
+                )}
               </div>
             </div>
 
             {/* Actions */}
             <div className="flex flex-wrap gap-1.5">
-              {isBookCategory && (
+              {isBook && (
                 <Button
                   variant={item.isRead ? 'default' : 'outline'}
                   size="sm"
-                  className={cn('h-7 text-xs', item.isRead && 'bg-green-600 hover:bg-green-700 text-white')}
-                  onClick={() => { toggleRead(item.id); toast.success(item.isRead ? 'Marked as unread' : 'Marked as read'); }}
+                  aria-pressed={Boolean(item.isRead)}
+                  className={cn('h-7 gap-1 text-xs', item.isRead && 'bg-green-600 text-white hover:bg-green-700')}
+                  onClick={() => {
+                    toggleRead(item.id);
+                    toast.success(item.isRead ? t('itemDetail.panel.toast.unread') : t('itemDetail.panel.toast.read'));
+                  }}
                 >
-                  {item.isRead ? <Check className="mr-1 size-3" /> : <BookOpen className="mr-1 size-3" />}
-                  {item.isRead ? 'Read' : 'Mark Read'}
+                  {item.isRead ? <Check className="size-3" /> : <BookOpen className="size-3" />}
+                  {item.isRead ? t('itemDetail.panel.read') : t('itemDetail.panel.markRead')}
                 </Button>
               )}
               <Button
                 variant={item.isFavorite ? 'default' : 'outline'}
                 size="sm"
-                className={cn('h-7 text-xs', item.isFavorite && 'bg-amber-500 hover:bg-amber-600 text-white')}
-                onClick={() => { toggleFavorite(item.id); toast.success(item.isFavorite ? 'Unfavorited' : 'Favorited'); }}
+                aria-pressed={item.isFavorite}
+                className={cn('h-7 gap-1 text-xs', item.isFavorite && 'bg-amber-500 text-white hover:bg-amber-600')}
+                onClick={() => {
+                  toggleFavorite(item.id);
+                  toast.success(item.isFavorite ? t('itemDetail.panel.toast.unfavorited') : t('itemDetail.panel.toast.favorited'));
+                }}
               >
-                <Star className={cn('mr-1 size-3', item.isFavorite && 'fill-white')} />
-                {item.isFavorite ? 'Starred' : 'Star'}
+                <Star className={cn('size-3', item.isFavorite && 'fill-white')} />
+                {item.isFavorite ? t('itemDetail.starred') : t('itemDetail.star')}
               </Button>
-              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { onClose(); openItemDialog(item.categoryId, item); }}>
-                <Pencil className="mr-1 size-3" /> Edit
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 gap-1 text-xs"
+                onClick={() => {
+                  onClose();
+                  openItemDialog(item.categoryId, item);
+                }}
+              >
+                <Pencil className="size-3" /> {t('common.edit')}
               </Button>
-              <Button variant="destructive" size="sm" className="h-7 text-xs" onClick={() => setDeleteDialogOpen(true)}>
-                <Trash2 className="mr-1 size-3" /> Delete
+              <Button
+                variant="destructive"
+                size="sm"
+                className="h-7 gap-1 text-xs"
+                onClick={() => setDeleteDialogOpen(true)}
+              >
+                <Trash2 className="size-3" /> {t('common.delete')}
               </Button>
             </div>
 
             {/* Image */}
             {item.images.length > 0 && (
               <div className="space-y-2">
-                <div
+                <button
+                  type="button"
                   className={cn(
-                    'group/img relative cursor-pointer overflow-hidden rounded-lg bg-black/40',
-                    isBookCategory ? 'aspect-[2/3] max-h-[340px] mx-auto' : 'aspect-[4/3]',
+                    'group/img relative block w-full cursor-pointer overflow-hidden rounded-lg bg-black/40',
+                    isBook ? 'mx-auto aspect-[2/3] max-h-[340px]' : 'aspect-[4/3]',
                   )}
                   onClick={() => setLightboxOpen(true)}
+                  aria-label={t('itemDetail.panel.enlarge')}
                 >
                   <img
                     src={item.images[activeImage] || item.images[0]}
                     alt={item.title}
-                    className={cn('h-full w-full', isBookCategory ? 'object-contain' : 'object-cover')}
+                    className={cn('h-full w-full', isBook ? 'object-contain' : 'object-cover')}
                   />
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover/img:bg-black/30">
-                    <ZoomIn className="size-8 text-white opacity-0 transition-opacity group-hover/img:opacity-100" />
-                  </div>
-                </div>
+                  <span className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover/img:bg-black/30 group-focus-visible/img:bg-black/30">
+                    <ZoomIn
+                      className="size-8 text-white opacity-0 transition-opacity group-hover/img:opacity-100 group-focus-visible/img:opacity-100"
+                      aria-hidden="true"
+                    />
+                  </span>
+                </button>
                 {item.images.length > 1 && (
                   <div className="flex gap-1.5 overflow-x-auto">
                     {item.images.map((src, idx) => (
@@ -298,6 +349,8 @@ function ItemDetailPanelContent({
                         key={idx}
                         type="button"
                         onClick={() => setActiveImage(idx)}
+                        aria-label={t('itemDetail.gallery.showImage', { index: idx + 1 })}
+                        aria-current={idx === activeImage ? 'true' : undefined}
                         className={cn(
                           'size-12 shrink-0 overflow-hidden rounded-md border-2 transition-all',
                           idx === activeImage ? 'border-primary' : 'border-transparent opacity-60 hover:opacity-100',
@@ -311,38 +364,35 @@ function ItemDetailPanelContent({
               </div>
             )}
 
-            {/* Purchase Info */}
+            {/* Purchase info */}
             <Card>
               <CardHeader className="px-3 py-2.5">
                 <CardTitle className="flex items-center gap-2 text-sm">
-                  <DollarSign className="size-3.5" />
-                  Purchase Information
+                  <DollarSign className="size-3.5" aria-hidden="true" />
+                  {t('itemDetail.panel.purchaseInfo')}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3 px-3 pb-3">
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div>
-                    <p className="text-[10px] text-muted-foreground uppercase">Price</p>
-                    <p className="font-semibold">{formatCurrency(item.purchaseInfo.purchasePrice, item.purchaseInfo.purchaseCurrency)}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-muted-foreground uppercase">Date</p>
-                    <p className="text-sm">{formatDate(item.purchaseInfo.purchasedAt)}</p>
-                  </div>
+                <dl className="grid grid-cols-2 gap-2 text-sm">
+                  <Field label={t('itemDetail.panel.price')}>
+                    <span className="font-semibold tabular-nums">
+                      {formatCurrency(item.purchaseInfo.purchasePrice, item.purchaseInfo.purchaseCurrency)}
+                    </span>
+                  </Field>
+                  <Field label={t('itemDetail.panel.date')}>{formatDate(item.purchaseInfo.purchasedAt)}</Field>
                   {item.purchaseInfo.purchaseLocation && (
-                    <div className="col-span-2">
-                      <p className="text-[10px] text-muted-foreground uppercase">Location</p>
-                      <p className="text-sm">{item.purchaseInfo.purchaseLocation}</p>
-                    </div>
+                    <Field label={t('itemDetail.panel.location')} className="col-span-2">
+                      {item.purchaseInfo.purchaseLocation}
+                    </Field>
                   )}
-                </div>
+                </dl>
 
                 {currEquivs.length > 0 && (
                   <>
                     <Separator />
                     <div>
-                      <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground mb-1.5">
-                        Value at Purchase Date
+                      <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                        {t('itemDetail.panel.valueAtPurchase')}
                       </p>
                       <div className="grid grid-cols-3 gap-1.5">
                         {currEquivs.map((eq) => {
@@ -353,8 +403,10 @@ function ItemDetailPanelContent({
                           const computedValue = eq.rate > 0 ? amtInTL / eq.rate : 0;
                           return (
                             <div key={eq.currency} className="rounded-md border bg-muted/30 p-1.5 text-center">
-                              <p className="text-sm font-bold">{formatCurrency(computedValue, eq.currency)}</p>
-                              <p className="text-[9px] text-muted-foreground">1 {eq.currency} = {eq.rate.toFixed(2)} TL</p>
+                              <p className="text-sm font-bold tabular-nums">{formatCurrency(computedValue, eq.currency)}</p>
+                              <p className="text-[9px] tabular-nums text-muted-foreground">
+                                1 {eq.currency} = {eq.rate.toFixed(2)} TL
+                              </p>
                             </div>
                           );
                         })}
@@ -366,71 +418,79 @@ function ItemDetailPanelContent({
                 <Separator />
 
                 <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Current Valuation</p>
+                  <div className="mb-1 flex items-center justify-between">
+                    <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                      {t('itemDetail.panel.currentValuation')}
+                    </p>
                     <select
                       value={valCurrency}
                       onChange={(e) => setValCurrency(e.target.value)}
+                      aria-label={t('itemDetail.panel.valuationCurrency')}
                       className="h-5 rounded border border-border bg-background px-1.5 text-[10px] text-muted-foreground outline-none focus:ring-1 focus:ring-ring"
                     >
-                      {['TRY', 'USD', 'EUR', 'GBP'].map((c) => (
+                      {currencyOptions.map((c) => (
                         <option key={c} value={c}>{c}</option>
                       ))}
                     </select>
                   </div>
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-3">
                     <div>
-                      <p className="text-xl font-bold">
-                        {formatCurrency(currentValuation, valCurrency)}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground">
-                        Purchased: {formatCurrency(purchaseDateValuation, valCurrency)}
+                      <p className="text-xl font-bold tabular-nums">{formatCurrency(currentValuation, valCurrency)}</p>
+                      <p className="text-[10px] tabular-nums text-muted-foreground">
+                        {t('itemDetail.panel.purchasedValue', { value: formatCurrency(purchaseDateValuation, valCurrency) })}
                       </p>
                     </div>
-                    <Badge variant={gainLoss.isPositive ? 'success' : 'destructive'} className="gap-0.5 text-[10px]">
-                      {gainLoss.isPositive ? <ArrowUp className="size-2.5" /> : <ArrowDown className="size-2.5" />}
-                      {Math.abs(gainLoss.percentage).toFixed(1)}%
+                    <Badge variant={gainLoss.isPositive ? 'success' : 'destructive'} className="gap-0.5 text-[10px] tabular-nums">
+                      {gainLoss.isPositive ? (
+                        <ArrowUp className="size-2.5" aria-hidden="true" />
+                      ) : (
+                        <ArrowDown className="size-2.5" aria-hidden="true" />
+                      )}
+                      {formatPercent(Math.abs(gainLoss.percentage))}
                     </Badge>
                   </div>
                 </div>
               </CardContent>
             </Card>
 
-            {/* Custom Fields */}
-            {category.fields.length > 0 && (
+            {/* Custom fields */}
+            {visibleFields.length > 0 && (
               <Card>
                 <CardHeader className="px-3 py-2.5">
-                  <CardTitle className="text-sm">{category.name} Details</CardTitle>
+                  <CardTitle className="text-sm">{t('itemDetail.panel.categoryDetails', { category: category.name })}</CardTitle>
                 </CardHeader>
                 <CardContent className="px-3 pb-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    {category.fields
-                      .filter((f) => {
-                        if (f.key === 'notes' || f.type === 'rich-notes' || f.key === 'title' || f.key === 'condition' || f.key === 'quantity') return false;
-                        if (f.type === 'boolean') return true;
-                        const v = item.customFields[f.key];
-                        return v != null && v !== '';
-                      })
-                      .map((field) => {
-                        const value = item.customFields[field.key];
-                        return (
-                          <div key={field.id} className="rounded-md border bg-muted/30 p-2">
-                            <p className="text-[9px] font-medium uppercase tracking-wider text-muted-foreground">{field.label}</p>
-                            <p className="mt-0.5 text-xs font-medium">
-                              {field.type === 'boolean' ? (
-                                value ? <Check className="size-3.5 text-green-500" /> : <X className="size-3.5 text-red-400" />
-                              ) : field.type === 'date' && typeof value === 'string' ? (
-                                formatDate(value)
-                              ) : field.type === 'currency' && typeof value === 'number' ? (
-                                formatCurrency(value, displayCurrency)
+                  <dl className="grid grid-cols-2 gap-2">
+                    {visibleFields.map((field) => {
+                      const value = item.customFields[field.key];
+                      return (
+                        <div key={field.id} className="rounded-md border bg-muted/30 p-2">
+                          <dt className="text-[9px] font-medium uppercase tracking-wider text-muted-foreground">{field.label}</dt>
+                          <dd className="mt-0.5 text-xs font-medium">
+                            {field.type === 'boolean' ? (
+                              value ? (
+                                <span className="inline-flex items-center gap-1">
+                                  <Check className="size-3.5 text-green-500" aria-hidden="true" />
+                                  {t('common.yes')}
+                                </span>
                               ) : (
-                                String(value)
-                              )}
-                            </p>
-                          </div>
-                        );
-                      })}
-                  </div>
+                                <span className="inline-flex items-center gap-1 text-muted-foreground">
+                                  <X className="size-3.5 text-red-400" aria-hidden="true" />
+                                  {t('common.no')}
+                                </span>
+                              )
+                            ) : field.type === 'date' && typeof value === 'string' ? (
+                              formatDate(value)
+                            ) : field.type === 'currency' && typeof value === 'number' ? (
+                              formatCurrency(value, displayCurrency)
+                            ) : (
+                              String(value)
+                            )}
+                          </dd>
+                        </div>
+                      );
+                    })}
+                  </dl>
                 </CardContent>
               </Card>
             )}
@@ -439,10 +499,10 @@ function ItemDetailPanelContent({
             {item.description && (
               <Card>
                 <CardHeader className="px-3 py-2.5">
-                  <CardTitle className="text-sm">Description</CardTitle>
+                  <CardTitle className="text-sm">{t('itemDetail.panel.description')}</CardTitle>
                 </CardHeader>
                 <CardContent className="px-3 pb-3">
-                  <p className="text-xs text-muted-foreground leading-relaxed">{item.description}</p>
+                  <p className="text-xs leading-relaxed text-muted-foreground">{item.description}</p>
                 </CardContent>
               </Card>
             )}
@@ -451,36 +511,31 @@ function ItemDetailPanelContent({
             <Card>
               <CardHeader className="px-3 py-2.5">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-sm">Notes</CardTitle>
+                  <CardTitle className="text-sm">{t('itemDetail.notes.title')}</CardTitle>
                   {!isEditingNotes ? (
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-6 text-[10px] px-2"
+                      className="h-6 gap-1 px-2 text-[10px]"
                       onClick={() => setIsEditingNotes(true)}
                     >
-                      <Pencil className="mr-1 size-2.5" /> Edit
+                      <Pencil className="size-2.5" /> {t('common.edit')}
                     </Button>
                   ) : (
                     <div className="flex gap-1">
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-6 text-[10px] px-2"
+                        className="h-6 px-2 text-[10px]"
                         onClick={() => {
                           setIsEditingNotes(false);
                           setNotesValue(getItemNotes(item));
                         }}
                       >
-                        Cancel
+                        {t('common.cancel')}
                       </Button>
-                      <Button
-                        size="sm"
-                        className="h-6 text-[10px] px-2"
-                        disabled={isSavingNotes}
-                        onClick={handleSaveNotes}
-                      >
-                        <Check className="mr-1 size-2.5" /> Save
+                      <Button size="sm" className="h-6 gap-1 px-2 text-[10px]" onClick={handleSaveNotes}>
+                        <Check className="size-2.5" /> {t('common.save')}
                       </Button>
                     </div>
                   )}
@@ -491,16 +546,32 @@ function ItemDetailPanelContent({
                   <Textarea
                     value={notesValue}
                     onChange={(e) => setNotesValue(e.target.value)}
-                    placeholder="Add notes about this item..."
+                    placeholder={t('itemDetail.notes.placeholder')}
+                    aria-label={t('itemDetail.notes.title')}
                     className="min-h-24 text-xs"
                   />
                 ) : (
-                  <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap">
-                    {notesValue || 'No notes yet.'}
+                  <p className="whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
+                    {notesValue || t('itemDetail.panel.noNotes')}
                   </p>
                 )}
               </CardContent>
             </Card>
+
+            {/* Documents */}
+            {hasDocuments && (
+              <Card>
+                <CardHeader className="px-3 py-2.5">
+                  <CardTitle className="flex items-center gap-2 text-sm">
+                    <Paperclip className="size-3.5" aria-hidden="true" />
+                    {t('itemDetail.documents.title')}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="px-3 pb-3">
+                  <DocumentsPanel item={item} compact />
+                </CardContent>
+              </Card>
+            )}
 
             {/* Tags */}
             {item.tags.length > 0 && (
@@ -511,18 +582,18 @@ function ItemDetailPanelContent({
               </div>
             )}
 
-            {/* QR Code */}
+            {/* QR code */}
             <Card>
-              <CardHeader className="pb-2 pt-3 px-3">
+              <CardHeader className="px-3 pb-2 pt-3">
                 <CardTitle className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <QrCode className="size-3.5" /> QR Code
+                  <QrCode className="size-3.5" aria-hidden="true" /> {t('itemDetail.panel.qrCode')}
                 </CardTitle>
               </CardHeader>
               <CardContent className="px-3 pb-3">
                 <div className="flex flex-col items-center gap-3">
                   <div ref={qrContainerRef} className="rounded-lg border bg-white p-3 shadow-sm">
                     <QRCodeSVG
-                      value={`${window.location.origin}/items/${item.id}`}
+                      value={getPublicItemUrl(item.id)}
                       size={120}
                       includeMargin={false}
                     />
@@ -530,7 +601,7 @@ function ItemDetailPanelContent({
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-7 text-xs gap-1.5 w-full"
+                    className="h-7 w-full gap-1.5 text-xs"
                     onClick={() => {
                       const svg = qrContainerRef.current?.querySelector('svg');
                       if (!svg) return;
@@ -544,24 +615,33 @@ function ItemDetailPanelContent({
                       URL.revokeObjectURL(url);
                     }}
                   >
-                    <Download className="size-3" /> Download SVG
+                    <Download className="size-3" /> {t('itemDetail.panel.downloadSvg')}
                   </Button>
                 </div>
               </CardContent>
             </Card>
 
             {/* Metadata */}
-            <div className="flex flex-col gap-1 text-[10px] text-muted-foreground pt-1 pb-4">
-              <span className="flex items-center gap-1"><Clock className="size-2.5" /> Created {formatRelativeDate(item.createdAt)}</span>
-              <span className="flex items-center gap-1"><Clock className="size-2.5" /> Updated {formatRelativeDate(item.updatedAt)}</span>
-            </div>
+            <dl className="flex flex-col gap-1 pb-4 pt-1 text-[10px] text-muted-foreground">
+              <div className="flex items-center gap-1">
+                <Clock className="size-2.5" aria-hidden="true" />
+                <dt>{t('itemDetail.record.created')}</dt>
+                <dd title={formatDate(item.createdAt)}>{formatRelativeDate(item.createdAt)}</dd>
+              </div>
+              <div className="flex items-center gap-1">
+                <Clock className="size-2.5" aria-hidden="true" />
+                <dt>{t('itemDetail.record.updated')}</dt>
+                <dd title={formatDate(item.updatedAt)}>{formatRelativeDate(item.updatedAt)}</dd>
+              </div>
+            </dl>
           </div>
         </ScrollArea>
       </motion.div>
 
       {/* Lightbox */}
       <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
-        <DialogContent className="max-w-[90vw] max-h-[90vh] p-0 border-none bg-black/95 overflow-hidden">
+        <DialogContent className="max-h-[90vh] max-w-[90vw] overflow-hidden border-none bg-black/95 p-0">
+          <DialogTitle className="sr-only">{item.title}</DialogTitle>
           <div className="relative flex h-[85vh] items-center justify-center">
             <img
               src={item.images[activeImage] || item.images[0]}
@@ -573,29 +653,31 @@ function ItemDetailPanelContent({
               <>
                 <button
                   type="button"
-                  className="absolute left-3 top-1/2 -translate-y-1/2 flex size-10 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm transition-colors hover:bg-white/25"
+                  aria-label={t('itemDetail.gallery.previous')}
+                  className="absolute left-3 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm transition-colors hover:bg-white/25"
                   onClick={(e) => {
                     e.stopPropagation();
                     setActiveImage((prev) => (prev === 0 ? item.images.length - 1 : prev - 1));
                   }}
                 >
-                  <ChevronLeft className="size-6" />
+                  <ChevronLeft className="size-6" aria-hidden="true" />
                 </button>
                 <button
                   type="button"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 flex size-10 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm transition-colors hover:bg-white/25"
+                  aria-label={t('itemDetail.gallery.next')}
+                  className="absolute right-3 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm transition-colors hover:bg-white/25"
                   onClick={(e) => {
                     e.stopPropagation();
                     setActiveImage((prev) => (prev === item.images.length - 1 ? 0 : prev + 1));
                   }}
                 >
-                  <ChevronRight className="size-6" />
+                  <ChevronRight className="size-6" aria-hidden="true" />
                 </button>
               </>
             )}
 
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1 text-xs text-white/80 backdrop-blur-sm">
-              {activeImage + 1} / {item.images.length}
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1 text-xs tabular-nums text-white/80 backdrop-blur-sm">
+              {t('itemDetail.gallery.counter', { current: activeImage + 1, total: item.images.length })}
             </div>
           </div>
         </DialogContent>
@@ -605,9 +687,9 @@ function ItemDetailPanelContent({
         open={deleteDialogOpen}
         onClose={() => setDeleteDialogOpen(false)}
         onConfirm={handleDelete}
-        title="Archive Item"
-        description={`"${item.title}" will be moved to the archive.`}
-        confirmLabel="Archive"
+        title={t('itemDetail.panel.archiveTitle')}
+        description={t('itemDetail.panel.archiveDescription', { title: item.title })}
+        confirmLabel={t('itemDetail.panel.archiveConfirm')}
         destructive
       />
     </>

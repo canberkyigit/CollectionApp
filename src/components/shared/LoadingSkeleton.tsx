@@ -1,4 +1,5 @@
 import { Skeleton } from '@/components/ui/skeleton';
+import { useT } from '@/i18n';
 import { cn } from '@/lib/utils';
 
 interface LoadingSkeletonProps {
@@ -85,11 +86,13 @@ export function LoadingSkeleton({
   count = 4,
   className,
 }: LoadingSkeletonProps) {
+  const t = useT();
   const SkeletonItem = skeletonComponents[variant];
+  const label = t('common.loading');
 
   if (variant === 'detail') {
     return (
-      <div className={className}>
+      <div role="status" aria-label={label} aria-busy="true" className={className}>
         <DetailSkeleton />
       </div>
     );
@@ -97,6 +100,9 @@ export function LoadingSkeleton({
 
   return (
     <div
+      role="status"
+      aria-label={label}
+      aria-busy="true"
       className={cn(
         variant === 'card'
           ? 'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4'

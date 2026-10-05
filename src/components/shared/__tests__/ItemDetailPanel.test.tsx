@@ -42,8 +42,8 @@ describe('ItemDetailPanel', () => {
     renderWithRouter(<ItemDetailPanel itemId="item-1" onClose={onClose} />);
 
     expect(screen.getAllByText('Dune')[0]).toBeInTheDocument();
-    expect(screen.getByText('Purchase Information')).toBeInTheDocument();
-    expect(screen.getByText('Value at Purchase Date')).toBeInTheDocument();
+    expect(screen.getByText('Purchase information')).toBeInTheDocument();
+    expect(screen.getByText('Value at purchase date')).toBeInTheDocument();
 
     await user.click(screen.getAllByRole('button', { name: /edit/i })[0]);
     expect(onClose).toHaveBeenCalled();

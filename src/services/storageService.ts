@@ -64,6 +64,52 @@ export const storageService = {
   },
 };
 
+/** Max size of a provenance document (receipt, certificate…) — matches storage.rules headroom. */
+export const MAX_DOCUMENT_BYTES = 15 * 1024 * 1024;
+/** Offline documents are kept inline as data URLs in local storage, so keep them small. */
+export const MAX_OFFLINE_DOCUMENT_BYTES = 3 * 1024 * 1024;
+export const DOCUMENT_MIME_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'] as const;
+
+export type DocumentUploadErrorCode = 'too-large' | 'too-large-offline' | 'unsupported-type' | 'upload-failed';
+
+export class DocumentUploadError extends Error {
+  readonly code: DocumentUploadErrorCode;
+
+  constructor(code: DocumentUploadErrorCode, message?: string) {
+    super(message ?? code);
+    this.name = 'DocumentUploadError';
+    this.code = code;
+  }
+}
+
+/** Throws DocumentUploadError when the file can't be stored as a document. */
+export function validateDocumentFile(file: File, offline = !isFirebaseConfigured()): void {
+  if (!(DOCUMENT_MIME_TYPES as readonly string[]).includes(file.type)) {
+    throw new DocumentUploadError('unsupported-type');
+  }
+  if (file.size > MAX_DOCUMENT_BYTES) throw new DocumentUploadError('too-large');
+  if (offline && file.size > MAX_OFFLINE_DOCUMENT_BYTES) throw new DocumentUploadError('too-large-offline');
+}
+
+/**
+ * Uploads a provenance document (PDF or image) to `users/{uid}/documents/`.
+ * Without Firebase it falls back to an inline data URL, like item images.
+ */
+export async function uploadDocument(userId: string | null | undefined, file: File): Promise<string> {
+  const offline = !isFirebaseConfigured() || !userId;
+  validateDocumentFile(file, offline);
+
+  if (offline) return await fileToBase64(file);
+
+  try {
+    const storageRef = ref(storage, `users/${userId}/documents/${generateFileName(file.name)}`);
+    await uploadBytes(storageRef, file, { contentType: file.type });
+    return await getDownloadURL(storageRef);
+  } catch (error) {
+    throw new DocumentUploadError('upload-failed', error instanceof Error ? error.message : undefined);
+  }
+}
+
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();

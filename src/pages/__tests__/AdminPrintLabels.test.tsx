@@ -29,7 +29,7 @@ describe('AdminPrintLabels', () => {
     await user.click(screen.getByRole('combobox'));
     await user.click(screen.getByRole('option', { name: 'Books' }));
 
-    await user.type(screen.getByPlaceholderText('Search items...'), 'books');
+    await user.type(screen.getByPlaceholderText('Search items…'), 'books');
     expect(screen.getByText('Dune')).toBeInTheDocument();
     expect(screen.getByText('Foundation')).toBeInTheDocument();
     expect(screen.queryByText('Blue Mauritius')).not.toBeInTheDocument();
@@ -45,7 +45,36 @@ describe('AdminPrintLabels', () => {
     const user = userEvent.setup();
     renderWithRouter(<AdminPrintLabels />);
 
-    await user.type(screen.getByPlaceholderText('Search items...'), 'nonexistent');
+    await user.type(screen.getByPlaceholderText('Search items…'), 'nonexistent');
     expect(screen.getByText('No items found')).toBeInTheDocument();
+  });
+  it('prints compact stickers for the selection', async () => {
+    const user = userEvent.setup();
+    renderWithRouter(<AdminPrintLabels />, ['/admin/print-labels?mode=stickers']);
+
+    expect(screen.getByRole('tab', { name: 'Stickers' })).toHaveAttribute('data-state', 'active');
+    expect(screen.getByText(/24 stickers per A4 page/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /select all/i }));
+    expect(screen.getByText(/Preview \(3 items\)/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /print \(3\)/i }));
+    expect(window.print).toHaveBeenCalled();
+  });
+
+  it('renders the inventory report with totals and a save-as-PDF hint', async () => {
+    const user = userEvent.setup();
+    renderWithRouter(<AdminPrintLabels />, ['/admin/print-labels?mode=report']);
+
+    expect(screen.getByRole('heading', { name: 'Inventory report' })).toBeInTheDocument();
+    expect(screen.getByText(/as the printer in the print dialog/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Summary by category' })).toBeInTheDocument();
+    expect(screen.getAllByText('Blue Mauritius').length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('combobox', { name: /^category$/i }));
+    await user.click(await screen.findByRole('option', { name: 'Stamps' }));
+    expect(screen.queryByText('Dune')).not.toBeInTheDocument();
+    expect(screen.getByText(/Selection: Stamps/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /print or save as pdf/i }));
+    expect(window.print).toHaveBeenCalled();
   });
 });

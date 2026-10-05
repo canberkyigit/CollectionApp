@@ -248,13 +248,13 @@ const rawItems: Omit<CollectionItem, 'isFavorite' | 'maintenanceLog' | 'lendingH
       purchasedAt: '2024-01-10T12:00:00Z',
       purchasePrice: 50,
       purchaseCurrency: 'TRY',
-      exchangeRateAtPurchase: 27,
+      exchangeRateAtPurchase: 0.037,
       purchaseLocation: 'D&R Kitabevi, Istanbul',
     },
     valuationInfo: {
       currentEstimatedValue: 120,
       currentValueCurrency: 'TRY',
-      currentExchangeRate: 27,
+      currentExchangeRate: 0.037,
       targetYearProjection: 2030,
       targetEstimatedValue: 180,
       valueHistory: [
@@ -400,13 +400,13 @@ const rawItems: Omit<CollectionItem, 'isFavorite' | 'maintenanceLog' | 'lendingH
       purchasedAt: '2022-08-20T15:00:00Z',
       purchasePrice: 2500,
       purchaseCurrency: 'TRY',
-      exchangeRateAtPurchase: 27,
+      exchangeRateAtPurchase: 0.037,
       purchaseLocation: 'Artist Studio, Beyoglu, Istanbul',
     },
     valuationInfo: {
       currentEstimatedValue: 5000,
       currentValueCurrency: 'TRY',
-      currentExchangeRate: 27,
+      currentExchangeRate: 0.037,
       targetYearProjection: 2030,
       targetEstimatedValue: 8000,
       valueHistory: [
@@ -499,13 +499,13 @@ const rawItems: Omit<CollectionItem, 'isFavorite' | 'maintenanceLog' | 'lendingH
       purchasedAt: '2023-04-22T14:00:00Z',
       purchasePrice: 1800,
       purchaseCurrency: 'TRY',
-      exchangeRateAtPurchase: 27,
+      exchangeRateAtPurchase: 0.037,
       purchaseLocation: 'Istanbul Art Fair',
     },
     valuationInfo: {
       currentEstimatedValue: 3200,
       currentValueCurrency: 'TRY',
-      currentExchangeRate: 27,
+      currentExchangeRate: 0.037,
       targetYearProjection: 2030,
       targetEstimatedValue: 5500,
       valueHistory: [
@@ -649,13 +649,13 @@ const rawItems: Omit<CollectionItem, 'isFavorite' | 'maintenanceLog' | 'lendingH
       purchasedAt: '2024-03-01T09:00:00Z',
       purchasePrice: 95,
       purchaseCurrency: 'EUR',
-      exchangeRateAtPurchase: 0.85,
+      exchangeRateAtPurchase: 1.18,
       purchaseLocation: 'Online - CMC Official Store',
     },
     valuationInfo: {
       currentEstimatedValue: 180,
       currentValueCurrency: 'EUR',
-      currentExchangeRate: 0.85,
+      currentExchangeRate: 1.18,
       targetYearProjection: 2030,
       targetEstimatedValue: 260,
       valueHistory: [
@@ -896,7 +896,7 @@ const rawItems: Omit<CollectionItem, 'isFavorite' | 'maintenanceLog' | 'lendingH
       purchasedAt: '2020-06-15T00:00:00Z',
       purchasePrice: 0,
       purchaseCurrency: 'TRY',
-      exchangeRateAtPurchase: 27,
+      exchangeRateAtPurchase: 0.037,
       purchaseLocation: 'Family inheritance',
     },
     valuationInfo: {
@@ -942,13 +942,13 @@ const rawItems: Omit<CollectionItem, 'isFavorite' | 'maintenanceLog' | 'lendingH
       purchasedAt: '2023-09-10T00:00:00Z',
       purchasePrice: 0,
       purchaseCurrency: 'EUR',
-      exchangeRateAtPurchase: 0.85,
+      exchangeRateAtPurchase: 1.18,
       purchaseLocation: 'Wedding gift',
     },
     valuationInfo: {
       currentEstimatedValue: 200,
       currentValueCurrency: 'EUR',
-      currentExchangeRate: 0.85,
+      currentExchangeRate: 1.18,
       targetYearProjection: 2030,
       targetEstimatedValue: 280,
       valueHistory: [
@@ -986,7 +986,7 @@ const rawItems: Omit<CollectionItem, 'isFavorite' | 'maintenanceLog' | 'lendingH
       purchasedAt: '2024-05-20T15:00:00Z',
       purchasePrice: 8500,
       purchaseCurrency: 'TRY',
-      exchangeRateAtPurchase: 27,
+      exchangeRateAtPurchase: 0.037,
       purchaseLocation: 'Artisan Workshop, Avanos, Cappadocia',
     },
     valuationInfo: {
@@ -1189,13 +1189,13 @@ const rawItems: Omit<CollectionItem, 'isFavorite' | 'maintenanceLog' | 'lendingH
       purchasedAt: '2023-05-10T09:30:00Z',
       purchasePrice: 280,
       purchaseCurrency: 'EUR',
-      exchangeRateAtPurchase: 0.85,
+      exchangeRateAtPurchase: 1.18,
       purchaseLocation: 'Hobby Kits Store, Munich',
     },
     valuationInfo: {
       currentEstimatedValue: 380,
       currentValueCurrency: 'EUR',
-      currentExchangeRate: 0.85,
+      currentExchangeRate: 1.18,
       targetYearProjection: 2030,
       targetEstimatedValue: 520,
       valueHistory: [

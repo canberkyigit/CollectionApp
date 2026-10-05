@@ -1,6 +1,5 @@
 import type { Category, CollectionItem } from '@/types';
 
-import { formatDate } from '@/lib/utils';
 import { currencyService } from '@/services/currencyService';
 import {
   getItemCurrentValue,
@@ -9,31 +8,46 @@ import {
   getItemGainLoss,
 } from '@/lib/valuation';
 
-export function getConditionBadgeProps(condition: string) {
-  switch (condition) {
-    case 'Mint':
-    case 'Near Mint':
-      return { variant: 'success' as const };
-    case 'Very Good':
-    case 'Good':
-      return {
-        variant: 'outline' as const,
-        className: 'border-blue-500/30 bg-blue-500/15 text-blue-700 dark:text-blue-400',
-      };
-    case 'Fair':
-      return { variant: 'warning' as const };
-    case 'Poor':
-      return { variant: 'destructive' as const };
-    default:
-      return { variant: 'secondary' as const };
-  }
+export { getConditionBadgeProps } from './collectionDetail-helpers';
+
+export interface ItemChartPoint {
+  /** ISO date (YYYY-MM-DD) — format for display at render time. */
+  date: string;
+  value: number;
 }
 
-export function buildItemChartData(item: CollectionItem, displayCurrency: string) {
-  return item.valuationInfo.valueHistory.map((entry) => ({
-    date: formatDate(entry.date),
-    value: currencyService.convert(entry.value, entry.currency, displayCurrency),
-  }));
+/**
+ * Full value history for the chart, oldest first, in the display currency.
+ * Starts at the purchase price when the history doesn't already cover the
+ * purchase date. One point per day (the last entry for a date wins).
+ */
+export function buildItemChartData(item: CollectionItem, displayCurrency: string): ItemChartPoint[] {
+  const byDate = new Map<string, number>();
+  const history = [...(item.valuationInfo.valueHistory ?? [])]
+    .filter((entry) => entry.date && Number.isFinite(Number(entry.value)))
+    .sort((left, right) => left.date.localeCompare(right.date));
+
+  const purchaseDate = item.purchaseInfo.purchasedAt?.slice(0, 10);
+  const purchasePrice = Number(item.purchaseInfo.purchasePrice) || 0;
+  if (purchaseDate && purchasePrice > 0 && (history.length === 0 || history[0].date.slice(0, 10) > purchaseDate)) {
+    byDate.set(
+      purchaseDate,
+      currencyService.convert(purchasePrice, item.purchaseInfo.purchaseCurrency, displayCurrency),
+    );
+  }
+
+  for (const entry of history) {
+    byDate.set(entry.date.slice(0, 10), currencyService.convert(Number(entry.value), entry.currency, displayCurrency));
+  }
+
+  return [...byDate.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([date, value]) => ({ date, value }));
+}
+
+/** Value history entries newest first (for the ledger list). */
+export function getSortedValueHistory(item: CollectionItem) {
+  return [...(item.valuationInfo.valueHistory ?? [])].sort((left, right) => right.date.localeCompare(left.date));
 }
 
 export function getVisibleCustomFields(category: Category, item: CollectionItem) {

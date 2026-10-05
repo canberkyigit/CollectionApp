@@ -39,10 +39,13 @@ vi.mock('@/store/useSyncStore', () => ({
 }));
 
 import { useAuthStore } from '@/store/useAuthStore';
+import { isFirebaseConfigured } from '@/services/firebase';
 
 describe('useAuthStore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
+    vi.mocked(isFirebaseConfigured).mockReturnValue(true);
     useAuthStore.setState({
       user: null,
       isLoading: true,
@@ -115,5 +118,50 @@ describe('useAuthStore', () => {
 
     useAuthStore.getState().clearError();
     expect(useAuthStore.getState().error).toBeNull();
+  });
+
+  describe('offline mode (Firebase not configured)', () => {
+    beforeEach(() => {
+      vi.mocked(isFirebaseConfigured).mockReturnValue(false);
+    });
+
+    it('does not clobber an offline session that already exists when init runs', () => {
+      useAuthStore.getState().loginOffline();
+      useAuthStore.getState().init();
+
+      expect(useAuthStore.getState().user?.uid).toBe('offline');
+      expect(useAuthStore.getState().isAuthenticated).toBe(true);
+      expect(useAuthStore.getState().isLoading).toBe(false);
+    });
+
+    it('restores the offline session after a reload', () => {
+      useAuthStore.getState().loginOffline();
+      // Simulate a fresh page load: in-memory auth state is gone, localStorage remains.
+      useAuthStore.setState({ user: null, isAuthenticated: false, isLoading: true });
+
+      useAuthStore.getState().init();
+
+      expect(useAuthStore.getState().user?.uid).toBe('offline');
+      expect(useAuthStore.getState().isLoading).toBe(false);
+    });
+
+    it('stays signed out on init when there is no offline session', () => {
+      useAuthStore.getState().init();
+      expect(useAuthStore.getState().user).toBeNull();
+      expect(useAuthStore.getState().isLoading).toBe(false);
+    });
+
+    it('logs out of offline mode without wiping local collection data', async () => {
+      useAuthStore.getState().loginOffline();
+      await useAuthStore.getState().logout();
+
+      expect(useAuthStore.getState().user).toBeNull();
+      expect(mocks.resetForUser).not.toHaveBeenCalled();
+      expect(mocks.authService.logout).not.toHaveBeenCalled();
+
+      // The session flag is cleared, so a reload does not sign back in.
+      useAuthStore.getState().init();
+      expect(useAuthStore.getState().user).toBeNull();
+    });
   });
 });

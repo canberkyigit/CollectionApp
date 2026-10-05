@@ -1,5 +1,10 @@
 import type { Variants } from 'framer-motion';
 
+/**
+ * Original Curio motion vocabulary: staggered lift-in cards and a spring slide panel.
+ * Reduced motion is honoured globally via <MotionConfig reducedMotion="user"> at the app root.
+ */
+
 export const staggerContainer: Variants = {
   hidden: {},
   visible: {

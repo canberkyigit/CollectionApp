@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState, useEffect } from 'react';
+import type { ReactNode } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -15,38 +16,51 @@ import {
   Star,
   Send,
   Clock,
+  Presentation,
   Library,
   BookOpen,
   Inbox,
   Search,
+  Bookmark,
 } from 'lucide-react';
-import brandLogo from '@/assets/logo.png';
+import type { LucideIcon } from 'lucide-react';
+import { BRAND_NAME } from '@/lib/brand';
 import { getCategoryIcon } from '@/lib/icons';
 import { isItemUnassignedForCategory, libraryMatchesCategory } from '@/lib/libraries';
+import { matchesQuery } from '@/lib/search';
+import { getSavedViewHref, useSavedViews } from '@/lib/savedViews';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { VirtualList } from '@/components/shared';
+import { BrandMark } from '@/components/shared/BrandMark';
 import { useCollectionStore } from '@/store/useCollectionStore';
-
-const baseNavItems = [
-  { label: 'Collections', icon: FolderOpen, path: '/collections' },
-  { label: 'Statistics', icon: LayoutDashboard, path: '/dashboard' },
-  { label: 'Favorites', icon: Star, path: '/favorites' },
-  { label: 'Wishlist', icon: Heart, path: '/wishlist' },
-  { label: 'Lending', icon: Send, path: '/lending' },
-  { label: 'Contributors', icon: Users, path: '/contributors' },
-  { label: 'Activity', icon: Clock, path: '/activity' },
-];
-
+import { useT } from '@/i18n';
 import type { CollectionItem } from '@/types';
+
+const baseNavItems: { labelKey: string; icon: LucideIcon; path: string }[] = [
+  { labelKey: 'nav.collections', icon: FolderOpen, path: '/collections' },
+  { labelKey: 'nav.statistics', icon: LayoutDashboard, path: '/dashboard' },
+  { labelKey: 'nav.favorites', icon: Star, path: '/favorites' },
+  { labelKey: 'nav.wishlist', icon: Heart, path: '/wishlist' },
+  { labelKey: 'nav.lending', icon: Send, path: '/lending' },
+  { labelKey: 'nav.contributors', icon: Users, path: '/contributors' },
+  { labelKey: 'nav.activity', icon: Clock, path: '/activity' },
+  { labelKey: 'nav.exhibition', icon: Presentation, path: '/exhibition' },
+];
 
 const VIRTUAL_THRESHOLD = 80;
 
+const focusRing = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50';
+const countBadgeClass =
+  'h-5 min-w-[1.25rem] shrink-0 justify-center rounded-full border border-border/60 bg-background/55 px-1.5 text-[10px] tabular-nums';
+const treeBadgeClass = 'h-4 shrink-0 rounded-full border border-border/60 bg-background/55 px-1 text-[10px] tabular-nums';
+
 function getPrimaryNavClass(isActive: boolean) {
   return cn(
-    'group relative flex w-full items-center gap-2.5 rounded-2xl border px-3 py-2.5 text-sm font-medium transition-all duration-200',
+    'group relative flex w-full items-center gap-2.5 rounded-2xl border px-3 py-2.5 text-left text-sm font-medium transition-all duration-200',
+    focusRing,
     isActive
       ? 'surface-brand border-primary/25 text-surface-brand-foreground'
       : 'border-transparent text-sidebar-foreground/85 hover:surface-1 hover:-translate-y-px hover:text-foreground',
@@ -55,7 +69,8 @@ function getPrimaryNavClass(isActive: boolean) {
 
 function getSecondaryNavClass(isActive: boolean) {
   return cn(
-    'group flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-sm transition-all duration-200',
+    'group flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left text-sm transition-all duration-200',
+    focusRing,
     isActive
       ? 'surface-2 border-primary/20 text-primary shadow-[inset_0_1px_0_rgb(255_255_255_/_0.05)]'
       : 'border-transparent text-sidebar-foreground/80 hover:surface-1 hover:text-foreground',
@@ -64,10 +79,33 @@ function getSecondaryNavClass(isActive: boolean) {
 
 function getTreeNavClass(isActive: boolean) {
   return cn(
-    'group flex w-full items-center gap-2 rounded-xl border px-2.5 py-2 text-[13px] transition-all duration-200',
+    'group flex w-full items-center gap-2 rounded-xl border px-2.5 py-2 text-left text-[13px] transition-all duration-200',
+    focusRing,
     isActive
       ? 'surface-2 border-primary/18 text-primary'
       : 'border-transparent text-sidebar-foreground/78 hover:surface-1 hover:text-foreground',
+  );
+}
+
+/** Rounded icon tile used by primary and secondary rows. */
+function NavIconTile({ icon: Icon, active, onBrand = false }: { icon: LucideIcon; active: boolean; onBrand?: boolean }) {
+  return (
+    <span
+      className={cn(
+        'flex size-8 shrink-0 items-center justify-center rounded-xl transition-colors',
+        active ? (onBrand ? 'bg-white/12 text-current' : 'bg-primary/12 text-current') : 'bg-primary/10 text-primary',
+      )}
+    >
+      <Icon aria-hidden="true" className="size-4 shrink-0" />
+    </span>
+  );
+}
+
+function CountBadge({ value, small = false }: { value: number; small?: boolean }) {
+  return (
+    <Badge variant="secondary" className={small ? treeBadgeClass : countBadgeClass}>
+      {value}
+    </Badge>
   );
 }
 
@@ -84,10 +122,10 @@ function SidebarItemList({
   libraryParam?: string;
   activeItemId?: string | null;
 }) {
+  const t = useT();
+
   if (listItems.length === 0) {
-    return (
-      <p className="px-3 py-1.5 text-xs text-muted-foreground/60 italic">No items</p>
-    );
+    return <p className="px-3 py-1.5 text-xs italic text-muted-foreground/60">{t('nav.sidebar.noItems')}</p>;
   }
 
   const buildDetailPath = (itemId: string) => {
@@ -99,20 +137,29 @@ function SidebarItemList({
     return `${catPath}?${params.toString()}`;
   };
 
-  const renderItemButton = (item: CollectionItem) => (
-    <button
-      onClick={() => navigate(buildDetailPath(item.id))}
-      className={cn(
-        'group flex w-full items-start gap-2 rounded-lg border border-transparent px-2 py-1.5 text-xs transition-all duration-200',
-        activeItemId === item.id
-          ? 'surface-2 border-primary/15 text-primary'
-          : 'text-sidebar-foreground/70 hover:surface-1 hover:text-foreground',
-      )}
-    >
-      <BookOpen className="mt-0.5 size-3 shrink-0 opacity-50 transition-transform duration-200 group-hover:translate-x-0.5" />
-      <span className="text-left leading-snug">{item.title}</span>
-    </button>
-  );
+  const renderItemButton = (item: CollectionItem) => {
+    const isActive = activeItemId === item.id;
+    return (
+      <button
+        type="button"
+        onClick={() => navigate(buildDetailPath(item.id))}
+        aria-current={isActive ? 'page' : undefined}
+        className={cn(
+          'group flex w-full items-start gap-2 rounded-lg border px-2 py-1.5 text-left text-xs transition-all duration-200',
+          focusRing,
+          isActive
+            ? 'surface-2 border-primary/15 text-primary'
+            : 'border-transparent text-sidebar-foreground/70 hover:surface-1 hover:text-foreground',
+        )}
+      >
+        <BookOpen
+          aria-hidden="true"
+          className="mt-0.5 size-3 shrink-0 opacity-50 transition-transform duration-200 group-hover:translate-x-0.5"
+        />
+        <span className="leading-snug">{item.title}</span>
+      </button>
+    );
+  };
 
   if (listItems.length > VIRTUAL_THRESHOLD) {
     return (
@@ -138,12 +185,69 @@ function SidebarItemList({
   );
 }
 
+function BackButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'mb-3 flex w-full items-center gap-2 rounded-2xl border border-transparent px-3 py-2.5 text-left text-sm font-medium text-sidebar-foreground/80 transition-all duration-200 hover:surface-1 hover:text-foreground',
+        focusRing,
+      )}
+    >
+      <ChevronLeft aria-hidden="true" className="size-4 shrink-0" />
+      <span className="truncate">{label}</span>
+    </button>
+  );
+}
+
+/** Uppercase, letter-spaced section label with an optional pill count. */
+function SectionHeader({
+  label,
+  count,
+  icon,
+  children,
+}: {
+  label: string;
+  count?: number;
+  icon?: LucideIcon;
+  children?: ReactNode;
+}) {
+  const Icon = icon;
+  return (
+    <div className="mb-2 flex items-center justify-between gap-2 px-3">
+      <div className="flex min-w-0 items-center gap-2">
+        {Icon && (
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary">
+            <Icon aria-hidden="true" className="size-4" />
+          </span>
+        )}
+        <span className="truncate text-[11px] font-semibold uppercase tracking-[0.22em] text-sidebar-foreground/60">
+          {label}
+        </span>
+      </div>
+      {(children || count !== undefined) && (
+        <div className="flex shrink-0 items-center gap-1">
+          {children}
+          {count !== undefined && (
+            <Badge variant="secondary" className="h-5 rounded-full border border-border/60 bg-background/55 px-1.5 text-[10px] tabular-nums">
+              {count}
+            </Badge>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const Sidebar = () => {
+  const t = useT();
   const sidebarOpen = useCollectionStore((s) => s.sidebarOpen);
   const menuCollectionStyle = useCollectionStore((s) => s.menuCollectionStyle) ?? 'style1';
   const categories = useCollectionStore((s) => s.categories);
   const items = useCollectionStore((s) => s.items);
   const reorderCategories = useCollectionStore((s) => s.reorderCategories);
+  const savedViews = useSavedViews();
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -157,7 +261,6 @@ const Sidebar = () => {
   const activeDetailItemId = searchParams.get('detail');
 
   const libraries = useCollectionStore((s) => s.libraries);
-  const navItems = useMemo(() => baseNavItems, []);
   const itemsByCategory = useMemo(() => {
     const map = new Map<string, CollectionItem[]>();
     for (const item of items) {
@@ -246,33 +349,33 @@ const Sidebar = () => {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
           className="fixed inset-0 z-40 bg-black/50 md:hidden"
+          aria-hidden="true"
           onClick={() => useCollectionStore.setState({ sidebarOpen: false })}
         />
       )}
     </AnimatePresence>
     <aside
+      aria-label={t('nav.sidebar.label')}
       className={cn(
-        'flex h-full flex-col border-r border-border/70 bg-sidebar/95 shadow-[18px_0_40px_rgb(0_0_0_/_0.08)] backdrop-blur-xl transition-all duration-300 ease-in-out',
+        'flex h-full flex-col border-r border-border/70 bg-sidebar/95 text-sidebar-foreground shadow-[18px_0_40px_rgb(0_0_0_/_0.08)] backdrop-blur-xl transition-all duration-300 ease-in-out',
         'fixed inset-y-0 left-0 z-50 md:relative md:z-auto',
         sidebarOpen ? 'w-64' : 'w-0 overflow-hidden',
       )}
     >
-      <div className="desktop-titlebar-drag relative flex h-16 items-center overflow-hidden border-b border-border/70 px-4">
+      <div className="desktop-titlebar-drag relative flex h-16 shrink-0 items-center overflow-hidden border-b border-border/70 px-4">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(99,102,241,0.18),transparent_42%),linear-gradient(180deg,rgba(255,255,255,0.03),transparent)]" />
         <div className="relative flex w-full items-center gap-3">
-          <div className="flex h-14 w-20 shrink-0 items-center justify-center">
-            <img src={brandLogo} alt="ESÇ logo" className="h-full w-full scale-[1.02] object-contain" />
-          </div>
+          <BrandMark className="size-10 rounded-[0.6rem] shadow-[0_8px_20px_rgba(79,70,229,0.32)]" />
           <div className="min-w-0 flex-1">
-            <span className="brand-title-premium block text-[17px] leading-tight" data-text="ESÇ">
-              ESÇ
+            <span className="brand-title-premium block text-[17px] leading-tight" data-text={BRAND_NAME}>
+              {BRAND_NAME}
             </span>
             <div className="mt-0.5 flex items-center">
               <span
                 className="brand-subtitle-premium whitespace-nowrap text-[12px]"
-                data-text="Private Collection"
+                data-text={t('nav.tagline')}
               >
-                Private Collection
+                {t('nav.tagline')}
               </span>
             </div>
           </div>
@@ -289,7 +392,7 @@ const Sidebar = () => {
           const isUnassigned = activeDrillLibId === '_unassigned';
           const libraryParam = isAll ? 'all' : isUnassigned ? 'unassigned' : activeDrillLibId;
           const lib = cat.libraries.find((l) => l.id === activeDrillLibId);
-          const label = isAll ? 'All' : isUnassigned ? 'Unassigned' : lib?.name ?? '';
+          const label = isAll ? t('common.all') : isUnassigned ? t('nav.sidebar.unassigned') : lib?.name ?? '';
           const drillItems = isAll
             ? getCategoryItems(cat.id)
             : isUnassigned
@@ -300,15 +403,17 @@ const Sidebar = () => {
             (f) => (f.type === 'text' || f.type === 'select') && f.key !== 'title',
           );
 
-          const searchFiltered = sidebarSearch
-            ? drillItems.filter((item) => {
-                const q = sidebarSearch.toLowerCase();
-                if (item.title.toLowerCase().includes(q)) return true;
-                return textFields.some((f) => {
-                  const val = item.customFields?.[f.key];
-                  return typeof val === 'string' && val.toLowerCase().includes(q);
-                });
-              })
+          const searchFiltered = sidebarSearch.trim()
+            ? drillItems.filter((item) =>
+                matchesQuery(
+                  sidebarSearch,
+                  item.title,
+                  ...textFields.map((f) => {
+                    const val = item.customFields?.[f.key];
+                    return typeof val === 'string' ? val : undefined;
+                  }),
+                ),
+              )
             : drillItems;
 
           const groupField = textFields.find((f) => f.key === groupByField);
@@ -334,25 +439,34 @@ const Sidebar = () => {
                 return val === drillGroupValue;
               })
             : [];
-          const renderDrillItem = (item: CollectionItem) => (
-            <button
-              onClick={() => navigate(`${catPath}?library=${libraryParam}&detail=${item.id}`)}
-              className={cn(
-                'group flex w-full items-start gap-2 rounded-xl border px-3 py-2.5 text-sm transition-all duration-200',
-                activeDetailItemId === item.id
-                  ? 'surface-2 border-primary/18 text-primary'
-                  : 'border-transparent text-sidebar-foreground/80 hover:surface-1 hover:text-foreground',
-              )}
-            >
-              <BookOpen className="mt-0.5 size-3.5 shrink-0 opacity-50 transition-transform duration-200 group-hover:translate-x-0.5" />
-              <span className="text-left leading-snug">{item.title}</span>
-            </button>
-          );
+          const renderDrillItem = (item: CollectionItem) => {
+            const isActive = activeDetailItemId === item.id;
+            return (
+              <button
+                type="button"
+                onClick={() => navigate(`${catPath}?library=${libraryParam}&detail=${item.id}`)}
+                aria-current={isActive ? 'page' : undefined}
+                className={cn(
+                  'group flex w-full items-start gap-2 rounded-xl border px-3 py-2.5 text-left text-sm transition-all duration-200',
+                  focusRing,
+                  isActive
+                    ? 'surface-2 border-primary/18 text-primary'
+                    : 'border-transparent text-sidebar-foreground/80 hover:surface-1 hover:text-foreground',
+                )}
+              >
+                <BookOpen
+                  aria-hidden="true"
+                  className="mt-0.5 size-3.5 shrink-0 opacity-50 transition-transform duration-200 group-hover:translate-x-0.5"
+                />
+                <span className="leading-snug">{item.title}</span>
+              </button>
+            );
+          };
 
           return (
             <>
-              {/* Back button */}
-              <button
+              <BackButton
+                label={showGroupItems ? groupField.label : cat.name}
                 onClick={() => {
                   if (showGroupItems) {
                     setDrillGroupValue(null);
@@ -363,21 +477,12 @@ const Sidebar = () => {
                     setSidebarSearch('');
                   }
                 }}
-                className="mb-3 flex w-full items-center gap-2 rounded-2xl border border-transparent px-3 py-2.5 text-sm font-medium text-sidebar-foreground/80 transition-all duration-200 hover:surface-1 hover:text-foreground"
-              >
-                <ChevronLeft className="size-4" />
-                <span>{showGroupItems ? groupField.label : cat.name}</span>
-              </button>
+              />
 
-              {/* Header: label */}
-              <div className="mb-3 flex items-center gap-2 px-3">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-sidebar-foreground/60">
-                  {showGroupItems ? drillGroupValue : label}
-                </span>
-                <Badge variant="secondary" className="h-5 rounded-full border border-border/60 bg-background/55 px-1.5 text-[10px]">
-                  {showGroupItems ? groupItems.length : searchFiltered.length}
-                </Badge>
-              </div>
+              <SectionHeader
+                label={(showGroupItems ? drillGroupValue : label) ?? ''}
+                count={showGroupItems ? groupItems.length : searchFiltered.length}
+              />
 
               {/* Group dropdown */}
               {!showGroupItems && textFields.length > 0 && (
@@ -385,9 +490,10 @@ const Sidebar = () => {
                   <select
                     value={groupByField}
                     onChange={(e) => { setGroupByField(e.target.value); setDrillGroupValue(null); }}
-                    className="surface-1 h-8 w-full rounded-xl border px-3 text-xs text-sidebar-foreground outline-none focus:ring-1 focus:ring-ring"
+                    aria-label={t('nav.sidebar.groupBy')}
+                    className="surface-1 h-8 w-full rounded-xl border px-3 text-xs text-sidebar-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                   >
-                    <option value="title">Title</option>
+                    <option value="title">{t('nav.sidebar.groupTitle')}</option>
                     {textFields.map((f) => (
                       <option key={f.key} value={f.key}>{f.label}</option>
                     ))}
@@ -398,22 +504,26 @@ const Sidebar = () => {
               {/* Search */}
               {!showGroupItems && (
                 <div className="relative mb-2 px-3">
-                  <Search className="absolute left-5 top-1/2 size-3.5 -translate-y-1/2 text-sidebar-foreground/55" />
+                  <Search
+                    aria-hidden="true"
+                    className="pointer-events-none absolute left-5 top-1/2 size-3.5 -translate-y-1/2 text-sidebar-foreground/55"
+                  />
                   <input
-                    type="text"
+                    type="search"
                     value={sidebarSearch}
                     onChange={(e) => setSidebarSearch(e.target.value)}
-                    placeholder="Search..."
-                    className="surface-1 h-9 w-full rounded-xl border pl-8 pr-3 text-xs outline-none placeholder:text-sidebar-foreground/50 focus:ring-1 focus:ring-ring"
+                    placeholder={t('nav.sidebar.searchPlaceholder')}
+                    aria-label={t('nav.sidebar.searchLabel')}
+                    className="surface-1 h-9 w-full rounded-xl border pl-8 pr-3 text-xs text-foreground outline-none placeholder:text-sidebar-foreground/50 focus-visible:ring-2 focus-visible:ring-ring/50"
                   />
                 </div>
               )}
 
               {/* Content */}
-              <nav className="space-y-0.5">
+              <nav className="space-y-0.5" aria-label={label}>
                 {showGroupItems ? (
                   groupItems.length === 0 ? (
-                    <p className="px-3 py-3 text-xs text-muted-foreground/60 italic">No items</p>
+                    <p className="px-3 py-3 text-xs italic text-muted-foreground/60">{t('nav.sidebar.noItems')}</p>
                   ) : groupItems.length > VIRTUAL_THRESHOLD ? (
                     <VirtualList
                       items={groupItems}
@@ -431,23 +541,27 @@ const Sidebar = () => {
                   )
                 ) : groupField ? (
                   groupedEntries.length === 0 ? (
-                    <p className="px-3 py-3 text-xs text-muted-foreground/60 italic">No groups found</p>
+                    <p className="px-3 py-3 text-xs italic text-muted-foreground/60">{t('nav.sidebar.noGroups')}</p>
                   ) : (
                     groupedEntries.map((g) => (
                       <button
+                        type="button"
                         key={g.key}
                         onClick={() => setDrillGroupValue(g.key)}
-                        className="flex w-full items-center gap-2 rounded-xl border border-transparent px-3 py-2.5 text-sm text-sidebar-foreground/80 transition-all duration-200 hover:surface-1 hover:text-foreground"
+                        className={cn(
+                          'flex w-full items-center gap-2 rounded-xl border border-transparent px-3 py-2.5 text-left text-sm text-sidebar-foreground/80 transition-all duration-200 hover:surface-1 hover:text-foreground',
+                          focusRing,
+                        )}
                       >
-                        <Layers className="size-3.5 shrink-0 opacity-50" />
-                        <span className="flex-1 text-left leading-snug">{g.label}</span>
-                        <Badge variant="secondary" className="h-5 rounded-full border border-border/60 bg-background/55 px-1.5 text-[10px]">{g.count}</Badge>
+                        <Layers aria-hidden="true" className="size-3.5 shrink-0 opacity-50" />
+                        <span className="min-w-0 flex-1 leading-snug">{g.label}</span>
+                        <CountBadge value={g.count} />
                       </button>
                     ))
                   )
                 ) : searchFiltered.length === 0 ? (
-                  <p className="px-3 py-3 text-xs text-muted-foreground/60 italic">
-                    {sidebarSearch ? 'No results' : 'No items in this library'}
+                  <p className="px-3 py-3 text-xs italic text-muted-foreground/60">
+                    {sidebarSearch ? t('nav.sidebar.noResults') : t('nav.sidebar.noItemsInLibrary')}
                   </p>
                 ) : searchFiltered.length > VIRTUAL_THRESHOLD ? (
                   <VirtualList
@@ -478,66 +592,43 @@ const Sidebar = () => {
 
           return (
             <>
-              <button
-                onClick={() => navigate('/collections')}
-                className="mb-3 flex w-full items-center gap-2 rounded-2xl border border-transparent px-3 py-2.5 text-sm font-medium text-sidebar-foreground/80 transition-all duration-200 hover:surface-1 hover:text-foreground"
-              >
-                <ChevronLeft className="size-4" />
-                <span>Collections</span>
-              </button>
+              <BackButton label={t('nav.collections')} onClick={() => navigate('/collections')} />
 
-              <div className="mb-3 flex items-center gap-2 px-3">
-                <div className="flex size-8 items-center justify-center rounded-xl bg-primary/12 text-primary">
-                  <CatIcon className="size-4" />
-                </div>
-                <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-sidebar-foreground/60">
-                  {cat.name}
-                </span>
-                <Badge variant="secondary" className="h-5 rounded-full border border-border/60 bg-background/55 px-1.5 text-[10px]">{cat.count}</Badge>
-              </div>
+              <SectionHeader label={cat.name} count={cat.count} icon={CatIcon} />
 
-              <nav className="space-y-0.5">
+              <nav className="space-y-0.5" aria-label={cat.name}>
                 <button
+                  type="button"
                   onClick={() => navigate(`${catPath}?library=all`)}
+                  aria-current={activeLibraryParam === 'all' ? 'page' : undefined}
                   className={getSecondaryNavClass(activeLibraryParam === 'all')}
                 >
-                  <span className={cn(
-                    'flex size-8 shrink-0 items-center justify-center rounded-xl transition-colors',
-                    activeLibraryParam === 'all' ? 'bg-white/12 text-current' : 'bg-primary/10 text-primary',
-                  )}>
-                    <FolderOpen className="size-4 shrink-0" />
-                  </span>
-                  <span className="flex-1 text-left">All</span>
-                  <Badge variant="secondary" className="h-5 min-w-[1.25rem] justify-center rounded-full border border-border/60 bg-background/55 px-1.5 text-[10px]">{cat.count}</Badge>
+                  <NavIconTile icon={FolderOpen} active={activeLibraryParam === 'all'} />
+                  <span className="min-w-0 flex-1 truncate">{t('common.all')}</span>
+                  <CountBadge value={cat.count} />
                 </button>
                 {cat.libraries.map((lib) => (
                   <button
+                    type="button"
                     key={lib.id}
                     onClick={() => navigate(`${catPath}?library=${lib.id}`)}
+                    aria-current={activeLibraryParam === lib.id ? 'page' : undefined}
                     className={getSecondaryNavClass(activeLibraryParam === lib.id)}
                   >
-                    <span className={cn(
-                      'flex size-8 shrink-0 items-center justify-center rounded-xl transition-colors',
-                      activeLibraryParam === lib.id ? 'bg-white/12 text-current' : 'bg-primary/10 text-primary',
-                    )}>
-                      <Library className="size-4 shrink-0" />
-                    </span>
-                    <span className="flex-1 text-left truncate">{lib.name}</span>
-                    <Badge variant="secondary" className="h-5 min-w-[1.25rem] justify-center rounded-full border border-border/60 bg-background/55 px-1.5 text-[10px]">{lib.count}</Badge>
+                    <NavIconTile icon={Library} active={activeLibraryParam === lib.id} />
+                    <span className="min-w-0 flex-1 truncate">{lib.name}</span>
+                    <CountBadge value={lib.count} />
                   </button>
                 ))}
                 <button
+                  type="button"
                   onClick={() => navigate(`${catPath}?library=unassigned`)}
+                  aria-current={activeLibraryParam === 'unassigned' ? 'page' : undefined}
                   className={getSecondaryNavClass(activeLibraryParam === 'unassigned')}
                 >
-                  <span className={cn(
-                    'flex size-8 shrink-0 items-center justify-center rounded-xl transition-colors',
-                    activeLibraryParam === 'unassigned' ? 'bg-white/12 text-current' : 'bg-primary/10 text-primary',
-                  )}>
-                    <Inbox className="size-4 shrink-0" />
-                  </span>
-                  <span className="flex-1 text-left">Unassigned</span>
-                  <Badge variant="secondary" className="h-5 min-w-[1.25rem] justify-center rounded-full border border-border/60 bg-background/55 px-1.5 text-[10px]">{cat.unassignedCount}</Badge>
+                  <NavIconTile icon={Inbox} active={activeLibraryParam === 'unassigned'} />
+                  <span className="min-w-0 flex-1 truncate">{t('nav.sidebar.unassigned')}</span>
+                  <CountBadge value={cat.unassignedCount} />
                 </button>
               </nav>
             </>
@@ -547,27 +638,23 @@ const Sidebar = () => {
         /* ── Default: Top nav + Collections list (Style 1 tree or Style 2 flat) ── */
         : (
           <>
-            <nav className="space-y-0.5">
-              {navItems.map((item) => {
+            <nav className="space-y-0.5" aria-label={t('nav.sidebar.pages')}>
+              {baseNavItems.map((item) => {
                 const isActive =
                   location.pathname === item.path ||
                   location.pathname.startsWith(item.path + '/');
-                const Icon = item.icon;
                 return (
                   <button
+                    type="button"
                     key={item.path}
                     onClick={() => navigate(item.path)}
+                    aria-current={isActive ? 'page' : undefined}
                     className={getPrimaryNavClass(isActive)}
                   >
-                    <span className={cn(
-                      'flex size-8 shrink-0 items-center justify-center rounded-xl transition-colors',
-                      isActive ? 'bg-white/12 text-current' : 'bg-primary/10 text-primary',
-                    )}>
-                      <Icon className="h-4 w-4 shrink-0" />
-                    </span>
-                    <span className="truncate">{item.label}</span>
+                    <NavIconTile icon={item.icon} active={isActive} onBrand />
+                    <span className="truncate">{t(item.labelKey)}</span>
                     {isActive && (
-                      <ChevronRight className="ml-auto h-3.5 w-3.5 opacity-60" />
+                      <ChevronRight aria-hidden="true" className="ml-auto size-3.5 opacity-60" />
                     )}
                   </button>
                 );
@@ -576,31 +663,28 @@ const Sidebar = () => {
 
             <Separator className="my-4 opacity-60" />
 
-            <div className="mb-2 flex items-center justify-between px-3">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sidebar-foreground/60">
-                Collections
-              </span>
-              <div className="flex items-center gap-1">
-                {menuCollectionStyle === 'style1' && (
-                  <button
-                    onClick={() => setReorderMode((v) => !v)}
-                    className={cn(
-                      'flex h-6 items-center gap-1 rounded-full border px-2 text-[10px] font-medium transition-colors',
-                      reorderMode ? 'border-primary/20 bg-primary/10 text-primary' : 'border-transparent text-sidebar-foreground/65 hover:border-border/70 hover:text-foreground',
-                    )}
-                    title={reorderMode ? 'Done reordering' : 'Reorder categories'}
-                  >
-                    <GripVertical className="size-3" />
-                    {reorderMode ? 'Done' : ''}
-                  </button>
-                )}
-                <Badge variant="secondary" className="h-5 rounded-full border border-border/60 bg-background/55 px-1.5 text-[10px]">
-                  {categories.length}
-                </Badge>
-              </div>
-            </div>
+            <SectionHeader label={t('nav.collections')} count={categories.length}>
+              {menuCollectionStyle === 'style1' && categories.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setReorderMode((v) => !v)}
+                  aria-pressed={reorderMode}
+                  title={reorderMode ? t('nav.sidebar.doneReordering') : t('nav.sidebar.reorderCategories')}
+                  className={cn(
+                    'flex h-6 items-center gap-1 rounded-full border px-2 text-[10px] font-medium transition-colors',
+                    focusRing,
+                    reorderMode
+                      ? 'border-primary/20 bg-primary/10 text-primary'
+                      : 'border-transparent text-sidebar-foreground/65 hover:border-border/70 hover:text-foreground',
+                  )}
+                >
+                  <GripVertical aria-hidden="true" className="size-3" />
+                  {reorderMode ? t('nav.sidebar.done') : <span className="sr-only">{t('nav.sidebar.reorder')}</span>}
+                </button>
+              )}
+            </SectionHeader>
 
-            <nav className="space-y-0.5">
+            <nav className="space-y-0.5" aria-label={t('nav.collections')}>
               {categoryStats.map((cat, idx) => {
                 const Icon = getCategoryIcon(cat.icon);
                 const catPath = `/collections/${cat.slug}`;
@@ -610,19 +694,16 @@ const Sidebar = () => {
                 if (menuCollectionStyle === 'style2') {
                   return (
                     <button
+                      type="button"
                       key={cat.id}
                       onClick={() => navigate(catPath)}
+                      aria-current={isActive ? 'page' : undefined}
                       className={getSecondaryNavClass(isActive)}
                     >
-                      <span className={cn(
-                        'flex size-8 shrink-0 items-center justify-center rounded-xl transition-colors',
-                        isActive ? 'bg-primary/12 text-current' : 'bg-primary/10 text-primary',
-                      )}>
-                        <Icon className="h-4 w-4 shrink-0" />
-                      </span>
-                      <span className="flex-1 truncate text-left">{cat.name}</span>
-                      {hasLibraries && <ChevronRight className="size-3.5 opacity-40" />}
-                      <Badge variant="secondary" className="h-5 min-w-[1.25rem] justify-center rounded-full border border-border/60 bg-background/55 px-1.5 text-[10px]">{cat.count}</Badge>
+                      <NavIconTile icon={Icon} active={isActive} />
+                      <span className="min-w-0 flex-1 truncate">{cat.name}</span>
+                      {hasLibraries && <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 opacity-40" />}
+                      <CountBadge value={cat.count} />
                     </button>
                   );
                 }
@@ -633,26 +714,46 @@ const Sidebar = () => {
                     <div className="flex items-center gap-0.5">
                       {reorderMode && (
                         <div className="flex shrink-0 flex-col">
-                          <button onClick={() => handleMove(idx, 'up')} disabled={idx === 0} className="flex size-4 items-center justify-center rounded text-sidebar-foreground/45 transition-colors hover:text-foreground disabled:opacity-20"><ChevronUp className="size-3" /></button>
-                          <button onClick={() => handleMove(idx, 'down')} disabled={idx === categoryStats.length - 1} className="flex size-4 items-center justify-center rounded text-sidebar-foreground/45 transition-colors hover:text-foreground disabled:opacity-20"><ChevronDown className="size-3" /></button>
+                          <button
+                            type="button"
+                            onClick={() => handleMove(idx, 'up')}
+                            disabled={idx === 0}
+                            aria-label={t('nav.sidebar.moveUp', { name: cat.name })}
+                            className={cn(
+                              'flex size-5 items-center justify-center rounded-md text-sidebar-foreground/45 transition-colors hover:bg-primary/10 hover:text-foreground disabled:pointer-events-none disabled:opacity-20',
+                              focusRing,
+                            )}
+                          >
+                            <ChevronUp aria-hidden="true" className="size-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleMove(idx, 'down')}
+                            disabled={idx === categoryStats.length - 1}
+                            aria-label={t('nav.sidebar.moveDown', { name: cat.name })}
+                            className={cn(
+                              'flex size-5 items-center justify-center rounded-md text-sidebar-foreground/45 transition-colors hover:bg-primary/10 hover:text-foreground disabled:pointer-events-none disabled:opacity-20',
+                              focusRing,
+                            )}
+                          >
+                            <ChevronDown aria-hidden="true" className="size-3" />
+                          </button>
                         </div>
                       )}
                       <button
+                        type="button"
                         onClick={() => {
                           if (isActive && hasLibraries) { setExpandedCatId(isExpanded ? null : cat.id); }
                           else { navigate(catPath); if (hasLibraries) setExpandedCatId(cat.id); else setExpandedCatId(null); }
                           setExpandedLibId(null);
                         }}
-                        className={getSecondaryNavClass(isActive)}
+                        aria-current={isActive ? 'page' : undefined}
+                        aria-expanded={hasLibraries ? isExpanded : undefined}
+                        className={cn(getSecondaryNavClass(isActive), 'min-w-0 flex-1')}
                       >
-                        <span className={cn(
-                          'flex size-8 shrink-0 items-center justify-center rounded-xl transition-colors',
-                          isActive ? 'bg-primary/12 text-current' : 'bg-primary/10 text-primary',
-                        )}>
-                          <Icon className="h-4 w-4 shrink-0" />
-                        </span>
-                        <span className="flex-1 truncate text-left">{cat.name}</span>
-                        <Badge variant="secondary" className="h-5 min-w-[1.25rem] justify-center rounded-full border border-border/60 bg-background/55 px-1.5 text-[10px]">{cat.count}</Badge>
+                        <NavIconTile icon={Icon} active={isActive} />
+                        <span className="min-w-0 flex-1 truncate">{cat.name}</span>
+                        <CountBadge value={cat.count} />
                       </button>
                     </div>
                     {isExpanded && (() => {
@@ -663,12 +764,14 @@ const Sidebar = () => {
                         <div className="ml-10 space-y-1 border-l border-border/60 py-1 pl-3">
                           <div>
                             <button
+                              type="button"
                               onClick={() => setExpandedLibId(allExpanded ? null : '_all_' + cat.id)}
+                              aria-expanded={allExpanded}
                               className={getTreeNavClass(isActive && activeLibraryParam === 'all')}
                             >
-                              <FolderOpen className="size-3.5 shrink-0" />
-                              <span className="flex-1 truncate text-left">All</span>
-                              <Badge variant="secondary" className="h-4 rounded-full border border-border/60 bg-background/55 px-1 text-[10px]">{cat.count}</Badge>
+                              <FolderOpen aria-hidden="true" className="size-3.5 shrink-0" />
+                              <span className="min-w-0 flex-1 truncate">{t('common.all')}</span>
+                              <CountBadge value={cat.count} small />
                             </button>
                             {allExpanded && (
                               <SidebarItemList
@@ -683,15 +786,18 @@ const Sidebar = () => {
                           {cat.libraries.map((lib) => {
                             const libExpanded = expandedLibId === lib.id;
                             const libItems = catItems.filter((i) => i.libraryId === lib.id);
+                            const libActive = isActive && activeLibraryParam === lib.id;
                             return (
                               <div key={lib.id}>
                                 <button
+                                  type="button"
                                   onClick={() => setExpandedLibId(libExpanded ? null : lib.id)}
-                                  className={getTreeNavClass(isActive && activeLibraryParam === lib.id)}
+                                  aria-expanded={libExpanded}
+                                  className={getTreeNavClass(libActive)}
                                 >
-                                  <Library className="size-3.5 shrink-0" />
-                                  <span className="flex-1 truncate text-left">{lib.name}</span>
-                                  <Badge variant="secondary" className="h-4 rounded-full border border-border/60 bg-background/55 px-1 text-[10px]">{lib.count}</Badge>
+                                  <Library aria-hidden="true" className="size-3.5 shrink-0" />
+                                  <span className="min-w-0 flex-1 truncate">{lib.name}</span>
+                                  <CountBadge value={lib.count} small />
                                 </button>
                                 {libExpanded && (
                                   <SidebarItemList
@@ -707,12 +813,14 @@ const Sidebar = () => {
                           })}
                           <div>
                             <button
+                              type="button"
                               onClick={() => setExpandedLibId(unassignedExpanded ? null : '_unassigned_' + cat.id)}
+                              aria-expanded={unassignedExpanded}
                               className={getTreeNavClass(isActive && activeLibraryParam === 'unassigned')}
                             >
-                              <Inbox className="size-3.5 shrink-0" />
-                              <span className="flex-1 truncate text-left">Unassigned</span>
-                              <Badge variant="secondary" className="h-4 rounded-full border border-border/60 bg-background/55 px-1 text-[10px]">{cat.unassignedCount}</Badge>
+                              <Inbox aria-hidden="true" className="size-3.5 shrink-0" />
+                              <span className="min-w-0 flex-1 truncate">{t('nav.sidebar.unassigned')}</span>
+                              <CountBadge value={cat.unassignedCount} small />
                             </button>
                             {unassignedExpanded && (
                               <SidebarItemList
@@ -731,6 +839,32 @@ const Sidebar = () => {
                 );
               })}
             </nav>
+
+            {savedViews.length > 0 && (
+              <>
+                <Separator className="my-4 opacity-60" />
+                <SectionHeader label={t('nav.savedViews')} count={savedViews.length} />
+                <nav className="space-y-0.5" aria-label={t('nav.savedViews')}>
+                  {savedViews.map((view) => {
+                    const href = getSavedViewHref(view, categories);
+                    if (!href) return null;
+                    const isActive = `${location.pathname}${location.search}` === href;
+                    return (
+                      <button
+                        type="button"
+                        key={view.id}
+                        onClick={() => navigate(href)}
+                        aria-current={isActive ? 'page' : undefined}
+                        className={getSecondaryNavClass(isActive)}
+                      >
+                        <NavIconTile icon={Bookmark} active={isActive} />
+                        <span className="min-w-0 flex-1 truncate">{view.name}</span>
+                      </button>
+                    );
+                  })}
+                </nav>
+              </>
+            )}
           </>
         )}
       </ScrollArea>
