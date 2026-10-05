@@ -1,7 +1,14 @@
 import type { Category, CategoryField, CollectionItem } from '@/types';
 
-/** What the exhibition shows: every collection, the favourites, or one collection. */
-export type ExhibitionSource = 'all' | 'favorites' | { categoryId: string };
+/**
+ * What the exhibition shows: every collection, the favourites, one collection,
+ * or a saved (hand-ordered) exhibition.
+ */
+export type ExhibitionSource =
+  | 'all'
+  | 'favorites'
+  | { categoryId: string }
+  | { exhibitionId: string; itemIds: string[] };
 
 export interface ExhibitionHighlight {
   key: string;
@@ -37,12 +44,16 @@ const MAX_HIGHLIGHTS = 3;
 
 export function isSameSource(a: ExhibitionSource, b: ExhibitionSource): boolean {
   if (typeof a === 'string' || typeof b === 'string') return a === b;
+  if ('exhibitionId' in a || 'exhibitionId' in b) {
+    return 'exhibitionId' in a && 'exhibitionId' in b && a.exhibitionId === b.exhibitionId;
+  }
   return a.categoryId === b.categoryId;
 }
 
 function matchesSource(item: CollectionItem, source: ExhibitionSource): boolean {
   if (source === 'all') return true;
   if (source === 'favorites') return item.isFavorite;
+  if ('exhibitionId' in source) return source.itemIds.includes(item.id);
   return item.categoryId === source.categoryId;
 }
 
@@ -105,6 +116,10 @@ export function buildExhibitionSlides(
     .filter((item) => !item.isArchived && matchesSource(item, source))
     .filter((item) => !onlyWithPhotos || coverImage(item) !== null)
     .sort((a, b) => {
+      // A saved exhibition plays in the order it was curated.
+      if (typeof source === 'object' && 'exhibitionId' in source) {
+        return source.itemIds.indexOf(a.id) - source.itemIds.indexOf(b.id);
+      }
       const byCategory = (order.get(a.categoryId) ?? 999) - (order.get(b.categoryId) ?? 999);
       if (byCategory !== 0) return byCategory;
       return (b.createdAt ?? '').localeCompare(a.createdAt ?? '');

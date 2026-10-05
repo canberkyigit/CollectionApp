@@ -18,6 +18,8 @@ import type { ExhibitionSlide } from '@/lib/exhibition';
 import { getCategoryIcon } from '@/lib/icons';
 import { cn, formatCurrency } from '@/lib/utils';
 import { getItemCurrentValue } from '@/lib/valuation';
+import { QRCodeSVG } from 'qrcode.react';
+import { getPublicItemUrl } from '@/lib/publicUrl';
 
 interface ExhibitionStageProps {
   slides: ExhibitionSlide[];
@@ -25,9 +27,18 @@ interface ExhibitionStageProps {
   intervalSeconds: number;
   autoplay: boolean;
   showValues: boolean;
+  /** Small QR code in the corner that opens the current piece on a phone. */
+  showQr?: boolean;
+  /**
+   * Kiosk: plays in a loop, keeps the screen awake and hides the cursor and
+   * controls after a few seconds without input (they return on any movement).
+   */
+  kiosk?: boolean;
   displayCurrency: string;
   onExit: () => void;
 }
+
+const KIOSK_IDLE_MS = 3000;
 
 const CONTROL_BUTTON =
   'inline-flex size-11 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white backdrop-blur-md transition-all hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70';
@@ -43,6 +54,8 @@ export function ExhibitionStage({
   intervalSeconds,
   autoplay,
   showValues,
+  showQr = false,
+  kiosk = false,
   displayCurrency,
   onExit,
 }: ExhibitionStageProps) {
@@ -50,7 +63,9 @@ export function ExhibitionStage({
   const reduceMotion = useReducedMotion();
   const stageRef = useRef<HTMLDivElement>(null);
   const [index, setIndex] = useState(() => Math.min(Math.max(startIndex, 0), Math.max(slides.length - 1, 0)));
-  const [playing, setPlaying] = useState(autoplay && slides.length > 1);
+  const [playing, setPlaying] = useState((autoplay || kiosk) && slides.length > 1);
+  const [uiVisible, setUiVisible] = useState(true);
+  const chromeHidden = kiosk && !uiVisible;
   const [showCaption, setShowCaption] = useState(true);
   const [showThumbs, setShowThumbs] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -92,6 +107,48 @@ export function ExhibitionStage({
       // Full screen is optional (some browsers/app views refuse it); the overlay already fills the window.
     }
   }, []);
+
+  // Kiosk: hide the chrome after a few idle seconds; any input brings it back.
+  useEffect(() => {
+    if (!kiosk) return undefined;
+    let timer = window.setTimeout(() => setUiVisible(false), KIOSK_IDLE_MS);
+    const wake = () => {
+      setUiVisible(true);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setUiVisible(false), KIOSK_IDLE_MS);
+    };
+    const events: (keyof WindowEventMap)[] = ['mousemove', 'mousedown', 'touchstart', 'keydown', 'wheel'];
+    events.forEach((name) => window.addEventListener(name, wake, { passive: true }));
+    return () => {
+      window.clearTimeout(timer);
+      events.forEach((name) => window.removeEventListener(name, wake));
+    };
+  }, [kiosk]);
+
+  // Kiosk: keep the screen awake while the show runs (re-acquired when the tab becomes visible again).
+  useEffect(() => {
+    if (!kiosk || typeof navigator === 'undefined' || !('wakeLock' in navigator)) return undefined;
+    let lock: WakeLockSentinel | null = null;
+    let disposed = false;
+    const acquire = async () => {
+      try {
+        lock = await navigator.wakeLock.request('screen');
+        if (disposed) void lock.release();
+      } catch {
+        // Not granted (battery saver, unsupported view) — the show still runs.
+      }
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void acquire();
+    };
+    void acquire();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      disposed = true;
+      document.removeEventListener('visibilitychange', onVisibility);
+      void lock?.release().catch(() => undefined);
+    };
+  }, [kiosk]);
 
   useEffect(() => {
     const onChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
@@ -157,7 +214,7 @@ export function ExhibitionStage({
       aria-modal="true"
       aria-label={t('exhibition.stageLabel')}
       tabIndex={-1}
-      className="fixed inset-0 z-[90] overflow-hidden bg-black text-white outline-none"
+      className={cn('fixed inset-0 z-[90] overflow-hidden bg-black text-white outline-none', chromeHidden && 'cursor-none')}
     >
       {/* Blurred backdrop of the current photo */}
       <AnimatePresence initial={false}>
@@ -253,7 +310,7 @@ export function ExhibitionStage({
               {category?.name ?? t('exhibition.allCollections')}
             </p>
           </div>
-          <div className="flex shrink-0 items-center gap-3">
+          <div className={cn('flex shrink-0 items-center gap-3 transition-opacity duration-500', chromeHidden && 'pointer-events-none opacity-0')}>
             <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold tabular-nums ring-1 ring-white/15 backdrop-blur-md" aria-live="polite">
               {t('exhibition.counter', { current: index + 1, total: count })}
             </span>
@@ -353,8 +410,26 @@ export function ExhibitionStage({
         )}
       </AnimatePresence>
 
+      {/* QR code: scan to open the current piece */}
+      {showQr && (
+        <div
+          className={cn(
+            'absolute bottom-28 right-4 z-10 hidden flex-col items-center gap-2 rounded-2xl border border-white/15 bg-black/40 p-3 shadow-[0_20px_50px_rgba(0,0,0,0.45)] backdrop-blur-xl transition-[bottom] duration-300 sm:flex sm:right-8',
+            showThumbs && 'bottom-48',
+          )}
+        >
+          <div className="rounded-xl bg-white p-2">
+            <QRCodeSVG value={getPublicItemUrl(item.id)} size={96} level="M" aria-label={t('exhibition.qrLabel', { title: item.title })} role="img" />
+          </div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/75">{t('exhibition.qrHint')}</p>
+        </div>
+      )}
+
       {/* Controls */}
-      <div className="absolute inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-[max(env(safe-area-inset-bottom),1.5rem)]">
+      <div className={cn(
+        'absolute inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-[max(env(safe-area-inset-bottom),1.5rem)] transition-opacity duration-500',
+        chromeHidden && 'pointer-events-none opacity-0',
+      )}>
         <div className="flex items-center gap-2 rounded-full border border-white/15 bg-black/40 p-2 shadow-[0_20px_50px_rgba(0,0,0,0.5)] backdrop-blur-xl">
           <button type="button" className={CONTROL_BUTTON} onClick={() => go(-1)} aria-label={t('exhibition.previous')}>
             <ChevronLeft className="size-5" />
